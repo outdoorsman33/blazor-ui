@@ -2,12 +2,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY NuGet.Config ./
 COPY src/WrestlingPlatform.Domain/WrestlingPlatform.Domain.csproj src/WrestlingPlatform.Domain/
 COPY src/WrestlingPlatform.Application/WrestlingPlatform.Application.csproj src/WrestlingPlatform.Application/
 COPY src/WrestlingPlatform.Web/WrestlingPlatform.Web.csproj src/WrestlingPlatform.Web/
 
-RUN dotnet restore src/WrestlingPlatform.Web/WrestlingPlatform.Web.csproj --configfile NuGet.Config
+RUN dotnet restore src/WrestlingPlatform.Web/WrestlingPlatform.Web.csproj
 
 COPY . .
 WORKDIR /src/src/WrestlingPlatform.Web
