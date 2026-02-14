@@ -6,7 +6,7 @@ services:
     dockerfilePath: ./src/WrestlingPlatform.Api/Dockerfile
     dockerContext: .
     region: ohio
-    plan: starter
+    plan: free
     autoDeploy: true
     healthCheckPath: /healthz
     buildFilter:
@@ -71,7 +71,7 @@ services:
     dockerfilePath: ./src/WrestlingPlatform.Web/Dockerfile
     dockerContext: .
     region: ohio
-    plan: starter
+    plan: free
     autoDeploy: true
     healthCheckPath: /healthz
     buildFilter:
@@ -89,8 +89,9 @@ services:
 databases:
   - name: wrestling-platform-db
     region: ohio
-    plan: basic-256mb
+    plan: free
     databaseName: wrestling_platform
     user: wrestling_app
     postgresMajorVersion: "17"
     ipAllowList: []
+
