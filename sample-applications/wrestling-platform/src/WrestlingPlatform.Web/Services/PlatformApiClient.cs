@@ -305,10 +305,10 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
     {
         var message = ex switch
         {
-            TaskCanceledException => "Request timed out while contacting the API service.",
-            HttpRequestException => $"API service is unreachable: {ex.Message}",
-            InvalidOperationException => $"API request setup failed: {ex.Message}",
-            _ => "Unexpected transport error while contacting the API service."
+            TaskCanceledException => "The API request timed out. Please retry in a moment.",
+            HttpRequestException => "The API service is temporarily unreachable. Please retry in about 60 seconds.",
+            InvalidOperationException => "The platform is warming up. Please retry in about 60 seconds.",
+            _ => "Unexpected API connectivity issue. Please retry in a moment."
         };
 
         return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
@@ -453,9 +453,139 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         var raw = await response.Content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return $"Request failed with status code {(int)response.StatusCode}.";
+            return BuildStatusMessage(response.StatusCode);
         }
 
-        return raw;
+        if (TryGetJsonErrorMessage(raw, out var jsonMessage))
+        {
+            return TruncateForDisplay(jsonMessage);
+        }
+
+        if (LooksLikeHtmlPayload(raw))
+        {
+            return response.StatusCode is HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout
+                ? "The API is temporarily unavailable or waking up. Please retry in about 60 seconds."
+                : BuildStatusMessage(response.StatusCode);
+        }
+
+        return TruncateForDisplay(CollapseWhitespace(raw));
+    }
+
+    private static bool TryGetJsonErrorMessage(string raw, out string message)
+    {
+        message = string.Empty;
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (TryReadStringProperty(document.RootElement, "detail", out message)
+                || TryReadStringProperty(document.RootElement, "title", out message)
+                || TryReadStringProperty(document.RootElement, "message", out message))
+            {
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private static bool TryReadStringProperty(JsonElement root, string propertyName, out string value)
+    {
+        value = string.Empty;
+
+        if (!root.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var parsed = property.GetString()?.Trim();
+        if (string.IsNullOrWhiteSpace(parsed))
+        {
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    private static bool LooksLikeHtmlPayload(string raw)
+    {
+        var trimmed = raw.TrimStart();
+        return trimmed.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
+               || trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
+               || trimmed.Contains("<body", StringComparison.OrdinalIgnoreCase)
+               || trimmed.Contains("</html>", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string CollapseWhitespace(string value)
+    {
+        var input = value.Trim();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return string.Empty;
+        }
+
+        var output = new StringBuilder(input.Length);
+        var previousWasWhitespace = false;
+
+        foreach (var character in input)
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                if (!previousWasWhitespace)
+                {
+                    output.Append(' ');
+                    previousWasWhitespace = true;
+                }
+
+                continue;
+            }
+
+            output.Append(character);
+            previousWasWhitespace = false;
+        }
+
+        return output.ToString();
+    }
+
+    private static string TruncateForDisplay(string value)
+    {
+        const int maxLength = 280;
+        var input = value.Trim();
+        if (input.Length <= maxLength)
+        {
+            return input;
+        }
+
+        return $"{input[..maxLength]}...";
+    }
+
+    private static string BuildStatusMessage(HttpStatusCode statusCode)
+    {
+        return statusCode switch
+        {
+            HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout
+                => "The API is temporarily unavailable or waking up. Please retry in about 60 seconds.",
+            HttpStatusCode.Unauthorized => "Authentication is required. Please sign in again.",
+            HttpStatusCode.Forbidden => "You do not have access to this action.",
+            HttpStatusCode.NotFound => "The requested resource was not found.",
+            _ => $"Request failed with status code {(int)statusCode}."
+        };
     }
 }
+
+
