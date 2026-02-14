@@ -1,0 +1,497 @@
+@page "/coach"
+@inject PlatformApiClient ApiClient
+
+<PageTitle>Coach Portal - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Coach Portal</h1>
+        <p class="page-subtitle">Create coach identity, launch teams/clubs, link athletes, and run free-agent recruiting workflows for tournaments.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Coach Graph</span>
+        <span class="tag">Team Management</span>
+        <span class="tag">Free-Agent Board</span>
+    </div>
+</div>
+
+<div class="panel-grid two">
+    <section class="panel">
+        <h2>1) Coach Account + Profile</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Email</label>
+                <input class="input" @bind="CoachEmail" />
+            </div>
+            <div class="field">
+                <label>Password</label>
+                <input class="input" type="password" @bind="CoachPassword" />
+            </div>
+            <div class="field">
+                <label>Phone</label>
+                <input class="input" @bind="CoachPhone" />
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn primary" @onclick="CreateCoachUserAsync" disabled="@IsBusy">Create Coach User</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(CoachUserMessage))
+        {
+            <div class="alert @(CoachUserSuccess ? "success" : "error")">@CoachUserMessage</div>
+        }
+
+        <hr class="soft" />
+
+        <div class="form-grid">
+            <div class="field">
+                <label>User Id</label>
+                <input class="input mono" @bind="CoachUserId" />
+            </div>
+            <div class="field">
+                <label>First Name</label>
+                <input class="input" @bind="CoachFirstName" />
+            </div>
+            <div class="field">
+                <label>Last Name</label>
+                <input class="input" @bind="CoachLastName" />
+            </div>
+            <div class="field">
+                <label>State</label>
+                <input class="input" @bind="CoachState" />
+            </div>
+            <div class="field">
+                <label>City</label>
+                <input class="input" @bind="CoachCity" />
+            </div>
+            <div class="field">
+                <label>Bio</label>
+                <input class="input" @bind="CoachBio" />
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn secondary" @onclick="CreateCoachProfileAsync" disabled="@IsBusy">Save Coach Profile</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(CoachProfileMessage))
+        {
+            <div class="alert @(CoachProfileSuccess ? "success" : "error")">@CoachProfileMessage</div>
+        }
+
+        @if (CreatedCoachProfileId is not null)
+        {
+            <p class="helper spacer-top">Coach profile id: <span class="mono">@CreatedCoachProfileId</span></p>
+        }
+    </section>
+
+    <section class="panel">
+        <h2>2) Team / Club Setup + Associations</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Team Name</label>
+                <input class="input" @bind="TeamName" />
+            </div>
+            <div class="field">
+                <label>Type</label>
+                <select class="select" @bind="TeamType">
+                    @foreach (var type in Enum.GetValues<TeamType>())
+                    {
+                        <option value="@type">@type</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>State</label>
+                <input class="input" @bind="TeamState" />
+            </div>
+            <div class="field">
+                <label>City</label>
+                <input class="input" @bind="TeamCity" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="CreateTeamAsync" disabled="@IsBusy">Create Team / Club</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(TeamMessage))
+        {
+            <div class="alert @(TeamSuccess ? "success" : "error")">@TeamMessage</div>
+        }
+
+        @if (CreatedTeamId is not null)
+        {
+            <p class="helper spacer-top">Team id: <span class="mono">@CreatedTeamId</span></p>
+        }
+
+        <hr class="soft" />
+
+        <div class="form-grid">
+            <div class="field">
+                <label>Coach Profile Id</label>
+                <input class="input mono" @bind="AssociationCoachProfileId" />
+            </div>
+            <div class="field">
+                <label>Athlete Id (optional)</label>
+                <input class="input mono" @bind="AssociationAthleteId" />
+            </div>
+            <div class="field">
+                <label>Team Id (optional)</label>
+                <input class="input mono" @bind="AssociationTeamId" />
+            </div>
+            <div class="field">
+                <label>Role Title</label>
+                <input class="input" @bind="AssociationRole" />
+            </div>
+            <div class="field check-row">
+                <input id="primaryCoach" type="checkbox" @bind="AssociationPrimary" />
+                <label for="primaryCoach">Primary coach</label>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn secondary" @onclick="CreateAssociationAsync" disabled="@IsBusy">Create Association</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(AssociationMessage))
+        {
+            <div class="alert @(AssociationSuccess ? "success" : "error")">@AssociationMessage</div>
+        }
+    </section>
+</div>
+
+<div class="panel-grid two spacer-top">
+    <section class="panel">
+        <h2>3) Event Finder For Coaches</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>State</label>
+                <input class="input" @bind="SearchState" />
+            </div>
+            <div class="field">
+                <label>City</label>
+                <input class="input" @bind="SearchCity" />
+            </div>
+            <div class="field">
+                <label>Level</label>
+                <select class="select" @bind="SearchLevel">
+                    <option value="">All</option>
+                    @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn primary" @onclick="SearchEventsAsync" disabled="@IsBusy">Search</button>
+        </div>
+
+        <ul class="list spacer-top">
+            @if (CoachEvents.Count == 0)
+            {
+                <li class="list-item">No events loaded.</li>
+            }
+            else
+            {
+                @foreach (var ev in CoachEvents)
+                {
+                    <li class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">@ev.Name</span>
+                            <span class="item-meta">@ev.State / @ev.City</span>
+                        </div>
+                        <div class="split spacer-top">
+                            <span>@ev.StartUtc.ToLocalTime().ToString("MMM dd, yyyy")</span>
+                            <span class="mono">@ev.Id</span>
+                            <button class="btn ghost" @onclick="() => SelectEvent(ev.Id)">Use</button>
+                        </div>
+                    </li>
+                }
+            }
+        </ul>
+    </section>
+
+    <section class="panel">
+        <h2>4) Free-Agent Recruiting Board</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Event Id</label>
+                <input class="input mono" @bind="FreeAgentEventId" />
+            </div>
+            <div class="field">
+                <label>Your Team Id</label>
+                <input class="input mono" @bind="InviteTeamId" />
+            </div>
+            <div class="field">
+                <label>Invite Message</label>
+                <input class="input" @bind="InviteMessageText" />
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn secondary" @onclick="LoadFreeAgentsAsync" disabled="@IsBusy">Load Free Agents</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(FreeAgentMessage))
+        {
+            <div class="alert @(FreeAgentSuccess ? "success" : "error")">@FreeAgentMessage</div>
+        }
+
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Athlete</th>
+                        <th>Level</th>
+                        <th>Weight</th>
+                        <th>Registration</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (FreeAgents.Count == 0)
+                    {
+                        <tr><td colspan="5">No free agents loaded.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in FreeAgents)
+                        {
+                            <tr>
+                                <td>@row.FirstName @row.LastName</td>
+                                <td>@row.Level</td>
+                                <td>@row.WeightClass</td>
+                                <td class="mono">@row.Id.ToString()[..8]</td>
+                                <td>
+                                    <button class="btn ghost" @onclick="() => InviteAsync(row.Id)" disabled="@IsBusy">Invite</button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@code {
+    private bool IsBusy;
+
+    private string CoachEmail = "coach@example.com";
+    private string CoachPassword = "S3curePass!";
+    private string CoachPhone = "+16145550102";
+    private string? CoachUserMessage;
+    private bool CoachUserSuccess;
+    private Guid? CreatedCoachUserId;
+
+    private string CoachUserId = string.Empty;
+    private string CoachFirstName = "Mason";
+    private string CoachLastName = "Reed";
+    private string CoachState = "OH";
+    private string CoachCity = "Columbus";
+    private string CoachBio = "High-tempo neutral offense coach.";
+    private string? CoachProfileMessage;
+    private bool CoachProfileSuccess;
+    private Guid? CreatedCoachProfileId;
+
+    private string TeamName = "Capital Elite Wrestling";
+    private TeamType TeamType = TeamType.Club;
+    private string TeamState = "OH";
+    private string TeamCity = "Columbus";
+    private string? TeamMessage;
+    private bool TeamSuccess;
+    private Guid? CreatedTeamId;
+
+    private string AssociationCoachProfileId = string.Empty;
+    private string AssociationAthleteId = string.Empty;
+    private string AssociationTeamId = string.Empty;
+    private string AssociationRole = "Head Coach";
+    private bool AssociationPrimary = true;
+    private string? AssociationMessage;
+    private bool AssociationSuccess;
+
+    private string SearchState = "OH";
+    private string SearchCity = string.Empty;
+    private CompetitionLevel? SearchLevel = CompetitionLevel.HighSchool;
+    private List<TournamentEvent> CoachEvents = [];
+
+    private string FreeAgentEventId = string.Empty;
+    private string InviteTeamId = string.Empty;
+    private string InviteMessageText = "We would like you to represent our team in this event.";
+    private List<FreeAgentRegistrationView> FreeAgents = [];
+    private string? FreeAgentMessage;
+    private bool FreeAgentSuccess;
+
+    private async Task CreateCoachUserAsync()
+    {
+        IsBusy = true;
+
+        var result = await ApiClient.RegisterUserAsync(new RegisterUserRequest(CoachEmail, CoachPassword, UserRole.Coach, CoachPhone));
+        CoachUserSuccess = result.Success;
+        CoachUserMessage = result.Success ? "Coach user created." : result.Message;
+
+        if (result.Success && result.Data is not null)
+        {
+            CreatedCoachUserId = result.Data.Id;
+            CoachUserId = result.Data.Id.ToString();
+
+            var loginResult = await ApiClient.LoginAsync(new LoginRequest(CoachEmail, CoachPassword));
+            if (!loginResult.Success)
+            {
+                CoachUserSuccess = false;
+                CoachUserMessage = $"Coach user created, but sign-in failed: {loginResult.Message}";
+            }
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task CreateCoachProfileAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(CoachUserId, out var userId))
+        {
+            CoachProfileSuccess = false;
+            CoachProfileMessage = "Valid coach user id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        var request = new CreateCoachProfileRequest(userId, CoachFirstName, CoachLastName, CoachState, CoachCity, CoachBio);
+        var result = await ApiClient.CreateCoachProfileAsync(request);
+
+        CoachProfileSuccess = result.Success;
+        CoachProfileMessage = result.Success ? "Coach profile saved." : result.Message;
+
+        if (result.Success && result.Data is not null)
+        {
+            CreatedCoachProfileId = result.Data.Id;
+            AssociationCoachProfileId = result.Data.Id.ToString();
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task CreateTeamAsync()
+    {
+        IsBusy = true;
+
+        var result = await ApiClient.CreateTeamAsync(new CreateTeamRequest(TeamName, TeamType, TeamState, TeamCity));
+        TeamSuccess = result.Success;
+        TeamMessage = result.Success ? "Team/club created." : result.Message;
+
+        if (result.Success && result.Data is not null)
+        {
+            CreatedTeamId = result.Data.Id;
+            AssociationTeamId = result.Data.Id.ToString();
+            InviteTeamId = result.Data.Id.ToString();
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task CreateAssociationAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(AssociationCoachProfileId, out var coachProfileId))
+        {
+            AssociationSuccess = false;
+            AssociationMessage = "Valid coach profile id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        Guid? athleteId = Guid.TryParse(AssociationAthleteId, out var parsedAthleteId) ? parsedAthleteId : null;
+        Guid? teamId = Guid.TryParse(AssociationTeamId, out var parsedTeamId) ? parsedTeamId : null;
+
+        var request = new CreateCoachAssociationRequest(athleteId, teamId, AssociationRole, AssociationPrimary);
+        var result = await ApiClient.CreateCoachAssociationAsync(coachProfileId, request);
+
+        AssociationSuccess = result.Success;
+        AssociationMessage = result.Success ? "Coach association created." : result.Message;
+
+        IsBusy = false;
+    }
+
+    private async Task SearchEventsAsync()
+    {
+        IsBusy = true;
+
+        var result = await ApiClient.SearchEventsAsync(new SearchEventsQuery(
+            string.IsNullOrWhiteSpace(SearchState) ? null : SearchState,
+            string.IsNullOrWhiteSpace(SearchCity) ? null : SearchCity,
+            SearchLevel,
+            DateTime.UtcNow.Date,
+            null,
+            null));
+
+        if (result.Success)
+        {
+            CoachEvents = result.Data ?? [];
+            if (CoachEvents.Count > 0)
+            {
+                FreeAgentEventId = CoachEvents[0].Id.ToString();
+            }
+        }
+        else
+        {
+            FreeAgentMessage = result.Message;
+            FreeAgentSuccess = false;
+        }
+
+        IsBusy = false;
+    }
+
+    private void SelectEvent(Guid eventId)
+    {
+        FreeAgentEventId = eventId.ToString();
+    }
+
+    private async Task LoadFreeAgentsAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(FreeAgentEventId, out var eventId))
+        {
+            FreeAgentSuccess = false;
+            FreeAgentMessage = "Valid event id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.GetFreeAgentsAsync(eventId);
+        FreeAgentSuccess = result.Success;
+        FreeAgentMessage = result.Success ? $"Loaded {result.Data?.Count ?? 0} free agents." : result.Message;
+        FreeAgents = result.Data ?? [];
+
+        IsBusy = false;
+    }
+
+    private async Task InviteAsync(Guid registrationId)
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(FreeAgentEventId, out var eventId) || !Guid.TryParse(InviteTeamId, out var teamId))
+        {
+            FreeAgentSuccess = false;
+            FreeAgentMessage = "Valid event id and team id are required.";
+            IsBusy = false;
+            return;
+        }
+
+        var inviteResult = await ApiClient.InviteFreeAgentAsync(
+            eventId,
+            registrationId,
+            new TeamInviteFreeAgentRequest(teamId, InviteMessageText));
+
+        FreeAgentSuccess = inviteResult.Success;
+        FreeAgentMessage = inviteResult.Success ? "Invite sent to free-agent registration." : inviteResult.Message;
+
+        IsBusy = false;
+    }
+}
+

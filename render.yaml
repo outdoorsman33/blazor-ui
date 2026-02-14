@@ -1,0 +1,108 @@
+services:
+  - type: web
+    name: wrestling-platform-api
+    runtime: docker
+    rootDir: sample-applications/wrestling-platform
+    dockerfilePath: ./src/WrestlingPlatform.Api/Dockerfile
+    dockerContext: .
+    region: ohio
+    plan: standard
+    autoDeploy: true
+    healthCheckPath: /healthz
+    scaling:
+      minInstances: 2
+      maxInstances: 10
+      targetCPUPercent: 60
+      targetMemoryPercent: 70
+    buildFilter:
+      paths:
+        - sample-applications/wrestling-platform/**
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: Database__Provider
+        value: Postgres
+      - key: ConnectionStrings__DefaultConnection
+        fromDatabase:
+          name: wrestling-platform-db
+          property: connectionString
+      - key: Jwt__Issuer
+        value: PinPointArena.Production
+      - key: Jwt__Audience
+        value: PinPointArenaClients.Production
+      - key: Jwt__SigningKey
+        generateValue: true
+      - key: Jwt__AccessTokenMinutes
+        value: "30"
+      - key: Jwt__RefreshTokenDays
+        value: "14"
+      - key: Payments__ProviderMode
+        value: Mock
+      - key: Payments__WebhookSignatureToleranceSeconds
+        value: "300"
+      - key: Payments__WebhookProcessing__PollIntervalSeconds
+        value: "10"
+      - key: Payments__WebhookProcessing__BatchSize
+        value: "50"
+      - key: Payments__WebhookProcessing__MaxAttempts
+        value: "20"
+      - key: Payments__WebhookProcessing__RetryWindowMinutes
+        value: "90"
+      - key: Payments__StripeSecretKey
+        sync: false
+      - key: Payments__StripeWebhookSecret
+        sync: false
+      - key: Notifications__ProviderMode
+        value: Mock
+      - key: Notifications__Twilio__AccountSid
+        sync: false
+      - key: Notifications__Twilio__AuthToken
+        sync: false
+      - key: Notifications__Twilio__FromNumber
+        sync: false
+      - key: Notifications__SendGrid__ApiKey
+        sync: false
+      - key: Notifications__SendGrid__FromEmail
+        sync: false
+      - key: Notifications__SendGrid__FromName
+        value: PinPoint Arena
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+
+  - type: web
+    name: wrestling-platform-web
+    runtime: docker
+    rootDir: sample-applications/wrestling-platform
+    dockerfilePath: ./src/WrestlingPlatform.Web/Dockerfile
+    dockerContext: .
+    region: ohio
+    plan: standard
+    autoDeploy: true
+    healthCheckPath: /healthz
+    scaling:
+      minInstances: 2
+      maxInstances: 8
+      targetCPUPercent: 60
+      targetMemoryPercent: 70
+    buildFilter:
+      paths:
+        - sample-applications/wrestling-platform/**
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: Api__BaseUrl
+        fromService:
+          type: web
+          name: wrestling-platform-api
+          property: hostport
+
+databases:
+  - name: wrestling-platform-db
+    region: ohio
+    plan: pro-4gb
+    databaseName: wrestling_platform
+    user: wrestling_app
+    postgresMajorVersion: "17"
+    ipAllowList: []
+    highAvailability:
+      enabled: true

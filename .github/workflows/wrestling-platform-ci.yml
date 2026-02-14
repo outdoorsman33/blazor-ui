@@ -1,0 +1,39 @@
+name: Wrestling Platform CI
+
+on:
+  pull_request:
+    paths:
+      - "sample-applications/wrestling-platform/**"
+      - ".github/workflows/wrestling-platform-ci.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "sample-applications/wrestling-platform/**"
+      - ".github/workflows/wrestling-platform-ci.yml"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sample-applications/wrestling-platform
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore WrestlingPlatform.slnx --configfile NuGet.Config
+
+      - name: Build
+        run: dotnet build WrestlingPlatform.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test WrestlingPlatform.slnx --configuration Release --no-build --verbosity normal

@@ -1,0 +1,111 @@
+@WrestlingPlatform_Api = http://127.0.0.1:5099
+@accessToken = REPLACE_WITH_ACCESS_TOKEN
+@refreshToken = REPLACE_WITH_REFRESH_TOKEN
+
+### Register Coach User (public)
+POST {{WrestlingPlatform_Api}}/api/users/register
+Content-Type: application/json
+
+{
+  "email": "coach1@example.com",
+  "password": "S3curePass!",
+  "role": "Coach",
+  "phoneNumber": "+16145550102"
+}
+
+### Login (access + refresh)
+POST {{WrestlingPlatform_Api}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "coach1@example.com",
+  "password": "S3curePass!"
+}
+
+### Refresh Token Rotation
+POST {{WrestlingPlatform_Api}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Get Current Identity (requires bearer)
+GET {{WrestlingPlatform_Api}}/api/auth/me
+Authorization: Bearer {{accessToken}}
+
+### Logout (revokes active refresh tokens)
+POST {{WrestlingPlatform_Api}}/api/auth/logout
+Authorization: Bearer {{accessToken}}
+
+### Create Team (requires Coach/Admin role)
+POST {{WrestlingPlatform_Api}}/api/teams
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Capital Elite Wrestling",
+  "type": "Club",
+  "state": "OH",
+  "city": "Columbus"
+}
+
+### Search Events (public)
+GET {{WrestlingPlatform_Api}}/api/events/search?state=OH&level=HighSchool
+Accept: application/json
+
+### Create Tournament (requires EventOps)
+POST {{WrestlingPlatform_Api}}/api/events
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Ohio Open",
+  "organizerType": "Club",
+  "organizerId": "00000000-0000-0000-0000-000000000000",
+  "state": "OH",
+  "city": "Columbus",
+  "venue": "Metro Sports Complex",
+  "startUtc": "2026-03-15T13:00:00Z",
+  "endUtc": "2026-03-16T23:00:00Z",
+  "entryFeeCents": 3500,
+  "isPublished": true
+}
+
+### Generate Seeded Bracket (EventOps)
+POST {{WrestlingPlatform_Api}}/api/events/00000000-0000-0000-0000-000000000000/brackets/generate
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "level": "HighSchool",
+  "weightClass": 132,
+  "mode": "Seeded",
+  "divisionId": null
+}
+
+### Record Match Result (EventOps)
+POST {{WrestlingPlatform_Api}}/api/matches/00000000-0000-0000-0000-000000000000/result
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "winnerAthleteId": "00000000-0000-0000-0000-000000000000",
+  "score": "10-3",
+  "resultMethod": "Decision",
+  "pointsForWinner": 10,
+  "pointsForLoser": 3
+}
+
+### Stripe-Compatible Webhook (legacy path)
+POST {{WrestlingPlatform_Api}}/api/webhooks/stripe/payment-confirmed
+Content-Type: application/json
+
+{
+  "registrationId": "00000000-0000-0000-0000-000000000000",
+  "providerReference": "cs_test_example"
+}
+
+### Process Pending Webhook Reconciliation (EventOps)
+POST {{WrestlingPlatform_Api}}/api/payments/reconciliation/process?batchSize=25
+Authorization: Bearer {{accessToken}}

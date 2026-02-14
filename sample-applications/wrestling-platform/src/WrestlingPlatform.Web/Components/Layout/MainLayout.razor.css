@@ -1,0 +1,250 @@
+:root {
+    --bg-base: #f4efe3;
+    --bg-soft: #fdf8ef;
+    --surface: #fffdf8;
+    --surface-strong: #ffffff;
+    --ink: #1f2529;
+    --ink-muted: #55616a;
+    --line: #d5d0c3;
+    --accent-a: #ea553b;
+    --accent-b: #1a78bf;
+    --accent-c: #f6b93f;
+    --ok: #2f8f4e;
+    --danger: #bc2f2f;
+    --shadow: 0 20px 50px rgba(35, 38, 44, 0.12);
+    --radius-xl: 22px;
+    --radius-lg: 16px;
+    --radius-md: 12px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+    background: radial-gradient(circle at 12% 15%, #ffe4bf 0, transparent 40%),
+        radial-gradient(circle at 88% 8%, #d6ecff 0, transparent 35%),
+        linear-gradient(165deg, #f8f2e5 0%, #f2efe8 48%, #e9edf2 100%);
+    color: var(--ink);
+    font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.app-shell {
+    width: min(1240px, calc(100% - 2.4rem));
+    margin: 1.2rem auto 2rem;
+    position: relative;
+}
+
+.ambient {
+    position: absolute;
+    z-index: -1;
+    width: 240px;
+    height: 240px;
+    border-radius: 999px;
+    filter: blur(20px);
+    opacity: 0.45;
+    animation: float 8s ease-in-out infinite;
+}
+
+.ambient-left {
+    background: #ffc59f;
+    top: -70px;
+    left: -90px;
+}
+
+.ambient-right {
+    background: #a9dbff;
+    top: -40px;
+    right: -80px;
+    animation-delay: 1.4s;
+}
+
+.topbar {
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(213, 208, 195, 0.85);
+    box-shadow: var(--shadow);
+    border-radius: var(--radius-xl);
+    padding: 0.95rem 1.2rem;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1rem;
+    align-items: center;
+    backdrop-filter: blur(6px);
+}
+
+.brand-block {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.brand-badge {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+}
+
+.brand-link {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-size: 1.6rem;
+    letter-spacing: 0.02em;
+    color: #202a31;
+}
+
+.main-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: center;
+}
+
+.main-nav a {
+    padding: 0.5rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    color: var(--ink-muted);
+    font-weight: 600;
+    transition: all 180ms ease;
+}
+
+.main-nav a.active,
+.main-nav a:hover {
+    border-color: #c9c3b2;
+    background: #fff;
+    color: #1e2529;
+    transform: translateY(-1px);
+}
+
+.status-chip {
+    background: linear-gradient(135deg, var(--accent-a), #ef7748);
+    color: #fff;
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.86rem;
+    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+}
+
+.surface {
+    margin-top: 1rem;
+    background: var(--surface);
+    border: 1px solid rgba(213, 208, 195, 0.9);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow);
+    padding: 1.25rem;
+}
+
+.app-footer {
+    margin-top: 0.9rem;
+    padding: 0.4rem 0.1rem;
+    color: var(--ink-muted);
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+@keyframes float {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(10px);
+    }
+}
+
+@media (max-width: 980px) {
+    .topbar {
+        grid-template-columns: 1fr;
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .brand-block {
+        justify-items: center;
+    }
+
+    .status-chip {
+        justify-self: center;
+    }
+
+    .surface {
+        padding: 1rem;
+    }
+}
+
+.auth-panel {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.mini-input {
+    border: 1px solid #c8c0ad;
+    border-radius: 999px;
+    padding: 0.35rem 0.6rem;
+    min-width: 120px;
+    font: inherit;
+    background: #fff;
+    color: #1e2529;
+}
+
+.mini-btn {
+    border: 0;
+    border-radius: 999px;
+    padding: 0.36rem 0.72rem;
+    font: inherit;
+    font-weight: 700;
+    background: linear-gradient(140deg, #ea553b, #f07a4d);
+    color: #fff;
+    cursor: pointer;
+}
+
+.mini-btn.secondary {
+    background: linear-gradient(140deg, #1a78bf, #399fe4);
+}
+
+.mini-btn:disabled {
+    opacity: 0.55;
+}
+
+.auth-chip {
+    border: 1px solid #d6cfbe;
+    background: #fff;
+    border-radius: 999px;
+    padding: 0.34rem 0.7rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #334048;
+}
+
+.auth-message {
+    margin-top: 0.7rem;
+    border: 1px solid;
+    border-radius: 12px;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.88rem;
+}
+
+.auth-ok {
+    border-color: #acd5ba;
+    background: #eaf7ef;
+    color: #1f5630;
+}
+
+.auth-error {
+    border-color: #f0b4b4;
+    background: #ffefef;
+    color: #8d2727;
+}

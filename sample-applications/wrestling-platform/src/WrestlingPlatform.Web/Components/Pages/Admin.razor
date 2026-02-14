@@ -1,0 +1,621 @@
+@page "/admin"
+@inject PlatformApiClient ApiClient
+
+<PageTitle>Event Admin - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Event Admin Portal</h1>
+        <p class="page-subtitle">Create tournaments, shape divisions, auto-generate brackets, manage live mat operations, and control streaming sessions.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Tournament Ops</span>
+        <span class="tag">Bracket Engine</span>
+        <span class="tag">Live Match Control</span>
+    </div>
+</div>
+
+<div class="panel-grid two">
+    <section class="panel">
+        <h2>1) Create Tournament Event</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Name</label>
+                <input class="input" @bind="EventName" />
+            </div>
+            <div class="field">
+                <label>Organizer Type</label>
+                <select class="select" @bind="OrganizerType">
+                    @foreach (var type in Enum.GetValues<OrganizerType>())
+                    {
+                        <option value="@type">@type</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Organizer Id</label>
+                <input class="input mono" @bind="OrganizerId" />
+            </div>
+            <div class="field">
+                <label>State</label>
+                <input class="input" @bind="EventState" />
+            </div>
+            <div class="field">
+                <label>City</label>
+                <input class="input" @bind="EventCity" />
+            </div>
+            <div class="field">
+                <label>Venue</label>
+                <input class="input" @bind="EventVenue" />
+            </div>
+            <div class="field">
+                <label>Start (local)</label>
+                <input class="input" type="text" placeholder="YYYY-MM-DDTHH:mm" @bind="StartDateLocal" />
+            </div>
+            <div class="field">
+                <label>End (local)</label>
+                <input class="input" type="text" placeholder="YYYY-MM-DDTHH:mm" @bind="EndDateLocal" />
+            </div>
+            <div class="field">
+                <label>Entry Fee (cents)</label>
+                <input class="input" type="number" min="0" @bind="EventEntryFeeCents" />
+            </div>
+            <div class="field check-row">
+                <input id="publishEvent" type="checkbox" @bind="EventPublished" />
+                <label for="publishEvent">Published</label>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="CreateEventAsync" disabled="@IsBusy">Create Event</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(EventMessage))
+        {
+            <div class="alert @(EventSuccess ? "success" : "error")">@EventMessage</div>
+        }
+        @if (CreatedEventId is not null)
+        {
+            <p class="helper spacer-top">Created event id: <span class="mono">@CreatedEventId</span></p>
+        }
+    </section>
+
+    <section class="panel">
+        <h2>2) Add Division + Generate Bracket</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Event Id</label>
+                <input class="input mono" @bind="DivisionEventId" />
+            </div>
+            <div class="field">
+                <label>Division Name</label>
+                <input class="input" @bind="DivisionName" />
+            </div>
+            <div class="field">
+                <label>Level</label>
+                <select class="select" @bind="DivisionLevel">
+                    @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Weight Class</label>
+                <input class="input" type="number" step="0.1" @bind="DivisionWeight" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn secondary" @onclick="CreateDivisionAsync" disabled="@IsBusy">Create Division</button>
+        </div>
+
+        <hr class="soft" />
+
+        <div class="form-grid">
+            <div class="field">
+                <label>Bracket Event Id</label>
+                <input class="input mono" @bind="BracketEventId" />
+            </div>
+            <div class="field">
+                <label>Level</label>
+                <select class="select" @bind="BracketLevel">
+                    @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Weight Class</label>
+                <input class="input" type="number" step="0.1" @bind="BracketWeight" />
+            </div>
+            <div class="field">
+                <label>Mode</label>
+                <select class="select" @bind="BracketMode">
+                    @foreach (var mode in Enum.GetValues<BracketGenerationMode>())
+                    {
+                        <option value="@mode">@mode</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Division Id (optional)</label>
+                <input class="input mono" @bind="BracketDivisionId" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="GenerateBracketAsync" disabled="@IsBusy">Generate Bracket</button>
+            <button class="btn ghost" @onclick="LoadBracketsAsync" disabled="@IsBusy">Load Brackets</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(BracketMessage))
+        {
+            <div class="alert @(BracketSuccess ? "success" : "error")">@BracketMessage</div>
+        }
+    </section>
+</div>
+
+<div class="panel-grid two spacer-top">
+    <section class="panel">
+        <h2>3) Live Match Operations</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Match Id</label>
+                <input class="input mono" @bind="AssignMatchId" />
+            </div>
+            <div class="field">
+                <label>Mat Number</label>
+                <input class="input" @bind="AssignMatNumber" />
+            </div>
+            <div class="field">
+                <label>Scheduled Time (local)</label>
+                <input class="input" type="text" placeholder="YYYY-MM-DDTHH:mm" @bind="AssignScheduledLocal" />
+            </div>
+            <div class="field check-row">
+                <input id="inHole" type="checkbox" @bind="AssignInTheHole" />
+                <label for="inHole">Mark in-the-hole</label>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn secondary" @onclick="AssignMatAsync" disabled="@IsBusy">Assign Mat</button>
+        </div>
+
+        <hr class="soft" />
+
+        <div class="form-grid">
+            <div class="field">
+                <label>Result Match Id</label>
+                <input class="input mono" @bind="ResultMatchId" />
+            </div>
+            <div class="field">
+                <label>Winner Athlete Id</label>
+                <input class="input mono" @bind="WinnerAthleteId" />
+            </div>
+            <div class="field">
+                <label>Score</label>
+                <input class="input" @bind="ResultScore" />
+            </div>
+            <div class="field">
+                <label>Result Method</label>
+                <input class="input" @bind="ResultMethod" />
+            </div>
+            <div class="field">
+                <label>Winner Points</label>
+                <input class="input" type="number" @bind="WinnerPoints" />
+            </div>
+            <div class="field">
+                <label>Loser Points</label>
+                <input class="input" type="number" @bind="LoserPoints" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="RecordResultAsync" disabled="@IsBusy">Record Result</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(MatchMessage))
+        {
+            <div class="alert @(MatchSuccess ? "success" : "error")">@MatchMessage</div>
+        }
+    </section>
+
+    <section class="panel">
+        <h2>4) Streaming Control</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Event Id</label>
+                <input class="input mono" @bind="StreamEventId" />
+            </div>
+            <div class="field">
+                <label>Match Id (optional)</label>
+                <input class="input mono" @bind="StreamMatchId" />
+            </div>
+            <div class="field">
+                <label>Device Name</label>
+                <input class="input" @bind="StreamDeviceName" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn secondary" @onclick="CreateStreamAsync" disabled="@IsBusy">Provision Stream</button>
+            <button class="btn ghost" @onclick="LoadActiveStreamsAsync" disabled="@IsBusy">Load Active</button>
+        </div>
+
+        <hr class="soft" />
+
+        <div class="form-grid">
+            <div class="field">
+                <label>Stream Id</label>
+                <input class="input mono" @bind="UpdateStreamId" />
+            </div>
+            <div class="field">
+                <label>Status</label>
+                <select class="select" @bind="UpdateStreamStatus">
+                    @foreach (var status in Enum.GetValues<StreamStatus>())
+                    {
+                        <option value="@status">@status</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="UpdateStreamAsync" disabled="@IsBusy">Update Stream Status</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(StreamMessage))
+        {
+            <div class="alert @(StreamSuccess ? "success" : "error")">@StreamMessage</div>
+        }
+
+        <ul class="list spacer-top">
+            @if (ActiveStreams.Count == 0)
+            {
+                <li class="list-item">No active streams loaded.</li>
+            }
+            else
+            {
+                @foreach (var stream in ActiveStreams)
+                {
+                    <li class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">@stream.DeviceName</span>
+                            <span class="item-meta">@stream.Status</span>
+                        </div>
+                        <div class="helper spacer-top">Playback: @stream.PlaybackUrl</div>
+                        <div class="mono spacer-top">@stream.Id</div>
+                    </li>
+                }
+            }
+        </ul>
+    </section>
+</div>
+
+<section class="panel spacer-top">
+    <h2>Bracket Views</h2>
+    <div class="table-wrap spacer-top">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Bracket</th>
+                    <th>Level</th>
+                    <th>Weight</th>
+                    <th>Entrants</th>
+                    <th>Matches</th>
+                    <th>First Match Id</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (BracketViews.Count == 0)
+                {
+                    <tr><td colspan="6">No brackets loaded.</td></tr>
+                }
+                else
+                {
+                    @foreach (var view in BracketViews)
+                    {
+                        <tr>
+                            <td class="mono">@view.Bracket.Id.ToString()[..8]</td>
+                            <td>@view.Bracket.Level</td>
+                            <td>@view.Bracket.WeightClass</td>
+                            <td>@view.Entrants.Count</td>
+                            <td>@view.Matches.Count</td>
+                            <td class="mono">
+                                @if (view.Matches.Count > 0)
+                                {
+                                    <button class="btn ghost" @onclick="() => UseMatch(view.Matches[0].Id)">@view.Matches[0].Id.ToString()[..8]</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private bool IsBusy;
+
+    private string EventName = "Midwest Clash";
+    private OrganizerType OrganizerType = OrganizerType.Club;
+    private string OrganizerId = string.Empty;
+    private string EventState = "OH";
+    private string EventCity = "Columbus";
+    private string EventVenue = "Metro Sports Complex";
+    private string StartDateLocal = DateTime.Now.AddDays(21).ToString("yyyy-MM-ddTHH:mm");
+    private string EndDateLocal = DateTime.Now.AddDays(22).ToString("yyyy-MM-ddTHH:mm");
+    private int EventEntryFeeCents = 3500;
+    private bool EventPublished = true;
+    private string? EventMessage;
+    private bool EventSuccess;
+    private Guid? CreatedEventId;
+
+    private string DivisionEventId = string.Empty;
+    private string DivisionName = "High School 132";
+    private CompetitionLevel DivisionLevel = CompetitionLevel.HighSchool;
+    private decimal DivisionWeight = 132m;
+
+    private string BracketEventId = string.Empty;
+    private CompetitionLevel BracketLevel = CompetitionLevel.HighSchool;
+    private decimal BracketWeight = 132m;
+    private BracketGenerationMode BracketMode = BracketGenerationMode.Seeded;
+    private string BracketDivisionId = string.Empty;
+    private string? BracketMessage;
+    private bool BracketSuccess;
+    private List<BracketBundle> BracketViews = [];
+
+    private string AssignMatchId = string.Empty;
+    private string AssignMatNumber = "Mat 1";
+    private string AssignScheduledLocal = DateTime.Now.AddDays(21).ToString("yyyy-MM-ddTHH:mm");
+    private bool AssignInTheHole = true;
+
+    private string ResultMatchId = string.Empty;
+    private string WinnerAthleteId = string.Empty;
+    private string ResultScore = "10-3";
+    private string ResultMethod = "Decision";
+    private int WinnerPoints = 10;
+    private int LoserPoints = 3;
+    private string? MatchMessage;
+    private bool MatchSuccess;
+
+    private string StreamEventId = string.Empty;
+    private string StreamMatchId = string.Empty;
+    private string StreamDeviceName = "Table Cam 1";
+    private string UpdateStreamId = string.Empty;
+    private StreamStatus UpdateStreamStatus = StreamStatus.Live;
+    private string? StreamMessage;
+    private bool StreamSuccess;
+    private List<StreamSession> ActiveStreams = [];
+
+    private async Task CreateEventAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(OrganizerId, out var organizerGuid))
+        {
+            EventSuccess = false;
+            EventMessage = "Organizer id must be a valid GUID (team/club/coach id).";
+            IsBusy = false;
+            return;
+        }
+
+        if (!DateTime.TryParse(StartDateLocal, out var startLocal) || !DateTime.TryParse(EndDateLocal, out var endLocal))
+        {
+            EventSuccess = false;
+            EventMessage = "Valid start and end dates are required.";
+            IsBusy = false;
+            return;
+        }
+
+        var request = new CreateTournamentEventRequest(
+            EventName,
+            OrganizerType,
+            organizerGuid,
+            EventState,
+            EventCity,
+            EventVenue,
+            startLocal.ToUniversalTime(),
+            endLocal.ToUniversalTime(),
+            EventEntryFeeCents,
+            EventPublished);
+
+        var result = await ApiClient.CreateEventAsync(request);
+
+        EventSuccess = result.Success;
+        EventMessage = result.Success ? "Tournament created." : result.Message;
+
+        if (result.Success && result.Data is not null)
+        {
+            CreatedEventId = result.Data.Id;
+            DivisionEventId = result.Data.Id.ToString();
+            BracketEventId = result.Data.Id.ToString();
+            StreamEventId = result.Data.Id.ToString();
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task CreateDivisionAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(DivisionEventId, out var eventId))
+        {
+            BracketSuccess = false;
+            BracketMessage = "Valid event id is required for division creation.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.CreateDivisionAsync(eventId, new CreateTournamentDivisionRequest(DivisionLevel, DivisionWeight, DivisionName));
+        BracketSuccess = result.Success;
+        BracketMessage = result.Success ? "Division created." : result.Message;
+
+        if (result.Success && result.Data is not null)
+        {
+            BracketDivisionId = result.Data.Id.ToString();
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task GenerateBracketAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(BracketEventId, out var eventId))
+        {
+            BracketSuccess = false;
+            BracketMessage = "Valid bracket event id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        Guid? divisionId = Guid.TryParse(BracketDivisionId, out var parsedDivisionId) ? parsedDivisionId : null;
+
+        var result = await ApiClient.GenerateBracketAsync(eventId, new GenerateBracketRequest(BracketLevel, BracketWeight, BracketMode, divisionId));
+        BracketSuccess = result.Success;
+        BracketMessage = result.Success
+            ? $"Bracket generated. Entrants: {result.Data?.EntrantCount}, Matches: {result.Data?.MatchCount}"
+            : result.Message;
+
+        IsBusy = false;
+    }
+
+    private async Task LoadBracketsAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(BracketEventId, out var eventId))
+        {
+            BracketSuccess = false;
+            BracketMessage = "Valid event id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.GetBracketsAsync(eventId);
+        BracketSuccess = result.Success;
+        BracketMessage = result.Success ? $"Loaded {result.Data?.Count ?? 0} brackets." : result.Message;
+        BracketViews = result.Data ?? [];
+
+        if (BracketViews.Count > 0 && BracketViews[0].Matches.Count > 0)
+        {
+            UseMatch(BracketViews[0].Matches[0].Id);
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task AssignMatAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(AssignMatchId, out var matchId))
+        {
+            MatchSuccess = false;
+            MatchMessage = "Valid match id is required for mat assignment.";
+            IsBusy = false;
+            return;
+        }
+
+        DateTime? scheduledUtc = DateTime.TryParse(AssignScheduledLocal, out var parsedLocal)
+            ? parsedLocal.ToUniversalTime()
+            : null;
+
+        var result = await ApiClient.AssignMatAsync(matchId, new AssignMatRequest(AssignMatNumber, scheduledUtc, AssignInTheHole));
+        MatchSuccess = result.Success;
+        MatchMessage = result.Success ? "Mat assignment saved and notifications dispatched." : result.Message;
+
+        IsBusy = false;
+    }
+
+    private async Task RecordResultAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(ResultMatchId, out var matchId) || !Guid.TryParse(WinnerAthleteId, out var winnerAthleteId))
+        {
+            MatchSuccess = false;
+            MatchMessage = "Valid result match id and winner athlete id are required.";
+            IsBusy = false;
+            return;
+        }
+
+        var request = new RecordMatchResultRequest(winnerAthleteId, ResultScore, ResultMethod, WinnerPoints, LoserPoints);
+        var result = await ApiClient.RecordMatchResultAsync(matchId, request);
+
+        MatchSuccess = result.Success;
+        MatchMessage = result.Success ? "Match result recorded and rankings updated." : result.Message;
+
+        IsBusy = false;
+    }
+
+    private async Task CreateStreamAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(StreamEventId, out var eventId))
+        {
+            StreamSuccess = false;
+            StreamMessage = "Valid stream event id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        Guid? matchId = Guid.TryParse(StreamMatchId, out var parsedMatchId) ? parsedMatchId : null;
+
+        var result = await ApiClient.CreateStreamSessionAsync(eventId, new CreateStreamSessionRequest(matchId, StreamDeviceName));
+        StreamSuccess = result.Success;
+        StreamMessage = result.Success ? "Stream provisioned." : result.Message;
+
+        if (result.Success && result.Data is not null)
+        {
+            UpdateStreamId = result.Data.Id.ToString();
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task UpdateStreamAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(UpdateStreamId, out var streamId))
+        {
+            StreamSuccess = false;
+            StreamMessage = "Valid stream id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.UpdateStreamStatusAsync(streamId, new UpdateStreamStatusRequest(UpdateStreamStatus));
+        StreamSuccess = result.Success;
+        StreamMessage = result.Success ? $"Stream status set to {UpdateStreamStatus}." : result.Message;
+
+        IsBusy = false;
+    }
+
+    private async Task LoadActiveStreamsAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(StreamEventId, out var eventId))
+        {
+            StreamSuccess = false;
+            StreamMessage = "Valid event id is required for active streams.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.GetActiveStreamsAsync(eventId);
+        StreamSuccess = result.Success;
+        StreamMessage = result.Success ? $"Loaded {result.Data?.Count ?? 0} active streams." : result.Message;
+        ActiveStreams = result.Data ?? [];
+
+        IsBusy = false;
+    }
+
+    private void UseMatch(Guid matchId)
+    {
+        AssignMatchId = matchId.ToString();
+        ResultMatchId = matchId.ToString();
+    }
+}
+

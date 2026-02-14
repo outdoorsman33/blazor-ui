@@ -1,0 +1,224 @@
+@page "/"
+@inject PlatformApiClient ApiClient
+
+<PageTitle>PinPoint Arena - Command Center</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Competition Command Center</h1>
+        <p class="page-subtitle">
+            National-ready operations for US wrestling. Manage tournaments, rankings, match flow, notifications, and streaming from one platform.
+        </p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">US-only launch</span>
+        <span class="tag">K-6 to College</span>
+        <span class="tag">Low-cost architecture</span>
+    </div>
+</div>
+
+<div class="metric-grid">
+    <div class="metric-card">
+        <div class="metric-label">Upcoming Events (60 days)</div>
+        <div class="metric-value">@UpcomingEventCount</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Cities With Events</div>
+        <div class="metric-value">@CityCount</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Rankings Loaded</div>
+        <div class="metric-value">@Rankings.Count</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Live Streams Online</div>
+        <div class="metric-value">@LiveStreamsTracked</div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(LoadError))
+{
+    <div class="alert error">@LoadError</div>
+}
+
+<div class="panel-grid two">
+    <section class="panel">
+        <div class="item-head">
+            <h2>Events By State / City</h2>
+            <button class="btn ghost" @onclick="LoadAsync" disabled="@IsLoading">Refresh</button>
+        </div>
+
+        @if (IsLoading)
+        {
+            <p class="helper">Loading event map...</p>
+        }
+        else if (GroupedEvents.Count == 0)
+        {
+            <p class="helper">No events available yet.</p>
+        }
+        else
+        {
+            <ul class="list">
+                @foreach (var cluster in GroupedEvents.Take(8))
+                {
+                    <li class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">@cluster.State - @cluster.City</span>
+                            <span class="item-meta">@cluster.Events.Count tournaments</span>
+                        </div>
+                        @foreach (var eventCard in cluster.Events.Take(2))
+                        {
+                            <div class="split spacer-top">
+                                <strong>@eventCard.Name</strong>
+                                <span class="item-meta">@eventCard.StartUtc.ToLocalTime().ToString("MMM dd, yyyy")</span>
+                                <span class="item-meta">$@((eventCard.EntryFeeCents / 100m).ToString("0.00"))</span>
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="panel">
+        <h2>State Ranking Snapshot</h2>
+        <p class="helper">Latest ranking sample pulled from the API.</p>
+
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Athlete</th>
+                        <th>Level</th>
+                        <th>State</th>
+                        <th>Rating</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Rankings.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5">No rankings yet.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in Rankings.Take(12))
+                        {
+                            <tr>
+                                <td>@row.Rank</td>
+                                <td class="mono">@row.AthleteProfileId.ToString()[..8]</td>
+                                <td>@row.Level</td>
+                                <td>@row.State</td>
+                                <td>@row.RatingPoints.ToString("0.0")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<div class="panel-grid three spacer-top">
+    <section class="panel">
+        <h3>Athlete Experience</h3>
+        <ul class="list spacer-top">
+            <li class="list-item">One flow for registration, profile creation, and event entry.</li>
+            <li class="list-item">Free-agent mode to get discovered by clubs/teams.</li>
+            <li class="list-item">Real-time mat, in-the-hole, and results notifications.</li>
+        </ul>
+    </section>
+
+    <section class="panel">
+        <h3>Coach & Team Tools</h3>
+        <ul class="list spacer-top">
+            <li class="list-item">Coach profile and athlete/team associations.</li>
+            <li class="list-item">Tournament search by state, city, level, and fee.</li>
+            <li class="list-item">Free-agent board with direct invitation workflow.</li>
+        </ul>
+    </section>
+
+    <section class="panel rail">
+        <h3>Operational Timeline</h3>
+        <div class="timeline">
+            <div class="timeline-item">
+                <strong>Now:</strong> Free platform + event entry fee support.
+            </div>
+            <div class="timeline-item">
+                <strong>Next:</strong> Stripe/Twilio/SendGrid production providers.
+            </div>
+            <div class="timeline-item">
+                <strong>Scale:</strong> Event buses + read models + premium subscriptions.
+            </div>
+        </div>
+    </section>
+</div>
+
+@code {
+    private bool IsLoading = true;
+    private string? LoadError;
+    private List<GroupedEventsResponse> GroupedEvents = [];
+    private List<AthleteRanking> Rankings = [];
+    private int LiveStreamsTracked;
+
+    private int UpcomingEventCount =>
+        GroupedEvents.SelectMany(x => x.Events).Count(x => x.StartUtc >= DateTime.UtcNow && x.StartUtc <= DateTime.UtcNow.AddDays(60));
+
+    private int CityCount => GroupedEvents.Count;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+        LoadError = null;
+
+        var groupedTask = ApiClient.GetGroupedEventsAsync();
+        var rankingTask = ApiClient.GetRankingsAsync(CompetitionLevel.HighSchool, null, 50);
+
+        await Task.WhenAll(groupedTask, rankingTask);
+
+        var groupedResult = await groupedTask;
+        var rankingResult = await rankingTask;
+
+        if (!groupedResult.Success)
+        {
+            LoadError = groupedResult.Message;
+            GroupedEvents = [];
+        }
+        else
+        {
+            GroupedEvents = groupedResult.Data ?? [];
+        }
+
+        if (!rankingResult.Success)
+        {
+            LoadError = string.IsNullOrWhiteSpace(LoadError) ? rankingResult.Message : LoadError;
+            Rankings = [];
+        }
+        else
+        {
+            Rankings = rankingResult.Data ?? [];
+        }
+
+        LiveStreamsTracked = 0;
+        foreach (var cluster in GroupedEvents.Take(5))
+        {
+            foreach (var eventCard in cluster.Events.Take(3))
+            {
+                var streamResult = await ApiClient.GetActiveStreamsAsync(eventCard.Id);
+                if (streamResult.Success)
+                {
+                    LiveStreamsTracked += streamResult.Data?.Count ?? 0;
+                }
+            }
+        }
+
+        IsLoading = false;
+    }
+}

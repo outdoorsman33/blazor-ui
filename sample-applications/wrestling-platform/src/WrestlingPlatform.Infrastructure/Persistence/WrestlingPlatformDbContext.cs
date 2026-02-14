@@ -1,0 +1,42 @@
+using Microsoft.EntityFrameworkCore;
+using WrestlingPlatform.Domain.Models;
+
+namespace WrestlingPlatform.Infrastructure.Persistence;
+
+public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatformDbContext> options) : DbContext(options)
+{
+    public DbSet<UserAccount> UserAccounts => Set<UserAccount>();
+    public DbSet<UserRefreshToken> UserRefreshTokens => Set<UserRefreshToken>();
+    public DbSet<AthleteProfile> AthleteProfiles => Set<AthleteProfile>();
+    public DbSet<CoachProfile> CoachProfiles => Set<CoachProfile>();
+    public DbSet<Team> Teams => Set<Team>();
+    public DbSet<CoachAssociation> CoachAssociations => Set<CoachAssociation>();
+    public DbSet<TournamentEvent> TournamentEvents => Set<TournamentEvent>();
+    public DbSet<TournamentDivision> TournamentDivisions => Set<TournamentDivision>();
+    public DbSet<EventRegistration> EventRegistrations => Set<EventRegistration>();
+    public DbSet<FreeAgentTeamInvite> FreeAgentTeamInvites => Set<FreeAgentTeamInvite>();
+    public DbSet<Bracket> Brackets => Set<Bracket>();
+    public DbSet<BracketEntry> BracketEntries => Set<BracketEntry>();
+    public DbSet<Match> Matches => Set<Match>();
+    public DbSet<AthleteStatsSnapshot> AthleteStatsSnapshots => Set<AthleteStatsSnapshot>();
+    public DbSet<AthleteRanking> AthleteRankings => Set<AthleteRanking>();
+    public DbSet<NotificationSubscription> NotificationSubscriptions => Set<NotificationSubscription>();
+    public DbSet<NotificationMessage> NotificationMessages => Set<NotificationMessage>();
+    public DbSet<StreamSession> StreamSessions => Set<StreamSession>();
+    public DbSet<PaymentWebhookEvent> PaymentWebhookEvents => Set<PaymentWebhookEvent>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<UserAccount>().HasIndex(x => x.Email).IsUnique();
+        modelBuilder.Entity<UserRefreshToken>().HasIndex(x => x.TokenHash).IsUnique();
+        modelBuilder.Entity<UserRefreshToken>().HasIndex(x => new { x.UserAccountId, x.ExpiresUtc });
+        modelBuilder.Entity<AthleteProfile>().HasIndex(x => x.UserAccountId).IsUnique();
+        modelBuilder.Entity<CoachProfile>().HasIndex(x => x.UserAccountId).IsUnique();
+        modelBuilder.Entity<TournamentEvent>().HasIndex(x => new { x.State, x.City, x.StartUtc });
+        modelBuilder.Entity<EventRegistration>().HasIndex(x => new { x.TournamentEventId, x.AthleteProfileId }).IsUnique();
+        modelBuilder.Entity<AthleteRanking>().HasIndex(x => new { x.Level, x.State, x.Rank });
+        modelBuilder.Entity<NotificationSubscription>().HasIndex(x => new { x.UserAccountId, x.EventType, x.Channel });
+        modelBuilder.Entity<PaymentWebhookEvent>().HasIndex(x => new { x.Provider, x.ProviderEventId }).IsUnique();
+        modelBuilder.Entity<PaymentWebhookEvent>().HasIndex(x => new { x.ProcessingStatus, x.CreatedUtc });
+    }
+}

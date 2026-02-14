@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WrestlingPlatform.Api/WrestlingPlatform.Api.csproj" />
+    <Project Path="src/WrestlingPlatform.Application/WrestlingPlatform.Application.csproj" />
+    <Project Path="src/WrestlingPlatform.Domain/WrestlingPlatform.Domain.csproj" />
+    <Project Path="src/WrestlingPlatform.Infrastructure/WrestlingPlatform.Infrastructure.csproj" />
+    <Project Path="src/WrestlingPlatform.Web/WrestlingPlatform.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WrestlingPlatform.Api.IntegrationTests/WrestlingPlatform.Api.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

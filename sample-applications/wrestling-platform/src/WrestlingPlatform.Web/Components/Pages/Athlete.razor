@@ -1,0 +1,681 @@
+@page "/athlete"
+@inject PlatformApiClient ApiClient
+
+<PageTitle>Athlete Portal - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Athlete Portal</h1>
+        <p class="page-subtitle">Create your account, build your profile, discover events, register as team-affiliated or free-agent, and track rankings/history.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Profile Builder</span>
+        <span class="tag">Fast Event Entry</span>
+        <span class="tag">Notification Control</span>
+    </div>
+</div>
+
+<div class="panel-grid two">
+    <section class="panel">
+        <h2>1) Athlete Account</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Email</label>
+                <input class="input" @bind="AccountEmail" />
+            </div>
+            <div class="field">
+                <label>Password</label>
+                <input class="input" type="password" @bind="AccountPassword" />
+            </div>
+            <div class="field">
+                <label>Phone</label>
+                <input class="input" @bind="AccountPhone" placeholder="+1..." />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="RegisterUserAsync" disabled="@IsBusy">Create Athlete User</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(AccountMessage))
+        {
+            <div class="alert @(AccountSuccess ? "success" : "error")">@AccountMessage</div>
+        }
+        @if (CreatedUserId is not null)
+        {
+            <p class="helper spacer-top">Created user id: <span class="mono">@CreatedUserId</span></p>
+        }
+
+        <hr class="soft" />
+
+        <h3>2) Athlete Profile</h3>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>User Id</label>
+                <input class="input mono" @bind="ProfileUserId" />
+            </div>
+            <div class="field">
+                <label>First Name</label>
+                <input class="input" @bind="FirstName" />
+            </div>
+            <div class="field">
+                <label>Last Name</label>
+                <input class="input" @bind="LastName" />
+            </div>
+            <div class="field">
+                <label>Date Of Birth</label>
+                <input class="input" type="text" placeholder="YYYY-MM-DD" @bind="BirthDateText" />
+            </div>
+            <div class="field">
+                <label>State</label>
+                <input class="input" @bind="State" />
+            </div>
+            <div class="field">
+                <label>City</label>
+                <input class="input" @bind="City" />
+            </div>
+            <div class="field">
+                <label>School / Club</label>
+                <input class="input" @bind="SchoolClub" />
+            </div>
+            <div class="field">
+                <label>Grade</label>
+                <input class="input" type="number" min="0" max="12" @bind="Grade" />
+            </div>
+            <div class="field">
+                <label>Weight Class</label>
+                <input class="input" type="number" step="0.1" @bind="WeightClass" />
+            </div>
+            <div class="field">
+                <label>Level</label>
+                <select class="select" @bind="Level">
+                    @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn secondary" @onclick="CreateProfileAsync" disabled="@IsBusy">Save Athlete Profile</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(ProfileMessage))
+        {
+            <div class="alert @(ProfileSuccess ? "success" : "error")">@ProfileMessage</div>
+        }
+        @if (CreatedAthleteId is not null)
+        {
+            <p class="helper spacer-top">Athlete id: <span class="mono">@CreatedAthleteId</span></p>
+        }
+    </section>
+
+    <section class="panel">
+        <h2>3) Event Discovery & Entry</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Search State</label>
+                <input class="input" @bind="SearchState" placeholder="OH" />
+            </div>
+            <div class="field">
+                <label>Search City</label>
+                <input class="input" @bind="SearchCity" placeholder="Columbus" />
+            </div>
+            <div class="field">
+                <label>Level</label>
+                <select class="select" @bind="SearchLevel">
+                    <option value="">All</option>
+                    @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Max Entry Fee (cents)</label>
+                <input class="input" type="number" min="0" @bind="MaxFeeCents" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="SearchEventsAsync" disabled="@IsBusy">Search Events</button>
+        </div>
+
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Event</th>
+                        <th>Location</th>
+                        <th>Date</th>
+                        <th>Fee</th>
+                        <th>Id</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (SearchedEvents.Count == 0)
+                    {
+                        <tr><td colspan="5">No results yet.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var tournamentEvent in SearchedEvents)
+                        {
+                            <tr>
+                                <td>@tournamentEvent.Name</td>
+                                <td>@tournamentEvent.State / @tournamentEvent.City</td>
+                                <td>@tournamentEvent.StartUtc.ToLocalTime().ToString("MMM dd")</td>
+                                <td>$@((tournamentEvent.EntryFeeCents / 100m).ToString("0.00"))</td>
+                                <td class="mono">@tournamentEvent.Id.ToString()[..8]</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <hr class="soft" />
+
+        <h3>Register For Tournament</h3>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Event Id</label>
+                <input class="input mono" @bind="RegistrationEventId" />
+            </div>
+            <div class="field">
+                <label>Athlete Id</label>
+                <input class="input mono" @bind="RegistrationAthleteId" />
+            </div>
+            <div class="field">
+                <label>Team Id (optional)</label>
+                <input class="input mono" @bind="RegistrationTeamId" />
+            </div>
+            <div class="field check-row">
+                <input id="freeagent" type="checkbox" @bind="RegisterAsFreeAgent" />
+                <label for="freeagent">Register as free agent</label>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn secondary" @onclick="RegisterForEventAsync" disabled="@IsBusy">Submit Registration</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(RegistrationMessage))
+        {
+            <div class="alert @(RegistrationSuccess ? "success" : "error")">@RegistrationMessage</div>
+        }
+        @if (LastPaymentIntent is not null)
+        {
+            <div class="alert success">Checkout: <a href="@LastPaymentIntent.CheckoutUrl" target="_blank">@LastPaymentIntent.CheckoutUrl</a></div>
+        }
+    </section>
+</div>
+
+<div class="panel-grid two spacer-top">
+    <section class="panel">
+        <h2>4) Rankings + Stat History</h2>
+
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Ranking Level</label>
+                <select class="select" @bind="RankingLevel">
+                    @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Ranking State</label>
+                <input class="input" @bind="RankingState" placeholder="OH" />
+            </div>
+            <div class="field">
+                <label>Take</label>
+                <input class="input" type="number" min="1" max="200" @bind="RankingTake" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="LoadRankingsAsync" disabled="@IsBusy">Load Rankings</button>
+        </div>
+
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Athlete Id</th>
+                        <th>Rating</th>
+                        <th>State</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (RankingRows.Count == 0)
+                    {
+                        <tr><td colspan="4">No ranking data.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in RankingRows)
+                        {
+                            <tr>
+                                <td>@row.Rank</td>
+                                <td class="mono">@row.AthleteProfileId.ToString()[..8]</td>
+                                <td>@row.RatingPoints.ToString("0.0")</td>
+                                <td>@row.State</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <hr class="soft" />
+
+        <div class="form-grid">
+            <div class="field">
+                <label>Athlete Id For Stat History</label>
+                <input class="input mono" @bind="StatsAthleteId" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn ghost" @onclick="LoadStatsAsync" disabled="@IsBusy">Load Historical Stats</button>
+        </div>
+
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Snapshot</th>
+                        <th>W</th>
+                        <th>L</th>
+                        <th>Pins</th>
+                        <th>Tech</th>
+                        <th>Majors</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (StatsRows.Count == 0)
+                    {
+                        <tr><td colspan="6">No history loaded.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var snapshot in StatsRows.Take(20))
+                        {
+                            <tr>
+                                <td>@snapshot.SnapshotUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@snapshot.Wins</td>
+                                <td>@snapshot.Losses</td>
+                                <td>@snapshot.Pins</td>
+                                <td>@snapshot.TechFalls</td>
+                                <td>@snapshot.MajorDecisions</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>5) Notification Subscriptions</h2>
+        <p class="helper">Subscribe to mat assignment, in-the-hole, and results by email, SMS, or both.</p>
+
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>User Id</label>
+                <input class="input mono" @bind="NotifyUserId" />
+            </div>
+            <div class="field">
+                <label>Event Id (optional)</label>
+                <input class="input mono" @bind="NotifyEventId" />
+            </div>
+            <div class="field">
+                <label>Athlete Id (optional)</label>
+                <input class="input mono" @bind="NotifyAthleteId" />
+            </div>
+            <div class="field">
+                <label>Event Type</label>
+                <select class="select" @bind="NotifyEventType">
+                    @foreach (var type in Enum.GetValues<NotificationEventType>())
+                    {
+                        <option value="@type">@type</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Channel</label>
+                <select class="select" @bind="NotifyChannel">
+                    @foreach (var channel in Enum.GetValues<NotificationChannel>())
+                    {
+                        <option value="@channel">@channel</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Destination</label>
+                <input class="input" @bind="NotifyDestination" placeholder="email or phone" />
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn secondary" @onclick="SubscribeAsync" disabled="@IsBusy">Save Subscription</button>
+            <button class="btn ghost" @onclick="LoadNotificationMessagesAsync" disabled="@IsBusy">Load Message Feed</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(NotificationStatusMessage))
+        {
+            <div class="alert @(NotificationSuccess ? "success" : "error")">@NotificationStatusMessage</div>
+        }
+
+        <div class="timeline spacer-top">
+            @if (NotificationStatusMessages.Count == 0)
+            {
+                <div class="timeline-item">No notification feed loaded.</div>
+            }
+            else
+            {
+                @foreach (var msg in NotificationStatusMessages.Take(12))
+                {
+                    <div class="timeline-item">
+                        <strong>@msg.EventType</strong> via @msg.Channel<br />
+                        <span class="helper">@msg.Body</span>
+                    </div>
+                }
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private bool IsBusy;
+
+    private string AccountEmail = "athlete@example.com";
+    private string AccountPassword = "S3curePass!";
+    private string? AccountPhone = "+16145550101";
+    private string? AccountMessage;
+    private bool AccountSuccess;
+    private Guid? CreatedUserId;
+
+    private string ProfileUserId = string.Empty;
+    private string FirstName = "Eli";
+    private string LastName = "Turner";
+    private string BirthDateText = "2010-04-15";
+    private string State = "OH";
+    private string City = "Columbus";
+    private string SchoolClub = "Central Wrestling Club";
+    private int Grade = 10;
+    private decimal WeightClass = 132m;
+    private CompetitionLevel Level = CompetitionLevel.HighSchool;
+    private string? ProfileMessage;
+    private bool ProfileSuccess;
+    private Guid? CreatedAthleteId;
+
+    private string SearchState = "OH";
+    private string SearchCity = string.Empty;
+    private CompetitionLevel? SearchLevel = CompetitionLevel.HighSchool;
+    private int? MaxFeeCents;
+    private List<TournamentEvent> SearchedEvents = [];
+
+    private string RegistrationEventId = string.Empty;
+    private string RegistrationAthleteId = string.Empty;
+    private string RegistrationTeamId = string.Empty;
+    private bool RegisterAsFreeAgent;
+    private string? RegistrationMessage;
+    private bool RegistrationSuccess;
+    private PaymentIntentResult? LastPaymentIntent;
+
+    private CompetitionLevel RankingLevel = CompetitionLevel.HighSchool;
+    private string RankingState = "OH";
+    private int RankingTake = 25;
+    private List<AthleteRanking> RankingRows = [];
+
+    private string StatsAthleteId = string.Empty;
+    private List<AthleteStatsSnapshot> StatsRows = [];
+
+    private string NotifyUserId = string.Empty;
+    private string NotifyEventId = string.Empty;
+    private string NotifyAthleteId = string.Empty;
+    private NotificationEventType NotifyEventType = NotificationEventType.MatchResult;
+    private NotificationChannel NotifyChannel = NotificationChannel.Email;
+    private string NotifyDestination = "family@example.com";
+    private string? NotificationStatusMessage;
+    private bool NotificationSuccess;
+    private List<NotificationMessage> NotificationStatusMessages = [];
+
+    private async Task RegisterUserAsync()
+    {
+        IsBusy = true;
+        AccountMessage = null;
+
+        var result = await ApiClient.RegisterUserAsync(new RegisterUserRequest(AccountEmail, AccountPassword, UserRole.Athlete, AccountPhone));
+        AccountSuccess = result.Success;
+        AccountMessage = result.Success ? $"Athlete user created: {result.Data?.Email}" : result.Message;
+
+        if (result.Success && result.Data is not null)
+        {
+            CreatedUserId = result.Data.Id;
+            ProfileUserId = result.Data.Id.ToString();
+            NotifyUserId = result.Data.Id.ToString();
+
+            var loginResult = await ApiClient.LoginAsync(new LoginRequest(AccountEmail, AccountPassword));
+            if (!loginResult.Success)
+            {
+                AccountSuccess = false;
+                AccountMessage = $"User created, but sign-in failed: {loginResult.Message}";
+            }
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task CreateProfileAsync()
+    {
+        IsBusy = true;
+        ProfileMessage = null;
+
+        if (!Guid.TryParse(ProfileUserId, out var userId))
+        {
+            ProfileSuccess = false;
+            ProfileMessage = "Valid user id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        if (!DateTime.TryParse(BirthDateText, out var birthDate))
+        {
+            ProfileSuccess = false;
+            ProfileMessage = "Valid birth date is required.";
+            IsBusy = false;
+            return;
+        }
+
+        var request = new CreateAthleteProfileRequest(
+            userId,
+            FirstName,
+            LastName,
+            DateTime.SpecifyKind(birthDate, DateTimeKind.Utc),
+            State,
+            City,
+            SchoolClub,
+            Grade,
+            WeightClass,
+            Level);
+
+        var result = await ApiClient.CreateAthleteProfileAsync(request);
+        ProfileSuccess = result.Success;
+        ProfileMessage = result.Success ? "Athlete profile saved." : result.Message;
+
+        if (result.Success && result.Data is not null)
+        {
+            CreatedAthleteId = result.Data.Id;
+            RegistrationAthleteId = result.Data.Id.ToString();
+            StatsAthleteId = result.Data.Id.ToString();
+            NotifyAthleteId = result.Data.Id.ToString();
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task SearchEventsAsync()
+    {
+        IsBusy = true;
+        RegistrationMessage = null;
+
+        var request = new SearchEventsQuery(
+            string.IsNullOrWhiteSpace(SearchState) ? null : SearchState,
+            string.IsNullOrWhiteSpace(SearchCity) ? null : SearchCity,
+            SearchLevel,
+            DateTime.UtcNow.Date,
+            null,
+            MaxFeeCents);
+
+        var result = await ApiClient.SearchEventsAsync(request);
+
+        if (result.Success)
+        {
+            SearchedEvents = result.Data ?? [];
+            RegistrationMessage = $"Loaded {SearchedEvents.Count} events.";
+            RegistrationSuccess = true;
+
+            if (SearchedEvents.Count > 0)
+            {
+                RegistrationEventId = SearchedEvents[0].Id.ToString();
+            }
+        }
+        else
+        {
+            RegistrationSuccess = false;
+            RegistrationMessage = result.Message;
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task RegisterForEventAsync()
+    {
+        IsBusy = true;
+        RegistrationMessage = null;
+        LastPaymentIntent = null;
+
+        if (!Guid.TryParse(RegistrationEventId, out var eventId) || !Guid.TryParse(RegistrationAthleteId, out var athleteId))
+        {
+            RegistrationSuccess = false;
+            RegistrationMessage = "Valid event id and athlete id are required.";
+            IsBusy = false;
+            return;
+        }
+
+        Guid? teamId = Guid.TryParse(RegistrationTeamId, out var parsedTeamId) ? parsedTeamId : null;
+
+        var result = await ApiClient.RegisterAthleteForEventAsync(eventId, new RegisterForEventRequest(athleteId, teamId, RegisterAsFreeAgent));
+
+        RegistrationSuccess = result.Success;
+        RegistrationMessage = result.Success
+            ? $"Registration submitted. Status: {result.Data?.Registration?.Status}"
+            : result.Message;
+
+        LastPaymentIntent = result.Data?.PaymentIntent;
+
+        IsBusy = false;
+    }
+
+    private async Task LoadRankingsAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetRankingsAsync(RankingLevel, RankingState, RankingTake);
+
+        if (result.Success)
+        {
+            RankingRows = result.Data ?? [];
+        }
+        else
+        {
+            NotificationStatusMessage = result.Message;
+            NotificationSuccess = false;
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(StatsAthleteId, out var athleteId))
+        {
+            NotificationStatusMessage = "Valid athlete id is required for history lookup.";
+            NotificationSuccess = false;
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.GetAthleteStatsHistoryAsync(athleteId);
+        if (result.Success)
+        {
+            StatsRows = result.Data ?? [];
+        }
+        else
+        {
+            NotificationStatusMessage = result.Message;
+            NotificationSuccess = false;
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task SubscribeAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(NotifyUserId, out var userId))
+        {
+            NotificationSuccess = false;
+            NotificationStatusMessage = "Valid user id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        Guid? eventId = Guid.TryParse(NotifyEventId, out var parsedEventId) ? parsedEventId : null;
+        Guid? athleteId = Guid.TryParse(NotifyAthleteId, out var parsedAthleteId) ? parsedAthleteId : null;
+
+        var result = await ApiClient.SubscribeAsync(new SubscribeNotificationRequest(
+            userId,
+            eventId,
+            athleteId,
+            NotifyEventType,
+            NotifyChannel,
+            NotifyDestination));
+
+        NotificationSuccess = result.Success;
+        NotificationStatusMessage = result.Success ? "Subscription saved." : result.Message;
+
+        IsBusy = false;
+    }
+
+    private async Task LoadNotificationMessagesAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(NotifyUserId, out var userId))
+        {
+            NotificationSuccess = false;
+            NotificationStatusMessage = "Valid user id is required for feed lookup.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.GetNotificationMessagesAsync(userId);
+        if (result.Success)
+        {
+            NotificationStatusMessages = result.Data ?? [];
+            NotificationSuccess = true;
+            NotificationStatusMessage = $"Loaded {NotificationStatusMessages.Count} notification messages.";
+        }
+        else
+        {
+            NotificationSuccess = false;
+            NotificationStatusMessage = result.Message;
+        }
+
+        IsBusy = false;
+    }
+}
+
+
+
+

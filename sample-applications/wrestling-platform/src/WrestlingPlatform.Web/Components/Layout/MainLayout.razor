@@ -1,0 +1,87 @@
+@inherits LayoutComponentBase
+@inject PlatformApiClient ApiClient
+@inject AuthSession AuthSession
+
+<div class="app-shell">
+    <div class="ambient ambient-left"></div>
+    <div class="ambient ambient-right"></div>
+
+    <header class="topbar">
+        <div class="brand-block">
+            <span class="brand-badge">USA Wrestling Platform</span>
+            <a href="/" class="brand-link">PinPoint Arena</a>
+        </div>
+
+        <nav class="main-nav" aria-label="Main navigation">
+            <NavLink href="/" Match="NavLinkMatch.All">Command Center</NavLink>
+            <NavLink href="/athlete">Athlete Portal</NavLink>
+            <NavLink href="/coach">Coach Portal</NavLink>
+            <NavLink href="/admin">Event Admin</NavLink>
+        </nav>
+
+        <div class="auth-panel">
+            @if (!AuthSession.IsAuthenticated)
+            {
+                <input class="mini-input" @bind="Email" placeholder="email" />
+                <input class="mini-input" @bind="Password" type="password" placeholder="password" />
+                <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
+            }
+            else
+            {
+                <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
+                <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
+            }
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(AuthMessage))
+    {
+        <div class="auth-message @(AuthOk ? "auth-ok" : "auth-error")">@AuthMessage</div>
+    }
+
+    <main class="surface">
+        @Body
+    </main>
+
+    <footer class="app-footer">
+        <span>Built for K-6, Middle School, High School, and College competition workflows.</span>
+    </footer>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">X</span>
+</div>
+
+@code {
+    private bool Busy;
+    private string Email = "";
+    private string Password = "";
+    private string? AuthMessage;
+    private bool AuthOk;
+
+    private async Task SignInAsync()
+    {
+        Busy = true;
+        AuthMessage = null;
+
+        var result = await ApiClient.LoginAsync(new LoginRequest(Email, Password));
+        AuthOk = result.Success;
+        AuthMessage = result.Success ? "Signed in." : result.Message;
+
+        if (result.Success)
+        {
+            Password = string.Empty;
+        }
+
+        Busy = false;
+    }
+
+    private async Task SignOutAsync()
+    {
+        await ApiClient.LogoutAsync();
+        AuthOk = true;
+        AuthMessage = "Signed out.";
+    }
+}

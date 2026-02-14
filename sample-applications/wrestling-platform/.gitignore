@@ -1,0 +1,17 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# User settings
+**/*.user
+**/*.suo
+
+# Local SQLite artifacts
+src/WrestlingPlatform.Api/*.db
+src/WrestlingPlatform.Api/*.db-shm
+src/WrestlingPlatform.Api/*.db-wal
+
+# Local public demo artifacts
+*.log
+.demo-pids.json
+tools/cloudflared.exe
