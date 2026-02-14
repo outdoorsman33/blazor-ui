@@ -16,7 +16,7 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
 
     public async Task<ApiResult<AuthTokenResponse>> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await httpClient.PostAsJsonAsync("/api/auth/login", request, _jsonOptions, cancellationToken);
+        var response = await PostAsJsonAsync("/api/auth/login", request, cancellationToken);
         var result = await ReadResponseAsync<AuthTokenResponse>(response, cancellationToken);
 
         if (result.Success && result.Data is not null)
@@ -271,13 +271,50 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
     private async Task<HttpResponseMessage> GetAsync(string requestUri, CancellationToken cancellationToken)
     {
         await EnsureAccessTokenAsync(cancellationToken);
-        return await httpClient.GetAsync(requestUri, cancellationToken);
+
+        try
+        {
+            return await httpClient.GetAsync(requestUri, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportException(ex))
+        {
+            return CreateTransportErrorResponse(ex);
+        }
     }
 
     private async Task<HttpResponseMessage> PostAsJsonAsync<T>(string requestUri, T payload, CancellationToken cancellationToken)
     {
         await EnsureAccessTokenAsync(cancellationToken);
-        return await httpClient.PostAsJsonAsync(requestUri, payload, _jsonOptions, cancellationToken);
+
+        try
+        {
+            return await httpClient.PostAsJsonAsync(requestUri, payload, _jsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportException(ex))
+        {
+            return CreateTransportErrorResponse(ex);
+        }
+    }
+
+    private static bool IsTransportException(Exception ex)
+    {
+        return ex is HttpRequestException or TaskCanceledException or InvalidOperationException;
+    }
+
+    private static HttpResponseMessage CreateTransportErrorResponse(Exception ex)
+    {
+        var message = ex switch
+        {
+            TaskCanceledException => "Request timed out while contacting the API service.",
+            HttpRequestException => $"API service is unreachable: {ex.Message}",
+            InvalidOperationException => $"API request setup failed: {ex.Message}",
+            _ => "Unexpected transport error while contacting the API service."
+        };
+
+        return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        {
+            Content = new StringContent(message, Encoding.UTF8, "text/plain")
+        };
     }
 
     private async Task EnsureAccessTokenAsync(CancellationToken cancellationToken)

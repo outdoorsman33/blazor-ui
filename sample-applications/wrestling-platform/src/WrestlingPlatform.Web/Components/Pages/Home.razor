@@ -178,47 +178,60 @@
         IsLoading = true;
         LoadError = null;
 
-        var groupedTask = ApiClient.GetGroupedEventsAsync();
-        var rankingTask = ApiClient.GetRankingsAsync(CompetitionLevel.HighSchool, null, 50);
-
-        await Task.WhenAll(groupedTask, rankingTask);
-
-        var groupedResult = await groupedTask;
-        var rankingResult = await rankingTask;
-
-        if (!groupedResult.Success)
+        try
         {
-            LoadError = groupedResult.Message;
-            GroupedEvents = [];
-        }
-        else
-        {
-            GroupedEvents = groupedResult.Data ?? [];
-        }
+            var groupedTask = ApiClient.GetGroupedEventsAsync();
+            var rankingTask = ApiClient.GetRankingsAsync(CompetitionLevel.HighSchool, null, 50);
 
-        if (!rankingResult.Success)
-        {
-            LoadError = string.IsNullOrWhiteSpace(LoadError) ? rankingResult.Message : LoadError;
-            Rankings = [];
-        }
-        else
-        {
-            Rankings = rankingResult.Data ?? [];
-        }
+            await Task.WhenAll(groupedTask, rankingTask);
 
-        LiveStreamsTracked = 0;
-        foreach (var cluster in GroupedEvents.Take(5))
-        {
-            foreach (var eventCard in cluster.Events.Take(3))
+            var groupedResult = await groupedTask;
+            var rankingResult = await rankingTask;
+
+            if (!groupedResult.Success)
             {
-                var streamResult = await ApiClient.GetActiveStreamsAsync(eventCard.Id);
-                if (streamResult.Success)
+                LoadError = groupedResult.Message;
+                GroupedEvents = [];
+            }
+            else
+            {
+                GroupedEvents = groupedResult.Data ?? [];
+            }
+
+            if (!rankingResult.Success)
+            {
+                LoadError = string.IsNullOrWhiteSpace(LoadError) ? rankingResult.Message : LoadError;
+                Rankings = [];
+            }
+            else
+            {
+                Rankings = rankingResult.Data ?? [];
+            }
+
+            LiveStreamsTracked = 0;
+            foreach (var cluster in GroupedEvents.Take(5))
+            {
+                foreach (var eventCard in cluster.Events.Take(3))
                 {
-                    LiveStreamsTracked += streamResult.Data?.Count ?? 0;
+                    var streamResult = await ApiClient.GetActiveStreamsAsync(eventCard.Id);
+                    if (streamResult.Success)
+                    {
+                        LiveStreamsTracked += streamResult.Data?.Count ?? 0;
+                    }
                 }
             }
         }
-
-        IsLoading = false;
+        catch (Exception ex)
+        {
+            GroupedEvents = [];
+            Rankings = [];
+            LiveStreamsTracked = 0;
+            LoadError = $"Unable to load dashboard data: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 }
+
