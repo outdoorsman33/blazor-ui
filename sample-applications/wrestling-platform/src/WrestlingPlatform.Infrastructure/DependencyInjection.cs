@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using WrestlingPlatform.Application.Services;
 using WrestlingPlatform.Domain.Models;
 using WrestlingPlatform.Infrastructure.Persistence;
@@ -13,8 +14,11 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddWrestlingPlatformInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection") ?? "Data Source=wrestling-platform.db";
-        var usePostgres = IsPostgresConfigured(connectionString, configuration["Database:Provider"]);
+        var configuredConnectionString = configuration.GetConnectionString("DefaultConnection") ?? "Data Source=wrestling-platform.db";
+        var usePostgres = IsPostgresConfigured(configuredConnectionString, configuration["Database:Provider"]);
+        var connectionString = usePostgres
+            ? NormalizePostgresConnectionString(configuredConnectionString)
+            : configuredConnectionString;
 
         services.AddDbContext<WrestlingPlatformDbContext>(options =>
         {
@@ -146,4 +150,123 @@ public static class DependencyInjection
                || connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase)
                || connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static string NormalizePostgresConnectionString(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return connectionString;
+        }
+
+        var trimmed = connectionString.Trim();
+        if (!trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)
+            && !trimmed.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            return trimmed;
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.Port > 0 ? uri.Port : 5432
+        };
+
+        var databaseName = uri.AbsolutePath.Trim('/');
+        if (!string.IsNullOrWhiteSpace(databaseName))
+        {
+            builder.Database = databaseName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
+        {
+            var userInfoParts = uri.UserInfo.Split(':', 2);
+            if (userInfoParts.Length > 0)
+            {
+                builder.Username = Uri.UnescapeDataString(userInfoParts[0]);
+            }
+
+            if (userInfoParts.Length > 1)
+            {
+                builder.Password = Uri.UnescapeDataString(userInfoParts[1]);
+            }
+        }
+
+        foreach (var (key, value) in ParseUriQuery(uri.Query))
+        {
+            ApplyPostgresOption(builder, key, value);
+        }
+
+        return builder.ConnectionString;
+    }
+
+    private static IEnumerable<(string Key, string Value)> ParseUriQuery(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            yield break;
+        }
+
+        var rawQuery = query.TrimStart('?');
+        if (string.IsNullOrWhiteSpace(rawQuery))
+        {
+            yield break;
+        }
+
+        var pairs = rawQuery.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var pair in pairs)
+        {
+            var separatorIndex = pair.IndexOf('=');
+            if (separatorIndex < 0)
+            {
+                var keyOnly = Uri.UnescapeDataString(pair).Trim();
+                if (!string.IsNullOrWhiteSpace(keyOnly))
+                {
+                    yield return (keyOnly, "true");
+                }
+
+                continue;
+            }
+
+            var key = Uri.UnescapeDataString(pair[..separatorIndex]).Trim();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            var value = Uri.UnescapeDataString(pair[(separatorIndex + 1)..]);
+            yield return (key, value);
+        }
+    }
+
+    private static void ApplyPostgresOption(NpgsqlConnectionStringBuilder builder, string key, string value)
+    {
+        var normalizedKey = key.Trim().ToLowerInvariant();
+        switch (normalizedKey)
+        {
+            case "sslmode":
+                if (Enum.TryParse<SslMode>(value, ignoreCase: true, out var sslMode))
+                {
+                    builder.SslMode = sslMode;
+                }
+
+                return;
+            default:
+                try
+                {
+                    builder[key] = value;
+                }
+                catch (ArgumentException)
+                {
+                    // Ignore unknown query options; known keys above are applied explicitly.
+                }
+
+                return;
+        }
+    }
 }
+
