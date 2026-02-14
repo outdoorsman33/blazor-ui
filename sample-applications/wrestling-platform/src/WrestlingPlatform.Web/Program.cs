@@ -55,7 +55,9 @@ public class Program
             return new Uri("http://127.0.0.1:5099");
         }
 
-        if (Uri.TryCreate(configuredBaseUrl, UriKind.Absolute, out var absoluteUri))
+        if (Uri.TryCreate(configuredBaseUrl, UriKind.Absolute, out var absoluteUri)
+            && (string.Equals(absoluteUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(absoluteUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
         {
             return absoluteUri;
         }
@@ -69,3 +71,4 @@ public class Program
         throw new InvalidOperationException($"Api:BaseUrl is invalid: '{configuredBaseUrl}'.");
     }
 }
+
