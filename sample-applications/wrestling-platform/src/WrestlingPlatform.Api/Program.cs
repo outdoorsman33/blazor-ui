@@ -90,7 +90,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-await app.Services.InitializeDatabaseAsync();
+await InitializeDatabaseWithRetryAsync(app.Services, app.Logger, CancellationToken.None);
 
 app.MapGet("/healthz", async (WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken) =>
 {
@@ -1147,6 +1147,44 @@ webhooks.MapPost("/stripe/payment-confirmed", HandleStripeWebhookAsync).AllowAno
 
 app.Run();
 
+static async Task InitializeDatabaseWithRetryAsync(
+    IServiceProvider services,
+    ILogger logger,
+    CancellationToken cancellationToken)
+{
+    const int maxAttempts = 12;
+    var delay = TimeSpan.FromSeconds(2);
+    Exception? lastException = null;
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt++)
+    {
+        try
+        {
+            await services.InitializeDatabaseAsync(cancellationToken);
+            return;
+        }
+        catch (Exception ex) when (attempt < maxAttempts)
+        {
+            lastException = ex;
+            logger.LogWarning(
+                ex,
+                "Database initialization attempt {Attempt}/{MaxAttempts} failed. Retrying in {DelaySeconds}s.",
+                attempt,
+                maxAttempts,
+                delay.TotalSeconds);
+
+            await Task.Delay(delay, cancellationToken);
+            delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 1.5d, 20d));
+        }
+        catch (Exception ex)
+        {
+            lastException = ex;
+            break;
+        }
+    }
+
+    throw new InvalidOperationException("Database initialization failed after multiple attempts.", lastException);
+}
 static async Task AdvanceBracketProgressionAsync(
     WrestlingPlatformDbContext dbContext,
     Guid bracketId,
@@ -1160,4 +1198,5 @@ static async Task AdvanceBracketProgressionAsync(
 
     BracketProgressionEngine.Resolve(bracketMatches);
 }
+
 
