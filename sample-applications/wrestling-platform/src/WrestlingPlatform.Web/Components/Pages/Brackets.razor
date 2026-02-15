@@ -495,6 +495,11 @@
             return $"{match.AthleteB.Level}:{match.AthleteB.WeightClass:0.##}";
         }
 
+        if (TryParseDivisionFromLabel(match.Label, out var level, out var weightClass))
+        {
+            return $"{level}:{weightClass:0.##}";
+        }
+
         var labelPrefix = LabelPrefix(match.Label);
         return $"label:{labelPrefix}";
     }
@@ -511,6 +516,11 @@
             return $"{match.AthleteB.Level} {match.AthleteB.WeightClass:0.##} lbs";
         }
 
+        if (TryParseDivisionFromLabel(match.Label, out var level, out var weightClass))
+        {
+            return $"{level} {weightClass:0.##} lbs";
+        }
+
         return LabelPrefix(match.Label);
     }
 
@@ -518,6 +528,29 @@
     {
         var marker = label.IndexOf(" - ", StringComparison.Ordinal);
         return marker > 0 ? label[..marker].Trim() : label.Trim();
+    }
+
+    private static bool TryParseDivisionFromLabel(
+        string label,
+        out CompetitionLevel level,
+        out decimal weightClass)
+    {
+        level = default;
+        weightClass = default;
+
+        var prefix = LabelPrefix(label);
+        var parts = prefix.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 2)
+        {
+            return false;
+        }
+
+        if (!Enum.TryParse<CompetitionLevel>(parts[0], ignoreCase: true, out level))
+        {
+            return false;
+        }
+
+        return decimal.TryParse(parts[1], out weightClass);
     }
 
     private static IReadOnlyList<int> PoolRounds(PoolVisualGroup pool) =>
