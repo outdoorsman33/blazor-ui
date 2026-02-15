@@ -58,6 +58,34 @@ public enum BracketGenerationMode
     Seeded
 }
 
+public enum WrestlingStyle
+{
+    Folkstyle,
+    Freestyle,
+    GrecoRoman
+}
+
+public enum TournamentFormat
+{
+    EliminationBracket,
+    MadisonPool
+}
+
+public enum BracketReleaseMode
+{
+    Manual,
+    Scheduled,
+    Immediate
+}
+
+public enum BracketCreationMode
+{
+    Manual,
+    Random,
+    Seeded,
+    AiSeeded
+}
+
 public enum MatchStatus
 {
     Scheduled,

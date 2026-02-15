@@ -36,9 +36,52 @@
     </div>
 </div>
 
-@if (!string.IsNullOrWhiteSpace(LoadError))
+<section class="panel">
+    <div class="item-head">
+        <h2>Quick Start</h2>
+        <span class="tag">Local Demo Ready</span>
+    </div>
+    <p class="helper spacer-top">Use demo credentials to test full workflows immediately.</p>
+    <div class="table-wrap spacer-top">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Role</th>
+                    <th>Email</th>
+                    <th>Password</th>
+                    <th>Start Here</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Athlete</td>
+                    <td class="mono">demo.athlete@pinpointarena.local</td>
+                    <td class="mono">DemoPass!123</td>
+                    <td><a class="btn ghost" href="/athlete">Open Athlete Portal</a></td>
+                </tr>
+                <tr>
+                    <td>Coach/Event Ops</td>
+                    <td class="mono">demo.coach@pinpointarena.local</td>
+                    <td class="mono">DemoPass!123</td>
+                    <td><a class="btn ghost" href="/coach">Open Coach Portal</a></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="actions">
+        <a class="btn primary" href="/lab">Open Operations Lab</a>
+        <a class="btn secondary" href="/registration">Open Registration Center</a>
+        <a class="btn ghost" href="/brackets">Open Bracket Center</a>
+        <a class="btn ghost" href="/table-worker">Open Table Worker</a>
+        <a class="btn ghost" href="/mat-scoring">Open Mat Scoring</a>
+        <a class="btn ghost" href="/live">Open Live Hub</a>
+        <a class="btn ghost" href="/recruiting">Open Recruiting Hub</a>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(DisplayLoadError))
 {
-    <div class="alert error">@LoadError</div>
+    <div class="alert error">@DisplayLoadError</div>
 }
 
 <div class="panel-grid two">
@@ -162,6 +205,7 @@
     private List<GroupedEventsResponse> GroupedEvents = [];
     private List<AthleteRanking> Rankings = [];
     private int LiveStreamsTracked;
+    private string? DisplayLoadError => NormalizeError(LoadError);
 
     private int UpcomingEventCount =>
         GroupedEvents.SelectMany(x => x.Events).Count(x => x.StartUtc >= DateTime.UtcNow && x.StartUtc <= DateTime.UtcNow.AddDays(60));
@@ -232,6 +276,30 @@
         {
             IsLoading = false;
         }
+    }
+
+    private static string? NormalizeError(string? rawError)
+    {
+        if (string.IsNullOrWhiteSpace(rawError))
+        {
+            return null;
+        }
+
+        var trimmed = rawError.Trim();
+        if (trimmed.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("<body", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The API is starting or temporarily unavailable. Retry in about 60 seconds.";
+        }
+
+        const int maxLength = 320;
+        if (trimmed.Length <= maxLength)
+        {
+            return trimmed;
+        }
+
+        return $"{trimmed[..maxLength]}...";
     }
 }
 

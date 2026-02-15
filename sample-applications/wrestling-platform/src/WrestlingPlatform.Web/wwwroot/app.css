@@ -320,3 +320,71 @@ hr.soft {
     border-top: 1px solid #dfd8c8;
     margin: 0.8rem 0;
 }
+
+.scoreboard-grid {
+    display: grid;
+    gap: 0.9rem;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 1024px) {
+    .scoreboard-grid {
+        grid-template-columns: 1fr 1.05fr 1fr;
+    }
+}
+
+.scoreboard-side {
+    display: grid;
+    gap: 0.6rem;
+    align-content: start;
+}
+
+.scoreboard-center {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    text-align: center;
+    gap: 0.45rem;
+    background: linear-gradient(155deg, #fff 0%, #f5f9ff 100%);
+}
+
+.score-value {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    line-height: 1;
+    color: #1f2a34;
+}
+
+.duel-score {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-size: clamp(2.2rem, 7vw, 4rem);
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    color: #1c2730;
+}
+
+.duel-sep {
+    color: #6f7b84;
+}
+
+.bracket-lane {
+    display: flex;
+    gap: 0.9rem;
+    overflow-x: auto;
+    padding-bottom: 0.4rem;
+}
+
+.bracket-round {
+    min-width: 280px;
+    display: grid;
+    gap: 0.6rem;
+    align-content: start;
+}
+
+.bracket-card {
+    border: 1px solid #d6cfbe;
+    border-radius: 12px;
+    background: #fff;
+    padding: 0.65rem;
+}

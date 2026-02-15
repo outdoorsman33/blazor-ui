@@ -17,14 +17,25 @@ This folder contains a production-oriented **API + web portal** baseline for a U
 - Event registration (team or free-agent)
 - Payment checkout intent + confirmation workflow
 - Bracket generation (`Manual`, `Random`, `Seeded`) with round progression updates
+- Director controls for registration cap/unlimited, bracket release timing, and bracket creation strategy
 - Match operations (mat assignment, in-the-hole, result recording)
+- Real-time mat-side scoring with SignalR live updates and style-aware rule engine (`Folkstyle`, `Freestyle`, `GrecoRoman`)
+- Auto match finalization with winner/loser and outcome reason
 - Historical stats and rankings
 - Notification subscription + dispatch pipeline
 - Stream session provisioning and live status control
+- Athlete media vault endpoints (AI-style highlight generation + NIL profile snapshot)
+- College recruiting search feed
+- Table worker event/mat queue APIs for concurrent mat operations
+- Visual bracket + Madison pool bundle endpoints
+- Media pipeline scaffolding (video ingest/transcode states + AI highlight queue jobs)
 
 ## Security and auth
 
 - JWT auth with role policies (`CoachOrAdmin`, `EventOps`)
+- API rate limiting (global API + stricter auth path policy)
+- In-memory security audit trail endpoint for operational review
+- TOTP MFA enrollment/verification endpoints
 - Access + refresh token model:
   - `POST /api/auth/login`
   - `POST /api/auth/refresh` (refresh-token rotation)
@@ -60,11 +71,45 @@ Configurable in `src/WrestlingPlatform.Api/appsettings*.json`:
 ## Web portal routes
 
 - `/`: command center dashboard
+- `/lab`: operations lab (event + bracket + live stream inspector)
+- `/registration`: tournament search, entry, and director controls
+- `/brackets`: interactive bracket + pool visualization
+- `/table-worker`: event -> mat -> match table worker flow
+- `/live`: live watch + stream device connect
 - `/athlete`: athlete registration/profile/entry/stats/notifications
 - `/coach`: coach profile/team/association/free-agent recruiting
 - `/admin`: event/division/bracket/match/stream operations
+- `/mat-scoring`: mat table real-time scoreboard controls
+- `/recruiting`: college recruiting board
 
 The top header includes sign-in/sign-out controls, keeps session state in-memory, and transparently refreshes access tokens when they are near expiry.
+
+## Local dev loop (recommended)
+
+Start local API + web (and keep Render untouched):
+
+```powershell
+./scripts/start-local-dev.ps1
+```
+
+Stop local services:
+
+```powershell
+./scripts/stop-local-dev.ps1
+```
+
+Reset local data (fresh DB + reseed on next start):
+
+```powershell
+./scripts/reset-local-data.ps1
+```
+
+Demo credentials seeded automatically on API startup:
+
+- Athlete: `demo.athlete@pinpointarena.local` / `DemoPass!123`
+- Coach/Event Ops: `demo.coach@pinpointarena.local` / `DemoPass!123`
+
+The seed also includes sample teams, events across multiple US states, event registrations (including free agents), bracket data, live streams, rankings, stat history, and notification feed entries for local testing.
 
 ## US level coverage
 
@@ -103,6 +148,25 @@ This blueprint provisions:
 - `wrestling-platform-db` (managed Postgres with HA)
 
 Deploy by creating a Render Blueprint from your GitHub repo, then follow the runbook for secrets, domain, and monitoring setup.
+
+## Modern platform additions
+
+- SignalR hub: `/hubs/match-ops` (live scoreboard + match status pushes)
+- Caching: distributed cache abstraction for hot reads (`events`, `rankings`, `brackets`)
+  - defaults to in-memory; configure Redis with `Redis:Configuration`
+- OpenTelemetry instrumentation is enabled when `OTEL_EXPORTER_OTLP_ENDPOINT` is set
+- CI pipeline: `.github/workflows/wrestling-platform-ci.yml`
+  - includes Playwright smoke run against live local-started API + web
+- Render deploy workflow: `.github/workflows/wrestling-platform-render-deploy.yml`
+
+## Playwright E2E smoke
+
+```powershell
+cd tests/WrestlingPlatform.Web.Playwright
+npm install
+npx playwright install chromium
+npm test
+```
 ## One-command Public Demo URL (Quick Tunnel)
 
 From this folder:
@@ -125,6 +189,8 @@ A local `NuGet.Config` is included in this folder to force `nuget.org` and avoid
 
 ## Rival references provided for benchmark
 
+- https://www.usabracketing.com/login
+- https://www.trackwrestling.com/TWHome.jsp?loadBalanced=true
 - https://arena.flowrestling.org/
 - https://www.flowrestling.org/
 

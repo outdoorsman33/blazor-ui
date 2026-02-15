@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject PlatformApiClient ApiClient
 @inject AuthSession AuthSession
+@inject WorkflowState Workflow
 
 <div class="app-shell">
     <div class="ambient ambient-left"></div>
@@ -14,9 +15,16 @@
 
         <nav class="main-nav" aria-label="Main navigation">
             <NavLink href="/" Match="NavLinkMatch.All">Command Center</NavLink>
+            <NavLink href="/lab">Operations Lab</NavLink>
+            <NavLink href="/registration">Registration</NavLink>
+            <NavLink href="/brackets">Bracket Center</NavLink>
+            <NavLink href="/table-worker">Table Worker</NavLink>
+            <NavLink href="/live">Live Hub</NavLink>
             <NavLink href="/athlete">Athlete Portal</NavLink>
             <NavLink href="/coach">Coach Portal</NavLink>
             <NavLink href="/admin">Event Admin</NavLink>
+            <NavLink href="/mat-scoring">Mat Scoring</NavLink>
+            <NavLink href="/recruiting">Recruiting Hub</NavLink>
         </nav>
 
         <div class="auth-panel">
@@ -25,6 +33,8 @@
                 <input class="mini-input" @bind="Email" placeholder="email" />
                 <input class="mini-input" @bind="Password" type="password" placeholder="password" />
                 <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
+                <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
+                <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
             }
             else
             {
@@ -37,6 +47,18 @@
     @if (!string.IsNullOrWhiteSpace(AuthMessage))
     {
         <div class="auth-message @(AuthOk ? "auth-ok" : "auth-error")">@AuthMessage</div>
+    }
+
+    @if (Workflow.TeamId is not null || Workflow.EventId is not null || Workflow.MatchId is not null || Workflow.AthleteProfileId is not null || Workflow.CoachProfileId is not null)
+    {
+        <div class="workflow-strip">
+            <span class="workflow-chip">Athlete: @Short(Workflow.AthleteProfileId)</span>
+            <span class="workflow-chip">Coach: @Short(Workflow.CoachProfileId)</span>
+            <span class="workflow-chip">Team: @Short(Workflow.TeamId)</span>
+            <span class="workflow-chip">Event: @Short(Workflow.EventId)</span>
+            <span class="workflow-chip">Match: @Short(Workflow.MatchId)</span>
+            <button class="mini-btn ghost" @onclick="ClearWorkflow">Clear Workflow</button>
+        </div>
     }
 
     <main class="surface">
@@ -78,10 +100,32 @@
         Busy = false;
     }
 
+    private async Task SignInAsDemoAthleteAsync()
+    {
+        Email = "demo.athlete@pinpointarena.local";
+        Password = "DemoPass!123";
+        await SignInAsync();
+    }
+
+    private async Task SignInAsDemoCoachAsync()
+    {
+        Email = "demo.coach@pinpointarena.local";
+        Password = "DemoPass!123";
+        await SignInAsync();
+    }
+
     private async Task SignOutAsync()
     {
         await ApiClient.LogoutAsync();
         AuthOk = true;
         AuthMessage = "Signed out.";
     }
+
+    private void ClearWorkflow() => Workflow.Clear();
+
+    private static string Short(Guid? id)
+    {
+        return id is null ? "-" : id.Value.ToString()[..8];
+    }
 }
+

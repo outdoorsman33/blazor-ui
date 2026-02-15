@@ -1,0 +1,656 @@
+@page "/mat-scoring"
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.AspNetCore.Http.Connections
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+@implements IAsyncDisposable
+
+<PageTitle>Mat Scoring - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Mat-Side Real-Time Scoring</h1>
+        <p class="page-subtitle">Rules-aware live scoring for folkstyle, freestyle, and greco with automatic winner/loser finalization.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">@CurrentStyleLabel</span>
+        <span class="tag">Auto-End Engine</span>
+        <span class="tag">SignalR + Fallback</span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+}
+
+<section class="panel">
+    <h2>Match Channel</h2>
+    <div class="form-grid spacer-top">
+        <div class="field">
+            <label>Match Id</label>
+            <input class="input mono" @bind="MatchIdText" @bind:event="oninput" placeholder="match guid" />
+        </div>
+        <div class="field">
+            <label>Style</label>
+            <select class="select" @bind="SelectedStyle">
+                @foreach (var style in Enum.GetValues<WrestlingStyle>())
+                {
+                    <option value="@style">@style</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Level</label>
+            <select class="select" @bind="SelectedLevel">
+                @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                {
+                    <option value="@level">@level</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Period</label>
+            <input class="input" type="number" min="1" max="10" @bind="CurrentPeriod" />
+        </div>
+        <div class="field">
+            <label>Clock (seconds)</label>
+            <input class="input" type="number" min="0" max="420" @bind="CurrentClockSeconds" />
+        </div>
+        <div class="field">
+            <label>Action</label>
+            <select class="select" @bind="SelectedActionCode">
+                @foreach (var action in AvailableActions)
+                {
+                    <option value="@action.ActionCode">@action.Label (@action.DefaultPoints)</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Manual points override (optional)</label>
+            <input class="input" type="number" min="0" max="8" @bind="ManualPoints" />
+        </div>
+        <div class="field">
+            <label>Tech fall threshold</label>
+            <input class="input" type="number" min="4" max="30" @bind="TechFallPointGap" />
+        </div>
+    </div>
+    <div class="actions">
+        <button class="btn primary" @onclick="ConnectAndLoadAsync" disabled="@IsBusy">Connect + Load</button>
+        <button class="btn secondary" @onclick="SaveRulesAsync" disabled="@IsBusy">Save Rules</button>
+        <button class="btn ghost" @onclick="UseWorkflowMatch">Use Workflow Match</button>
+        <button class="btn ghost" @onclick="LoadOnlyAsync" disabled="@IsBusy">Refresh Board</button>
+        <button class="btn ghost" @onclick="EndByDecisionAsync" disabled="@IsBusy">End Match</button>
+        <button class="btn ghost" @onclick="ResetBoardAsync" disabled="@IsBusy">Reset Board</button>
+    </div>
+    <p class="helper spacer-top">
+        Hub: @(IsHubConnected ? "connected" : "not connected")
+        | Fallback Polling: @(IsPollingActive ? "on" : "off")
+        | Auto-End: @(AutoEndEnabled ? "on" : "off")
+        | workflow match: <span class="mono">@Short(Workflow.MatchId)</span>
+    </p>
+</section>
+
+<div class="scoreboard-grid spacer-top">
+    <section class="panel scoreboard-side">
+        <h3>Athlete A</h3>
+        <div class="score-value">@Board?.AthleteAScore</div>
+        <div class="helper mono">Athlete Id: @Short(Board?.AthleteAId)</div>
+        <div class="actions">
+            @foreach (var action in QuickActionButtons)
+            {
+                <button class="btn primary" @onclick="() => ScoreActionAsync(ScoreCompetitor.AthleteA, action.ActionCode)" disabled="@IsBusy">
+                    @action.Label +@action.DefaultPoints
+                </button>
+            }
+        </div>
+    </section>
+
+    <section class="panel scoreboard-center">
+        <h3>Live Board</h3>
+        <div class="duel-score">
+            <span>@(Board?.AthleteAScore ?? 0)</span>
+            <span class="duel-sep">-</span>
+            <span>@(Board?.AthleteBScore ?? 0)</span>
+        </div>
+        <div class="helper">Style @(Board?.Style ?? SelectedStyle) | Period @(Board?.CurrentPeriod ?? CurrentPeriod) | Status @(Board?.Status.ToString() ?? "-")</div>
+        <div class="helper">Updated @(Board?.UpdatedUtc.ToLocalTime().ToString("HH:mm:ss") ?? "-")</div>
+        @if (Board?.IsFinal == true)
+        {
+            <div class="alert success spacer-top">
+                Final via @(Board.OutcomeReason ?? "Decision")<br />
+                Winner: <span class="mono">@Short(Board.WinnerAthleteId)</span> |
+                Loser: <span class="mono">@Short(Board.LoserAthleteId)</span>
+            </div>
+        }
+    </section>
+
+    <section class="panel scoreboard-side">
+        <h3>Athlete B</h3>
+        <div class="score-value">@Board?.AthleteBScore</div>
+        <div class="helper mono">Athlete Id: @Short(Board?.AthleteBId)</div>
+        <div class="actions">
+            @foreach (var action in QuickActionButtons)
+            {
+                <button class="btn secondary" @onclick="() => ScoreActionAsync(ScoreCompetitor.AthleteB, action.ActionCode)" disabled="@IsBusy">
+                    @action.Label +@action.DefaultPoints
+                </button>
+            }
+        </div>
+    </section>
+</div>
+
+<section class="panel spacer-top">
+    <h2>Selected Action</h2>
+    <p class="helper">Use the selected scoring action to add points according to style rules, with optional manual override.</p>
+    <div class="actions">
+        <button class="btn primary" @onclick="() => ScoreActionAsync(ScoreCompetitor.AthleteA, SelectedActionCode)" disabled="@IsBusy">Apply to Athlete A</button>
+        <button class="btn secondary" @onclick="() => ScoreActionAsync(ScoreCompetitor.AthleteB, SelectedActionCode)" disabled="@IsBusy">Apply to Athlete B</button>
+    </div>
+</section>
+
+<section class="panel spacer-top">
+    <h2>Scoring Timeline</h2>
+    <div class="table-wrap spacer-top">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Period</th>
+                    <th>Clock</th>
+                    <th>Competitor</th>
+                    <th>Action</th>
+                    <th>Pts</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Board is null || Board.Events.Count == 0)
+                {
+                    <tr><td colspan="7">No scoring events yet.</td></tr>
+                }
+                else
+                {
+                    @foreach (var evt in Board.Events.OrderByDescending(x => x.TimestampUtc).Take(100))
+                    {
+                        <tr>
+                            <td>@evt.TimestampUtc.ToLocalTime().ToString("HH:mm:ss")</td>
+                            <td>@evt.Period</td>
+                            <td>@(evt.MatchClockSeconds is null ? "-" : evt.MatchClockSeconds.Value.ToString())</td>
+                            <td>@evt.Competitor</td>
+                            <td>@evt.ActionType</td>
+                            <td>@evt.Points</td>
+                            <td>@evt.AthleteAScore-@evt.AthleteBScore</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "matchId")]
+    public Guid? QueryMatchId { get; set; }
+
+    private HubConnection? _hubConnection;
+    private bool IsBusy;
+    private bool IsHubConnected;
+    private bool IsPollingActive;
+    private CancellationTokenSource? _pollingCts;
+
+    private string? StatusMessage;
+    private bool StatusSuccess;
+    private string MatchIdText = string.Empty;
+    private MatScoreboardSnapshot? Board;
+    private MatchScoringRulesSnapshot? Rules;
+
+    private int CurrentPeriod = 1;
+    private int? CurrentClockSeconds;
+    private int? ManualPoints;
+
+    private WrestlingStyle SelectedStyle = WrestlingStyle.Folkstyle;
+    private CompetitionLevel SelectedLevel = CompetitionLevel.HighSchool;
+    private ScoringActionCode SelectedActionCode = ScoringActionCode.Takedown;
+    private bool AutoEndEnabled = true;
+    private int TechFallPointGap = 15;
+    private int RegulationPeriods = 3;
+
+    private string CurrentStyleLabel => $"Style: {(Rules?.Style ?? SelectedStyle)}";
+
+    private List<ScoringActionDefinition> AvailableActions =>
+        Rules?.Actions.Count > 0
+            ? Rules.Actions
+            : FallbackActions;
+
+    private List<ScoringActionDefinition> QuickActionButtons =>
+        AvailableActions
+            .Where(x => x.DefaultPoints > 0 && !x.EndsMatch)
+            .Take(5)
+            .ToList();
+
+    private static readonly List<ScoringActionDefinition> FallbackActions =
+    [
+        new(ScoringActionCode.Takedown, "Takedown", 2, false, "Standard takedown."),
+        new(ScoringActionCode.Escape, "Escape", 1, false, "Escape point."),
+        new(ScoringActionCode.Reversal, "Reversal", 2, false, "Reversal point."),
+        new(ScoringActionCode.NearFall2, "Near Fall (2)", 2, false, "Near-fall points."),
+        new(ScoringActionCode.Fall, "Fall", 0, true, "Pin/fall.")
+    ];
+
+    protected override void OnInitialized()
+    {
+        if (QueryMatchId is not null)
+        {
+            MatchIdText = QueryMatchId.Value.ToString();
+            Workflow.MatchId = QueryMatchId;
+        }
+        else if (Workflow.MatchId is not null)
+        {
+            MatchIdText = Workflow.MatchId.Value.ToString();
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (QueryMatchId is null)
+        {
+            return;
+        }
+
+        MatchIdText = QueryMatchId.Value.ToString();
+        Workflow.MatchId = QueryMatchId;
+    }
+
+    private async Task ConnectAndLoadAsync()
+    {
+        IsBusy = true;
+        StatusMessage = null;
+
+        try
+        {
+            if (!TryGetMatchId(out var matchId))
+            {
+                StatusSuccess = false;
+                StatusMessage = "Valid match id is required.";
+                return;
+            }
+
+            Workflow.MatchId = matchId;
+            await LoadBoardAsync(matchId);
+            await LoadRulesAsync(matchId);
+
+            try
+            {
+                await EnsureConnectionAsync();
+                if (_hubConnection is null)
+                {
+                    throw new InvalidOperationException("SignalR connection was not initialized.");
+                }
+
+                await _hubConnection.InvokeAsync("JoinMatch", matchId);
+                IsHubConnected = _hubConnection.State == HubConnectionState.Connected;
+                StopPolling();
+                StatusSuccess = true;
+                StatusMessage = "Connected to live scoring channel.";
+            }
+            catch
+            {
+                IsHubConnected = false;
+                StartPolling(matchId);
+                StatusSuccess = true;
+                StatusMessage = "Live fallback mode active (polling). Scoring remains fully operational.";
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SaveRulesAsync()
+    {
+        if (!TryGetMatchId(out var matchId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid match id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.ConfigureMatScoringRulesAsync(
+                matchId,
+                new ConfigureMatchScoringRequest(
+                    SelectedStyle,
+                    SelectedLevel,
+                    AutoEndEnabled,
+                    TechFallPointGap,
+                    RegulationPeriods));
+
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            Rules = result.Data;
+            SelectedActionCode = Rules.Actions.FirstOrDefault(x => x.DefaultPoints > 0)?.ActionCode ?? ScoringActionCode.Takedown;
+            StatusSuccess = true;
+            StatusMessage = "Scoring rules saved.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task LoadOnlyAsync()
+    {
+        if (!TryGetMatchId(out var matchId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid match id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            await LoadBoardAsync(matchId);
+            await LoadRulesAsync(matchId);
+            StatusSuccess = true;
+            StatusMessage = "Scoreboard refreshed.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ScoreActionAsync(ScoreCompetitor competitor, ScoringActionCode actionCode)
+    {
+        if (!TryGetMatchId(out var matchId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid match id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var action = AvailableActions.FirstOrDefault(x => x.ActionCode == actionCode);
+            var actionLabel = action?.Label ?? actionCode.ToString();
+            var result = await ApiClient.AddMatScoreEventAsync(
+                matchId,
+                new AddMatScoreEventRequest(
+                    competitor,
+                    ManualPoints,
+                    actionLabel,
+                    CurrentPeriod,
+                    CurrentClockSeconds,
+                    AthleteId: null,
+                    ActionCode: actionCode,
+                    EndMatch: false));
+
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            Board = result.Data;
+            CurrentPeriod = result.Data.CurrentPeriod;
+            StatusSuccess = true;
+            StatusMessage = $"{competitor}: {actionLabel}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task EndByDecisionAsync()
+    {
+        if (!TryGetMatchId(out var matchId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid match id is required.";
+            return;
+        }
+
+        var preferred = (Board?.AthleteBScore ?? 0) > (Board?.AthleteAScore ?? 0)
+            ? ScoreCompetitor.AthleteB
+            : ScoreCompetitor.AthleteA;
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.AddMatScoreEventAsync(
+                matchId,
+                new AddMatScoreEventRequest(
+                    preferred,
+                    0,
+                    "Decision",
+                    CurrentPeriod,
+                    CurrentClockSeconds,
+                    AthleteId: null,
+                    ActionCode: ScoringActionCode.Custom,
+                    EndMatch: true));
+
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            Board = result.Data;
+            StatusSuccess = true;
+            StatusMessage = "Match finalized by table worker.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ResetBoardAsync()
+    {
+        if (!TryGetMatchId(out var matchId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid match id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.ResetMatScoreboardAsync(matchId, "Table reset");
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            Board = result.Data;
+            StatusSuccess = true;
+            StatusMessage = "Scoreboard reset.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void UseWorkflowMatch()
+    {
+        if (Workflow.MatchId is not null)
+        {
+            MatchIdText = Workflow.MatchId.Value.ToString();
+        }
+    }
+
+    private async Task EnsureConnectionAsync()
+    {
+        if (_hubConnection is null)
+        {
+            var hubBaseUri = ApiClient.BaseAddress;
+            var hubUri = new Uri(hubBaseUri, "/hubs/match-ops");
+
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(hubUri, options =>
+                {
+                    options.Transports = HttpTransportType.LongPolling;
+                })
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hubConnection.On<MatScoreboardSnapshot>("scoreboardUpdated", snapshot =>
+            {
+                if (!TryGetMatchId(out var matchId) || snapshot.MatchId != matchId)
+                {
+                    return;
+                }
+
+                Board = snapshot;
+                CurrentPeriod = snapshot.CurrentPeriod;
+                StatusSuccess = true;
+                StatusMessage = "Live scoreboard updated.";
+                _ = InvokeAsync(StateHasChanged);
+            });
+        }
+
+        if (_hubConnection.State == HubConnectionState.Disconnected)
+        {
+            await _hubConnection.StartAsync();
+        }
+    }
+
+    private async Task LoadBoardAsync(Guid matchId)
+    {
+        var boardResult = await ApiClient.GetMatScoreboardAsync(matchId);
+        if (!boardResult.Success || boardResult.Data is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = boardResult.Message;
+            return;
+        }
+
+        Board = boardResult.Data;
+        CurrentPeriod = boardResult.Data.CurrentPeriod;
+        SelectedStyle = boardResult.Data.Style;
+        SelectedLevel = boardResult.Data.Level;
+    }
+
+    private async Task LoadRulesAsync(Guid matchId)
+    {
+        var rulesResult = await ApiClient.GetMatScoringRulesAsync(matchId);
+        if (!rulesResult.Success || rulesResult.Data is null)
+        {
+            Rules = null;
+            return;
+        }
+
+        Rules = rulesResult.Data;
+        SelectedStyle = Rules.Style;
+        SelectedLevel = Rules.Level;
+        AutoEndEnabled = Rules.AutoEndEnabled;
+        TechFallPointGap = Rules.TechFallPointGap;
+        RegulationPeriods = Rules.RegulationPeriods;
+        SelectedActionCode = Rules.Actions.FirstOrDefault(x => x.DefaultPoints > 0)?.ActionCode ?? ScoringActionCode.Takedown;
+    }
+
+    private bool TryGetMatchId(out Guid matchId)
+    {
+        if (Guid.TryParse(MatchIdText, out matchId))
+        {
+            return true;
+        }
+
+        if (Workflow.MatchId is not null)
+        {
+            matchId = Workflow.MatchId.Value;
+            MatchIdText = matchId.ToString();
+            return true;
+        }
+
+        return false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopPolling();
+
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString()[..8];
+
+    private void StartPolling(Guid matchId)
+    {
+        StopPolling();
+
+        _pollingCts = new CancellationTokenSource();
+        var token = _pollingCts.Token;
+        IsPollingActive = true;
+
+        _ = Task.Run(async () =>
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    var result = await ApiClient.GetMatScoreboardAsync(matchId, token);
+                    if (!result.Success || result.Data is null)
+                    {
+                        continue;
+                    }
+
+                    Board = result.Data;
+                    CurrentPeriod = result.Data.CurrentPeriod;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on dispose/reconnect.
+            }
+        }, token);
+    }
+
+    private void StopPolling()
+    {
+        if (_pollingCts is null)
+        {
+            IsPollingActive = false;
+            return;
+        }
+
+        try
+        {
+            _pollingCts.Cancel();
+            _pollingCts.Dispose();
+        }
+        catch
+        {
+            // Ignore dispose race conditions.
+        }
+        finally
+        {
+            _pollingCts = null;
+            IsPollingActive = false;
+        }
+    }
+}

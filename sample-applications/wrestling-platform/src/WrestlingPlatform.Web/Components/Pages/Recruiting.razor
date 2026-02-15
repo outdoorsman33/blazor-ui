@@ -1,0 +1,167 @@
+@page "/recruiting"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+
+<PageTitle>Recruiting Hub - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">College Recruiting Hub</h1>
+        <p class="page-subtitle">Search verified athlete performance, ranking movement, and NIL-ready profiles in one recruiting workflow.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">College Discovery</span>
+        <span class="tag">NIL Ready</span>
+        <span class="tag">Verified Stats</span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+}
+
+<section class="panel">
+    <h2>Search Athletes</h2>
+    <div class="form-grid spacer-top">
+        <div class="field">
+            <label>Level</label>
+            <select class="select" @bind="Level">
+                <option value="">All</option>
+                @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                {
+                    <option value="@level">@level</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>State</label>
+            <input class="input" @bind="State" placeholder="OH" />
+        </div>
+        <div class="field">
+            <label>Min Wins</label>
+            <input class="input" type="number" min="0" @bind="MinWins" />
+        </div>
+        <div class="field">
+            <label>Take</label>
+            <input class="input" type="number" min="1" max="120" @bind="Take" />
+        </div>
+    </div>
+    <div class="actions">
+        <button class="btn primary" @onclick="LoadAsync" disabled="@IsBusy">Load Prospects</button>
+        <button class="btn ghost" @onclick="UseWorkflowAthlete">Use Workflow Athlete</button>
+    </div>
+</section>
+
+<section class="panel spacer-top">
+    <h2>Prospect Board</h2>
+    <div class="table-wrap spacer-top">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Athlete</th>
+                    <th>Level</th>
+                    <th>State</th>
+                    <th>Weight</th>
+                    <th>Rank</th>
+                    <th>Rating</th>
+                    <th>W-L</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Prospects.Count == 0)
+                {
+                    <tr><td colspan="8">No prospects loaded.</td></tr>
+                }
+                else
+                {
+                    @foreach (var row in Prospects)
+                    {
+                        <tr>
+                            <td>@row.FirstName @row.LastName</td>
+                            <td>@row.Level</td>
+                            <td>@row.State</td>
+                            <td>@row.WeightClass</td>
+                            <td>@row.Rank</td>
+                            <td>@row.RatingPoints.ToString("0.0")</td>
+                            <td>@row.Wins-@row.Losses</td>
+                            <td>
+                                <button class="btn ghost" @onclick="() => SetWorkflowAthlete(row.AthleteProfileId)">Track</button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private bool IsBusy;
+    private string? StatusMessage;
+    private bool StatusSuccess;
+
+    private CompetitionLevel? Level = CompetitionLevel.HighSchool;
+    private string State = string.Empty;
+    private int MinWins = 10;
+    private int Take = 40;
+    private List<RecruitingAthleteCard> Prospects = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsBusy = true;
+        StatusMessage = null;
+
+        try
+        {
+            var result = await ApiClient.GetRecruitingAthletesAsync(
+                Level,
+                string.IsNullOrWhiteSpace(State) ? null : State.Trim(),
+                MinWins,
+                Take);
+
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Prospects = [];
+                return;
+            }
+
+            Prospects = result.Data ?? [];
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {Prospects.Count} recruiting prospects.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void SetWorkflowAthlete(Guid athleteId)
+    {
+        Workflow.AthleteProfileId = athleteId;
+        StatusSuccess = true;
+        StatusMessage = $"Workflow athlete set to {athleteId.ToString()[..8]}.";
+    }
+
+    private void UseWorkflowAthlete()
+    {
+        if (Workflow.AthleteProfileId is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "Workflow athlete id is empty.";
+            return;
+        }
+
+        StatusSuccess = true;
+        StatusMessage = $"Current workflow athlete: {Workflow.AthleteProfileId.Value.ToString()[..8]}";
+    }
+}
+

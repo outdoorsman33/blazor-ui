@@ -248,3 +248,31 @@ a {
     background: #ffefef;
     color: #8d2727;
 }
+
+.mini-btn.ghost {
+    background: #f5f1e8;
+    border: 1px solid #d2c9b7;
+    color: #2c353b;
+}
+
+.workflow-strip {
+    margin-top: 0.65rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #d6cfbe;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.85);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.workflow-chip {
+    border: 1px solid #d6cfbe;
+    background: #fff;
+    border-radius: 999px;
+    padding: 0.22rem 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #3c4a53;
+}

@@ -1,0 +1,358 @@
+@page "/lab"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+
+<PageTitle>Operations Lab - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Operations Lab</h1>
+        <p class="page-subtitle">Local-first testing hub. Load current events, inspect brackets and live streams, and share IDs across portals automatically.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Local Workflow</span>
+        <span class="tag">Bracket Viewer</span>
+        <span class="tag">Live Stream Monitor</span>
+    </div>
+</div>
+
+<div class="metric-grid">
+    <div class="metric-card">
+        <div class="metric-label">Grouped Event Clusters</div>
+        <div class="metric-value">@GroupedEvents.Count</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Selected Event</div>
+        <div class="metric-value mono">@Short(SelectedEventId)</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Loaded Brackets</div>
+        <div class="metric-value">@Brackets.Count</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">Live Streams</div>
+        <div class="metric-value">@ActiveStreams.Count</div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusOk ? "success" : "error")">@StatusMessage</div>
+}
+
+<div class="panel-grid two">
+    <section class="panel">
+        <div class="item-head">
+            <h2>Event Browser</h2>
+            <div class="actions">
+                <button class="btn ghost" @onclick="RefreshAsync" disabled="@IsBusy">Refresh</button>
+                <button class="btn secondary" @onclick="LoadDemoShowcaseAsync" disabled="@IsBusy">Load Demo Showcase</button>
+            </div>
+        </div>
+
+        <p class="helper spacer-top">Tip: local demo logins are <strong>demo.athlete@pinpointarena.local</strong> and <strong>demo.coach@pinpointarena.local</strong>, password <strong>DemoPass!123</strong>.</p>
+
+        <ul class="list spacer-top">
+            @if (GroupedEvents.Count == 0)
+            {
+                <li class="list-item">No grouped events available yet. Seed demo data locally and refresh.</li>
+            }
+            else
+            {
+                @foreach (var cluster in GroupedEvents)
+                {
+                    @foreach (var eventCard in cluster.Events)
+                    {
+                        <li class="list-item">
+                            <div class="item-head">
+                                <span class="item-title">@eventCard.Name</span>
+                                <span class="item-meta">@cluster.State / @cluster.City</span>
+                            </div>
+                            <div class="split spacer-top">
+                                <span>@eventCard.StartUtc.ToLocalTime().ToString("MMM dd yyyy h:mm tt")</span>
+                                <span class="mono">@Short(eventCard.Id)</span>
+                                <button class="btn secondary" @onclick="() => SelectAndLoadAsync(eventCard.Id)" disabled="@IsBusy">Select + Load</button>
+                            </div>
+                        </li>
+                    }
+                }
+            }
+        </ul>
+    </section>
+
+    <section class="panel">
+        <h2>Event Detail Inspector</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Selected Event Id</label>
+                <input class="input mono" @bind="SelectedEventText" @bind:event="oninput" placeholder="event guid" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="LoadSelectedEventAsync" disabled="@IsBusy">Load Brackets + Streams</button>
+            <button class="btn ghost" @onclick="ApplyToWorkflow" disabled="@IsBusy">Apply IDs To Workflow</button>
+            <button class="btn secondary" @onclick="LoadDemoShowcaseAsync" disabled="@IsBusy">Load Demo Showcase</button>
+        </div>
+
+        <h3 class="spacer-top">Active Streams</h3>
+        <ul class="list spacer-top">
+            @if (ActiveStreams.Count == 0)
+            {
+                <li class="list-item">No active streams for selected event.</li>
+            }
+            else
+            {
+                @foreach (var stream in ActiveStreams)
+                {
+                    <li class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">@stream.DeviceName</span>
+                            <span class="item-meta">@stream.Status</span>
+                        </div>
+                        <div class="helper spacer-top">@stream.PlaybackUrl</div>
+                    </li>
+                }
+            }
+        </ul>
+    </section>
+</div>
+
+<section class="panel spacer-top">
+    <h2>Bracket + Match Viewer</h2>
+    <div class="table-wrap spacer-top">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Bracket</th>
+                    <th>Level</th>
+                    <th>Weight</th>
+                    <th>Match Count</th>
+                    <th>First Match</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Brackets.Count == 0)
+                {
+                    <tr><td colspan="5">Load an event to view bracket data.</td></tr>
+                }
+                else
+                {
+                    @foreach (var bundle in Brackets)
+                    {
+                        <tr>
+                            <td class="mono">@Short(bundle.Bracket.Id)</td>
+                            <td>@bundle.Bracket.Level</td>
+                            <td>@bundle.Bracket.WeightClass</td>
+                            <td>@bundle.Matches.Count</td>
+                            <td>
+                                @if (bundle.Matches.Count > 0)
+                                {
+                                    <button class="btn ghost" @onclick="() => SelectMatch(bundle.Matches[0].Id)">@Short(bundle.Matches[0].Id)</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="helper spacer-top">Workflow match id: <span class="mono">@Short(Workflow.MatchId)</span></div>
+</section>
+
+@code {
+    private bool IsBusy;
+    private string? StatusMessage;
+    private bool StatusOk;
+
+    private List<GroupedEventsResponse> GroupedEvents = [];
+    private List<BracketBundle> Brackets = [];
+    private List<StreamSession> ActiveStreams = [];
+
+    private Guid? SelectedEventId;
+    private string SelectedEventText = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+
+        if (Workflow.EventId is not null)
+        {
+            SelectedEventId = Workflow.EventId;
+            SelectedEventText = Workflow.EventId.Value.ToString();
+            await LoadSelectedEventAsync();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        IsBusy = true;
+        StatusMessage = null;
+
+        var groupedResult = await ApiClient.GetGroupedEventsAsync();
+        if (!groupedResult.Success)
+        {
+            StatusOk = false;
+            StatusMessage = groupedResult.Message;
+            GroupedEvents = [];
+            IsBusy = false;
+            return;
+        }
+
+        GroupedEvents = groupedResult.Data ?? [];
+        StatusOk = true;
+        StatusMessage = $"Loaded {GroupedEvents.Count} state/city clusters.";
+
+        if (SelectedEventId is null)
+        {
+            var showcaseEventId = GroupedEvents
+                .SelectMany(cluster => cluster.Events)
+                .Where(evt => string.Equals(evt.Name, "PinPoint Local Showcase", StringComparison.OrdinalIgnoreCase))
+                .Select(evt => (Guid?)evt.Id)
+                .FirstOrDefault();
+
+            var firstEventId = GroupedEvents
+                .SelectMany(cluster => cluster.Events)
+                .Select(evt => (Guid?)evt.Id)
+                .FirstOrDefault();
+
+            SelectedEventId = showcaseEventId ?? firstEventId;
+            if (SelectedEventId is not null)
+            {
+                SelectedEventText = SelectedEventId.Value.ToString();
+            }
+        }
+
+        IsBusy = false;
+    }
+
+    private void SelectEvent(Guid eventId)
+    {
+        SelectedEventId = eventId;
+        SelectedEventText = eventId.ToString();
+    }
+
+    private async Task SelectAndLoadAsync(Guid eventId)
+    {
+        SelectEvent(eventId);
+        await LoadSelectedEventAsync();
+    }
+
+    private async Task LoadDemoShowcaseAsync()
+    {
+        if (GroupedEvents.Count == 0)
+        {
+            await RefreshAsync();
+        }
+
+        var showcaseEventId = GroupedEvents
+            .SelectMany(cluster => cluster.Events)
+            .Where(evt => string.Equals(evt.Name, "PinPoint Local Showcase", StringComparison.OrdinalIgnoreCase))
+            .Select(evt => (Guid?)evt.Id)
+            .FirstOrDefault();
+
+        if (showcaseEventId is null)
+        {
+            StatusOk = false;
+            StatusMessage = "Demo showcase event is not available yet. Refresh and try again.";
+            return;
+        }
+
+        await SelectAndLoadAsync(showcaseEventId.Value);
+    }
+
+    private async Task LoadSelectedEventAsync()
+    {
+        IsBusy = true;
+        StatusMessage = null;
+
+        try
+        {
+            var hasParsedText = Guid.TryParse(SelectedEventText, out var eventIdFromText);
+            var eventId = hasParsedText ? eventIdFromText : SelectedEventId;
+
+            if (eventId is null)
+            {
+                StatusOk = false;
+                StatusMessage = "Select an event first, then load brackets and streams.";
+                return;
+            }
+
+            SelectedEventId = eventId.Value;
+            SelectedEventText = eventId.Value.ToString();
+
+            var bracketResult = await ApiClient.GetBracketsAsync(eventId.Value);
+            var streamResult = await ApiClient.GetActiveStreamsAsync(eventId.Value);
+
+            Brackets = bracketResult.Success ? (bracketResult.Data ?? []) : [];
+            ActiveStreams = streamResult.Success ? (streamResult.Data ?? []) : [];
+
+            if (!bracketResult.Success || !streamResult.Success)
+            {
+                StatusOk = false;
+                var issues = new List<string>();
+                if (!bracketResult.Success)
+                {
+                    issues.Add($"Brackets: {bracketResult.Message}");
+                }
+
+                if (!streamResult.Success)
+                {
+                    issues.Add($"Streams: {streamResult.Message}");
+                }
+
+                StatusMessage = string.Join(" | ", issues);
+            }
+            else if (Brackets.Count == 0 && ActiveStreams.Count == 0)
+            {
+                StatusOk = true;
+                StatusMessage = "This event has no brackets or live streams yet. Try 'Load Demo Showcase' or create brackets in Event Admin.";
+            }
+            else
+            {
+                StatusOk = true;
+                StatusMessage = $"Loaded {Brackets.Count} brackets and {ActiveStreams.Count} active streams.";
+            }
+        }
+        catch
+        {
+            StatusOk = false;
+            StatusMessage = "Unable to load bracket and stream data right now. Please retry.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ApplyToWorkflow()
+    {
+        if (SelectedEventId is not null)
+        {
+            Workflow.EventId = SelectedEventId;
+        }
+
+        if (Brackets.Count > 0)
+        {
+            Workflow.DivisionId = Brackets[0].Bracket.TournamentDivisionId;
+            Workflow.MatchId = Brackets[0].Matches.FirstOrDefault()?.Id;
+        }
+
+        if (ActiveStreams.Count > 0)
+        {
+            Workflow.StreamId = ActiveStreams[0].Id;
+        }
+
+        StatusOk = true;
+        StatusMessage = "Workflow context updated from selected event.";
+    }
+
+    private void SelectMatch(Guid matchId)
+    {
+        Workflow.MatchId = matchId;
+        StatusOk = true;
+        StatusMessage = $"Workflow match set to {Short(matchId)}.";
+    }
+
+    private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString()[..8];
+}

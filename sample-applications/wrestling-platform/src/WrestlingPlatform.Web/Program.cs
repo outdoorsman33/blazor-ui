@@ -14,6 +14,7 @@ public class Program
             .AddInteractiveServerComponents();
 
         builder.Services.AddScoped<AuthSession>();
+        builder.Services.AddScoped<WorkflowState>();
         builder.Services.AddHttpClient<PlatformApiClient>(client =>
         {
             client.BaseAddress = ResolveApiBaseUri(builder.Configuration);
@@ -71,4 +72,6 @@ public class Program
         throw new InvalidOperationException($"Api:BaseUrl is invalid: '{configuredBaseUrl}'.");
     }
 }
+
+
 

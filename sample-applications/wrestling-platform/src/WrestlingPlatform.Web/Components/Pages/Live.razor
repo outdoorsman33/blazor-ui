@@ -1,0 +1,321 @@
+@page "/live"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+
+<PageTitle>Live Matches - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Live Match Hub</h1>
+        <p class="page-subtitle">Watch active matches and connect mat-side streaming devices (phone, tablet, or dedicated cam) in one control center.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Live Watch</span>
+        <span class="tag">Device Connect</span>
+        <span class="tag">Athlete Video Feed</span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+}
+
+<div class="panel-grid two">
+    <section class="panel">
+        <h2>1) Select Event</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>State filter</label>
+                <input class="input" @bind="StateFilter" placeholder="OH" />
+            </div>
+            <div class="field">
+                <label>Event Id</label>
+                <input class="input mono" @bind="SelectedEventIdText" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn ghost" @onclick="LoadEventsAsync" disabled="@IsBusy">Refresh Events</button>
+            <button class="btn primary" @onclick="LoadStreamsAsync" disabled="@IsBusy">Load Live Streams</button>
+        </div>
+        <ul class="list spacer-top">
+            @if (Events.Count == 0)
+            {
+                <li class="list-item">No events found.</li>
+            }
+            else
+            {
+                @foreach (var evt in Events.Take(12))
+                {
+                    <li class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">@evt.EventName</span>
+                            <span class="item-meta">@evt.State / @evt.City</span>
+                        </div>
+                        <div class="split spacer-top">
+                            <span>@evt.StartUtc.ToLocalTime().ToString("MMM dd yyyy h:mm tt")</span>
+                            <button class="btn secondary" @onclick="() => SelectEventAsync(evt.EventId)">Select</button>
+                        </div>
+                    </li>
+                }
+            }
+        </ul>
+    </section>
+
+    <section class="panel">
+        <h2>2) Connect Stream Device</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Device Name</label>
+                <input class="input" @bind="DeviceName" placeholder="Mat 3 iPhone Cam" />
+            </div>
+            <div class="field">
+                <label>Match Id (optional)</label>
+                <input class="input mono" @bind="MatchIdText" />
+            </div>
+            <div class="field">
+                <label>Protocol</label>
+                <select class="select" @bind="Protocol">
+                    <option>RTMP</option>
+                    <option>SRT</option>
+                    <option>WebRTC</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Playback/Source URL (optional)</label>
+                <input class="input" @bind="SourceUrl" placeholder="https://..." />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="CreateStreamAsync" disabled="@IsBusy">Provision Stream</button>
+            <button class="btn ghost" @onclick="SetLatestStreamLiveAsync" disabled="@IsBusy">Mark Latest Live</button>
+        </div>
+
+        @if (LastProvisionedStream is not null)
+        {
+            <div class="list-item spacer-top">
+                <div class="item-head">
+                    <span class="item-title">Latest Provisioned</span>
+                    <span class="item-meta">@LastProvisionedStream.Status</span>
+                </div>
+                <div class="helper spacer-top">Device: @LastProvisionedStream.DeviceName</div>
+                <div class="helper">Playback: @LastProvisionedStream.PlaybackUrl</div>
+                <div class="mono spacer-top">@LastProvisionedStream.Id</div>
+            </div>
+        }
+    </section>
+</div>
+
+<section class="panel spacer-top">
+    <h2>Live Streams</h2>
+    <div class="table-wrap spacer-top">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Device</th>
+                    <th>Status</th>
+                    <th>Playback</th>
+                    <th>Match</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (ActiveStreams.Count == 0)
+                {
+                    <tr><td colspan="4">No active streams found for this event.</td></tr>
+                }
+                else
+                {
+                    @foreach (var stream in ActiveStreams)
+                    {
+                        <tr>
+                            <td>@stream.DeviceName</td>
+                            <td>@stream.Status</td>
+                            <td><a href="@stream.PlaybackUrl" target="_blank">@stream.PlaybackUrl</a></td>
+                            <td class="mono">@Short(stream.MatchId)</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private bool IsBusy;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+
+    private string StateFilter = "OH";
+    private string SelectedEventIdText = string.Empty;
+    private List<TableWorkerEventSummary> Events = [];
+
+    private string DeviceName = "Mat 1 Phone Stream";
+    private string MatchIdText = string.Empty;
+    private string Protocol = "RTMP";
+    private string SourceUrl = string.Empty;
+
+    private StreamSession? LastProvisionedStream;
+    private List<StreamSession> ActiveStreams = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Workflow.EventId is not null)
+        {
+            SelectedEventIdText = Workflow.EventId.Value.ToString();
+        }
+
+        if (Workflow.MatchId is not null)
+        {
+            MatchIdText = Workflow.MatchId.Value.ToString();
+        }
+
+        await LoadEventsAsync();
+        if (!string.IsNullOrWhiteSpace(SelectedEventIdText))
+        {
+            await LoadStreamsAsync();
+        }
+    }
+
+    private async Task LoadEventsAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.GetTableWorkerEventsAsync(StateFilter, 180);
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Events = [];
+                return;
+            }
+
+            Events = result.Data ?? [];
+            if (string.IsNullOrWhiteSpace(SelectedEventIdText) && Events.Count > 0)
+            {
+                SelectedEventIdText = Events[0].EventId.ToString();
+            }
+
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {Events.Count} events.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SelectEventAsync(Guid eventId)
+    {
+        SelectedEventIdText = eventId.ToString();
+        Workflow.EventId = eventId;
+        await LoadStreamsAsync();
+    }
+
+    private async Task LoadStreamsAsync()
+    {
+        if (!Guid.TryParse(SelectedEventIdText, out var eventId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid event id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.GetActiveStreamsAsync(eventId);
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                ActiveStreams = [];
+                return;
+            }
+
+            ActiveStreams = result.Data ?? [];
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {ActiveStreams.Count} live streams.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateStreamAsync()
+    {
+        if (!Guid.TryParse(SelectedEventIdText, out var eventId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid event id is required.";
+            return;
+        }
+
+        Guid? matchId = Guid.TryParse(MatchIdText, out var parsedMatchId) ? parsedMatchId : null;
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.CreateStreamSessionAsync(
+                eventId,
+                new CreateStreamSessionRequest(matchId, DeviceName, Protocol, string.IsNullOrWhiteSpace(SourceUrl) ? null : SourceUrl));
+
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            LastProvisionedStream = result.Data;
+            Workflow.StreamId = result.Data.Id;
+            Workflow.EventId = eventId;
+            if (matchId is not null)
+            {
+                Workflow.MatchId = matchId;
+            }
+
+            StatusSuccess = true;
+            StatusMessage = "Stream provisioned.";
+            await LoadStreamsAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SetLatestStreamLiveAsync()
+    {
+        if (LastProvisionedStream is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "No provisioned stream selected.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.UpdateStreamStatusAsync(LastProvisionedStream.Id, new UpdateStreamStatusRequest(StreamStatus.Live));
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            LastProvisionedStream = result.Data;
+            StatusSuccess = true;
+            StatusMessage = "Stream marked live.";
+            await LoadStreamsAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString("N")[..8];
+}

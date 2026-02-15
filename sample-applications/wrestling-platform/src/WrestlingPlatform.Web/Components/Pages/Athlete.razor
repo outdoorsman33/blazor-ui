@@ -1,5 +1,6 @@
 @page "/athlete"
 @inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
 
 <PageTitle>Athlete Portal - PinPoint Arena</PageTitle>
 
@@ -14,6 +15,16 @@
         <span class="tag">Notification Control</span>
     </div>
 </div>
+
+<section class="panel">
+    <h3>Workflow Shortcuts</h3>
+    <div class="actions spacer-top">
+        <button class="btn ghost" @onclick="UseDemoAthleteCredentials">Use Demo Athlete Credentials</button>
+        <button class="btn ghost" @onclick="ApplyWorkflowContext">Apply Workflow IDs</button>
+        <button class="btn ghost" @onclick="LoadLatestEventAsync" disabled="@IsBusy">Find Latest Event</button>
+    </div>
+    <p class="helper spacer-top">Workflow athlete id: <span class="mono">@Short(Workflow.AthleteProfileId)</span> | workflow event id: <span class="mono">@Short(Workflow.EventId)</span></p>
+</section>
 
 <div class="panel-grid two">
     <section class="panel">
@@ -381,7 +392,171 @@
     </section>
 </div>
 
+<div class="panel-grid two spacer-top">
+    <section class="panel">
+        <h2>6) Media Vault + AI Highlights</h2>
+        <p class="helper">Save event streams to athlete profile and auto-generate highlight clips for recruiting + NIL.</p>
+
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Athlete Id</label>
+                <input class="input mono" @bind="MediaAthleteId" />
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn secondary" @onclick="LoadHighlightsAsync" disabled="@IsBusy">Load AI Highlights</button>
+            <button class="btn ghost" @onclick="UseWorkflowAthleteForMedia">Use Workflow Athlete</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(MediaMessage))
+        {
+            <div class="alert @(MediaSuccess ? "success" : "error")">@MediaMessage</div>
+        }
+
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Clip</th>
+                        <th>Impact</th>
+                        <th>Match</th>
+                        <th>Playback</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (HighlightClips.Count == 0)
+                    {
+                        <tr><td colspan="4">No highlight clips loaded.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var clip in HighlightClips)
+                        {
+                            <tr>
+                                <td>@clip.Title<br /><span class="helper">@clip.Summary</span></td>
+                                <td>@clip.ImpactScore</td>
+                                <td class="mono">@clip.MatchId.ToString()[..8]</td>
+                                <td><a href="@clip.PlaybackUrl" target="_blank">Open</a></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>7) NIL Profile Snapshot</h2>
+        <p class="helper">Athlete brand profile built from verified performance and engagement signals.</p>
+
+        <div class="actions spacer-top">
+            <button class="btn primary" @onclick="LoadNilProfileAsync" disabled="@IsBusy">Load NIL Profile</button>
+        </div>
+
+        @if (NilProfile is null)
+        {
+            <div class="helper spacer-top">No NIL profile loaded yet.</div>
+        }
+        else
+        {
+            <div class="metric-grid spacer-top">
+                <div class="metric-card">
+                    <div class="metric-label">Followers</div>
+                    <div class="metric-value">@NilProfile.Followers</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Rating</div>
+                    <div class="metric-value">@NilProfile.RatingPoints.ToString("0.0")</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Marketability</div>
+                    <div class="metric-value">@NilProfile.MarketabilityScore.ToString("0.0")</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Career W-L</div>
+                    <div class="metric-value">@NilProfile.CareerWins-@NilProfile.CareerLosses</div>
+                </div>
+            </div>
+
+            <div class="timeline spacer-top">
+                @foreach (var tag in NilProfile.RecruitingTags)
+                {
+                    <div class="timeline-item">@tag</div>
+                }
+            </div>
+        }
+    </section>
+</div>
+
 @code {
+    protected override void OnInitialized()
+    {
+        ApplyWorkflowContext();
+    }
+
+    private void UseDemoAthleteCredentials()
+    {
+        AccountEmail = "demo.athlete@pinpointarena.local";
+        AccountPassword = "DemoPass!123";
+        AccountPhone = "+16145550002";
+    }
+
+    private void ApplyWorkflowContext()
+    {
+        if (Workflow.AthleteUserId is not null)
+        {
+            ProfileUserId = Workflow.AthleteUserId.Value.ToString();
+            NotifyUserId = Workflow.AthleteUserId.Value.ToString();
+        }
+
+        if (Workflow.AthleteProfileId is not null)
+        {
+            RegistrationAthleteId = Workflow.AthleteProfileId.Value.ToString();
+            StatsAthleteId = Workflow.AthleteProfileId.Value.ToString();
+            NotifyAthleteId = Workflow.AthleteProfileId.Value.ToString();
+            MediaAthleteId = Workflow.AthleteProfileId.Value.ToString();
+        }
+
+        if (Workflow.EventId is not null)
+        {
+            RegistrationEventId = Workflow.EventId.Value.ToString();
+            NotifyEventId = Workflow.EventId.Value.ToString();
+        }
+    }
+
+    private async Task LoadLatestEventAsync()
+    {
+        IsBusy = true;
+        RegistrationMessage = null;
+
+        var result = await ApiClient.SearchEventsAsync(new SearchEventsQuery(
+            "OH",
+            null,
+            null,
+            DateTime.UtcNow.Date.AddDays(-1),
+            null,
+            null));
+
+        if (result.Success && result.Data is not null && result.Data.Count > 0)
+        {
+            var latest = result.Data.OrderBy(x => x.StartUtc).First();
+            RegistrationEventId = latest.Id.ToString();
+            NotifyEventId = latest.Id.ToString();
+            Workflow.EventId = latest.Id;
+            RegistrationSuccess = true;
+            RegistrationMessage = $"Selected event {latest.Name} ({latest.State}/{latest.City}).";
+        }
+        else
+        {
+            RegistrationSuccess = false;
+            RegistrationMessage = result.Success ? "No events found." : result.Message;
+        }
+
+        IsBusy = false;
+    }
+
+    private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString()[..8];
     private bool IsBusy;
 
     private string AccountEmail = "athlete@example.com";
@@ -437,6 +612,12 @@
     private bool NotificationSuccess;
     private List<NotificationMessage> NotificationStatusMessages = [];
 
+    private string MediaAthleteId = string.Empty;
+    private List<AthleteHighlightClip> HighlightClips = [];
+    private string? MediaMessage;
+    private bool MediaSuccess;
+    private AthleteNilProfile? NilProfile;
+
     private async Task RegisterUserAsync()
     {
         IsBusy = true;
@@ -451,6 +632,7 @@
             CreatedUserId = result.Data.Id;
             ProfileUserId = result.Data.Id.ToString();
             NotifyUserId = result.Data.Id.ToString();
+            Workflow.AthleteUserId = result.Data.Id;
 
             var loginResult = await ApiClient.LoginAsync(new LoginRequest(AccountEmail, AccountPassword));
             if (!loginResult.Success)
@@ -506,6 +688,8 @@
             RegistrationAthleteId = result.Data.Id.ToString();
             StatsAthleteId = result.Data.Id.ToString();
             NotifyAthleteId = result.Data.Id.ToString();
+            Workflow.AthleteUserId = userId;
+            Workflow.AthleteProfileId = result.Data.Id;
         }
 
         IsBusy = false;
@@ -535,6 +719,8 @@
             if (SearchedEvents.Count > 0)
             {
                 RegistrationEventId = SearchedEvents[0].Id.ToString();
+                NotifyEventId = SearchedEvents[0].Id.ToString();
+                Workflow.EventId = SearchedEvents[0].Id;
             }
         }
         else
@@ -570,6 +756,11 @@
             : result.Message;
 
         LastPaymentIntent = result.Data?.PaymentIntent;
+        Workflow.EventId = eventId;
+        if (teamId is not null)
+        {
+            Workflow.TeamId = teamId;
+        }
 
         IsBusy = false;
     }
@@ -674,7 +865,69 @@
 
         IsBusy = false;
     }
+
+    private void UseWorkflowAthleteForMedia()
+    {
+        if (Workflow.AthleteProfileId is null)
+        {
+            MediaSuccess = false;
+            MediaMessage = "Workflow athlete id is empty.";
+            return;
+        }
+
+        MediaAthleteId = Workflow.AthleteProfileId.Value.ToString();
+        MediaSuccess = true;
+        MediaMessage = "Workflow athlete applied for media + NIL.";
+    }
+
+    private async Task LoadHighlightsAsync()
+    {
+        IsBusy = true;
+        MediaMessage = null;
+
+        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        {
+            MediaSuccess = false;
+            MediaMessage = "Valid athlete id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.GetAthleteHighlightsAsync(athleteId);
+        MediaSuccess = result.Success;
+        MediaMessage = result.Success ? $"Loaded {result.Data?.Count ?? 0} highlight clips." : result.Message;
+        HighlightClips = result.Data ?? [];
+
+        IsBusy = false;
+    }
+
+    private async Task LoadNilProfileAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        {
+            MediaSuccess = false;
+            MediaMessage = "Valid athlete id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.GetAthleteNilProfileAsync(athleteId);
+        MediaSuccess = result.Success;
+        MediaMessage = result.Success ? "NIL profile loaded." : result.Message;
+        NilProfile = result.Data;
+
+        IsBusy = false;
+    }
 }
+
+
+
+
+
+
+
 
 
 

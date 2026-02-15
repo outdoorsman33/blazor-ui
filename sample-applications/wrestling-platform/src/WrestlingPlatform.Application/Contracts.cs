@@ -81,7 +81,11 @@ public sealed record SubscribeNotificationRequest(
     NotificationChannel Channel,
     string Destination);
 
-public sealed record CreateStreamSessionRequest(Guid? MatchId, string DeviceName);
+public sealed record CreateStreamSessionRequest(
+    Guid? MatchId,
+    string DeviceName,
+    string IngestProtocol = "RTMP",
+    string? SourceUrl = null);
 
 public sealed record ConfirmRegistrationPaymentRequest(Guid RegistrationId, string ProviderReference);
 
@@ -117,3 +121,333 @@ public sealed record NotificationDispatchRequest(
     string Body);
 
 public sealed record UpdateStreamStatusRequest(StreamStatus Status);
+
+public sealed record UpdateTournamentControlSettingsRequest(
+    TournamentFormat TournamentFormat,
+    BracketReleaseMode BracketReleaseMode,
+    DateTime? BracketReleaseUtc,
+    BracketCreationMode BracketCreationMode,
+    bool RegistrationCapEnabled,
+    int? RegistrationCap);
+
+public sealed record TournamentControlSettings(
+    Guid EventId,
+    TournamentFormat TournamentFormat,
+    BracketReleaseMode BracketReleaseMode,
+    DateTime? BracketReleaseUtc,
+    BracketCreationMode BracketCreationMode,
+    bool RegistrationCapEnabled,
+    int? RegistrationCap,
+    int CurrentRegistrantCount,
+    int RemainingSlots);
+
+public enum ScoreCompetitor
+{
+    AthleteA,
+    AthleteB
+}
+
+public enum ScoringActionCode
+{
+    Custom,
+    Takedown,
+    Escape,
+    Reversal,
+    NearFall2,
+    NearFall3,
+    Exposure,
+    PushOut,
+    Passivity,
+    Penalty,
+    CautionAndOne,
+    CautionAndTwo,
+    TakedownHighAmplitude,
+    ThrowHighAmplitude,
+    Fall,
+    TechnicalFall,
+    InjuryDefault,
+    Disqualification
+}
+
+public sealed record AddMatScoreEventRequest(
+    ScoreCompetitor Competitor,
+    int? Points,
+    string ActionType,
+    int Period,
+    int? MatchClockSeconds,
+    Guid? AthleteId,
+    ScoringActionCode ActionCode = ScoringActionCode.Custom,
+    bool EndMatch = false);
+
+public sealed record ConfigureMatchScoringRequest(
+    WrestlingStyle Style,
+    CompetitionLevel Level,
+    bool AutoEndEnabled = true,
+    int? TechFallPointGap = null,
+    int RegulationPeriods = 3);
+
+public sealed record ScoringActionDefinition(
+    ScoringActionCode ActionCode,
+    string Label,
+    int DefaultPoints,
+    bool EndsMatch,
+    string Notes);
+
+public sealed record MatchScoringRulesSnapshot(
+    Guid MatchId,
+    WrestlingStyle Style,
+    CompetitionLevel Level,
+    bool AutoEndEnabled,
+    int TechFallPointGap,
+    int RegulationPeriods,
+    List<ScoringActionDefinition> Actions);
+
+public sealed record ResetMatScoreboardRequest(string? Reason);
+
+public sealed record MatScoreEventSnapshot(
+    Guid EventId,
+    DateTime TimestampUtc,
+    ScoreCompetitor Competitor,
+    int Points,
+    string ActionType,
+    int Period,
+    int? MatchClockSeconds,
+    Guid? AthleteId,
+    int AthleteAScore,
+    int AthleteBScore);
+
+public sealed record MatScoreboardSnapshot(
+    Guid MatchId,
+    Guid? AthleteAId,
+    Guid? AthleteBId,
+    int AthleteAScore,
+    int AthleteBScore,
+    int CurrentPeriod,
+    MatchStatus Status,
+    DateTime UpdatedUtc,
+    List<MatScoreEventSnapshot> Events,
+    WrestlingStyle Style = WrestlingStyle.Folkstyle,
+    CompetitionLevel Level = CompetitionLevel.HighSchool,
+    Guid? WinnerAthleteId = null,
+    Guid? LoserAthleteId = null,
+    string? OutcomeReason = null,
+    bool IsFinal = false);
+
+public sealed record TableWorkerEventSummary(
+    Guid EventId,
+    string EventName,
+    string State,
+    string City,
+    string Venue,
+    DateTime StartUtc,
+    WrestlingStyle Style,
+    int MatCount,
+    int ActiveMatches);
+
+public sealed record TableWorkerMatchSummary(
+    Guid MatchId,
+    int Round,
+    int MatchNumber,
+    MatchStatus Status,
+    Guid? AthleteAId,
+    Guid? AthleteBId,
+    string AthleteALabel,
+    string AthleteBLabel,
+    string? Score,
+    string? ResultMethod,
+    DateTime? ScheduledUtc);
+
+public sealed record TableWorkerMatSummary(
+    string MatNumber,
+    int ScheduledCount,
+    int InTheHoleCount,
+    int OnMatCount,
+    int CompletedCount,
+    List<TableWorkerMatchSummary> Matches);
+
+public sealed record TableWorkerEventBoard(
+    Guid EventId,
+    string EventName,
+    WrestlingStyle Style,
+    TournamentControlSettings Controls,
+    List<TableWorkerMatSummary> Mats);
+
+public sealed record TournamentDivisionDirectoryRow(
+    Guid DivisionId,
+    string Name,
+    CompetitionLevel Level,
+    string AgeGroup,
+    decimal WeightClass,
+    int RegistrantCount,
+    int? RegistrantCap,
+    WrestlingStyle Style,
+    TournamentFormat TournamentFormat);
+
+public sealed record TournamentDirectoryRow(
+    Guid EventId,
+    string EventName,
+    string State,
+    string City,
+    string Venue,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    int EntryFeeCents,
+    TournamentControlSettings Controls,
+    List<TournamentDivisionDirectoryRow> Divisions);
+
+public sealed record BracketVisualAthlete(
+    Guid AthleteId,
+    string Name,
+    CompetitionLevel Level,
+    decimal WeightClass,
+    int Seed,
+    int Rank,
+    decimal RatingPoints);
+
+public sealed record BracketVisualMatch(
+    Guid MatchId,
+    int Round,
+    int MatchNumber,
+    string Label,
+    MatchStatus Status,
+    BracketVisualAthlete? AthleteA,
+    BracketVisualAthlete? AthleteB,
+    BracketVisualAthlete? Winner,
+    string? Score,
+    string? ResultMethod,
+    string? MatNumber);
+
+public sealed record PoolStanding(
+    Guid AthleteId,
+    string AthleteName,
+    int Wins,
+    int Losses,
+    int PointsFor,
+    int PointsAgainst,
+    int Differential);
+
+public sealed record PoolVisualGroup(
+    string PoolName,
+    CompetitionLevel Level,
+    decimal WeightClass,
+    WrestlingStyle Style,
+    List<BracketVisualMatch> Matches,
+    List<PoolStanding> Standings);
+
+public sealed record TournamentBracketVisualBundle(
+    Guid EventId,
+    string EventName,
+    TournamentFormat TournamentFormat,
+    bool BracketsReleased,
+    List<BracketVisualMatch> BracketMatches,
+    List<PoolVisualGroup> Pools);
+
+public enum VideoPipelineState
+{
+    PendingUpload,
+    QueuedForTranscode,
+    Processing,
+    Ready,
+    Failed
+}
+
+public sealed record VideoAssetRecord(
+    Guid VideoId,
+    Guid AthleteProfileId,
+    Guid MatchId,
+    Guid? StreamId,
+    string SourceUrl,
+    string PlaybackUrl,
+    VideoPipelineState State,
+    DateTime CreatedUtc,
+    DateTime? ReadyUtc,
+    string? FailureReason);
+
+public sealed record CreateVideoAssetRequest(
+    Guid AthleteProfileId,
+    Guid MatchId,
+    Guid? StreamId,
+    string SourceUrl,
+    bool QueueTranscode = true);
+
+public sealed record QueueAiHighlightsRequest(
+    Guid AthleteProfileId,
+    Guid? EventId,
+    int MaxMatches = 12);
+
+public sealed record AiHighlightJobSnapshot(
+    Guid JobId,
+    Guid AthleteProfileId,
+    Guid? EventId,
+    DateTime QueuedUtc,
+    DateTime? StartedUtc,
+    DateTime? CompletedUtc,
+    string Status,
+    int ClipsProduced,
+    string? Details);
+
+public sealed record SecurityAuditRecord(
+    Guid AuditId,
+    DateTime TimestampUtc,
+    string Method,
+    string Path,
+    int StatusCode,
+    string? UserId,
+    string? UserRole,
+    string SourceIp,
+    string Outcome,
+    string TraceId);
+
+public sealed record MfaEnrollmentResponse(
+    Guid UserId,
+    string SharedSecret,
+    string ProvisioningUri,
+    bool Enabled);
+
+public sealed record VerifyMfaCodeRequest(Guid UserId, string Code);
+
+public sealed record MfaVerifyResponse(
+    Guid UserId,
+    bool Verified,
+    DateTime VerifiedUtc);
+
+public sealed record AthleteHighlightClip(
+    Guid ClipId,
+    Guid AthleteProfileId,
+    Guid MatchId,
+    Guid? StreamId,
+    string Title,
+    string Summary,
+    string PlaybackUrl,
+    DateTime ClipStartUtc,
+    DateTime ClipEndUtc,
+    int ImpactScore,
+    bool AiGenerated);
+
+public sealed record AthleteNilProfile(
+    Guid AthleteProfileId,
+    string DisplayName,
+    CompetitionLevel Level,
+    string State,
+    string City,
+    decimal WeightClass,
+    int Followers,
+    int CareerWins,
+    int CareerLosses,
+    decimal RatingPoints,
+    decimal MarketabilityScore,
+    List<string> RecruitingTags);
+
+public sealed record RecruitingAthleteCard(
+    Guid AthleteProfileId,
+    string FirstName,
+    string LastName,
+    CompetitionLevel Level,
+    string State,
+    string City,
+    decimal WeightClass,
+    int Rank,
+    decimal RatingPoints,
+    int Wins,
+    int Losses,
+    bool OpenToRecruitment);

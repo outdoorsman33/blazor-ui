@@ -1,5 +1,6 @@
 @page "/admin"
 @inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
 
 <PageTitle>Event Admin - PinPoint Arena</PageTitle>
 
@@ -14,6 +15,20 @@
         <span class="tag">Live Match Control</span>
     </div>
 </div>
+
+<section class="panel">
+    <h3>Workflow Shortcuts</h3>
+    <div class="actions spacer-top">
+        <button class="btn ghost" @onclick="ApplyWorkflowContext">Apply Workflow IDs</button>
+        <button class="btn ghost" @onclick="LoadLatestEventAsync" disabled="@IsBusy">Find Latest Event</button>
+        <a class="btn ghost" href="/registration">Registration Center</a>
+        <a class="btn ghost" href="/brackets">Bracket Center</a>
+        <a class="btn ghost" href="/table-worker">Table Worker</a>
+        <a class="btn ghost" href="/mat-scoring">Open Mat-Side Scoring</a>
+        <a class="btn ghost" href="/live">Live Hub</a>
+    </div>
+    <p class="helper spacer-top">Workflow team: <span class="mono">@Short(Workflow.TeamId)</span> | event: <span class="mono">@Short(Workflow.EventId)</span> | match: <span class="mono">@Short(Workflow.MatchId)</span></p>
+</section>
 
 <div class="panel-grid two">
     <section class="panel">
@@ -330,6 +345,75 @@
 </section>
 
 @code {
+    protected override void OnInitialized()
+    {
+        ApplyWorkflowContext();
+    }
+
+    private void ApplyWorkflowContext()
+    {
+        if (Workflow.TeamId is not null)
+        {
+            OrganizerId = Workflow.TeamId.Value.ToString();
+        }
+
+        if (Workflow.EventId is not null)
+        {
+            DivisionEventId = Workflow.EventId.Value.ToString();
+            BracketEventId = Workflow.EventId.Value.ToString();
+            StreamEventId = Workflow.EventId.Value.ToString();
+        }
+
+        if (Workflow.DivisionId is not null)
+        {
+            BracketDivisionId = Workflow.DivisionId.Value.ToString();
+        }
+
+        if (Workflow.MatchId is not null)
+        {
+            AssignMatchId = Workflow.MatchId.Value.ToString();
+            ResultMatchId = Workflow.MatchId.Value.ToString();
+            StreamMatchId = Workflow.MatchId.Value.ToString();
+        }
+
+        if (Workflow.StreamId is not null)
+        {
+            UpdateStreamId = Workflow.StreamId.Value.ToString();
+        }
+    }
+
+    private async Task LoadLatestEventAsync()
+    {
+        IsBusy = true;
+
+        var result = await ApiClient.SearchEventsAsync(new SearchEventsQuery(
+            "OH",
+            null,
+            null,
+            DateTime.UtcNow.Date.AddDays(-1),
+            null,
+            null));
+
+        if (result.Success && result.Data is not null && result.Data.Count > 0)
+        {
+            var latest = result.Data.OrderBy(x => x.StartUtc).First();
+            Workflow.EventId = latest.Id;
+            DivisionEventId = latest.Id.ToString();
+            BracketEventId = latest.Id.ToString();
+            StreamEventId = latest.Id.ToString();
+            EventSuccess = true;
+            EventMessage = $"Selected event {latest.Name}.";
+        }
+        else
+        {
+            EventSuccess = false;
+            EventMessage = result.Success ? "No events found." : result.Message;
+        }
+
+        IsBusy = false;
+    }
+
+    private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString()[..8];
     private bool IsBusy;
 
     private string EventName = "Midwest Clash";
@@ -426,6 +510,11 @@
             DivisionEventId = result.Data.Id.ToString();
             BracketEventId = result.Data.Id.ToString();
             StreamEventId = result.Data.Id.ToString();
+            Workflow.EventId = result.Data.Id;
+            if ((OrganizerType is OrganizerType.Club or OrganizerType.School) && Guid.TryParse(OrganizerId, out var organizerTeamId))
+            {
+                Workflow.TeamId = organizerTeamId;
+            }
         }
 
         IsBusy = false;
@@ -450,6 +539,7 @@
         if (result.Success && result.Data is not null)
         {
             BracketDivisionId = result.Data.Id.ToString();
+            Workflow.DivisionId = result.Data.Id;
         }
 
         IsBusy = false;
@@ -474,6 +564,14 @@
         BracketMessage = result.Success
             ? $"Bracket generated. Entrants: {result.Data?.EntrantCount}, Matches: {result.Data?.MatchCount}"
             : result.Message;
+        if (result.Success)
+        {
+            Workflow.EventId = eventId;
+            if (divisionId is not null)
+            {
+                Workflow.DivisionId = divisionId;
+            }
+        }
 
         IsBusy = false;
     }
@@ -494,6 +592,7 @@
         BracketSuccess = result.Success;
         BracketMessage = result.Success ? $"Loaded {result.Data?.Count ?? 0} brackets." : result.Message;
         BracketViews = result.Data ?? [];
+        Workflow.EventId = eventId;
 
         if (BracketViews.Count > 0 && BracketViews[0].Matches.Count > 0)
         {
@@ -522,6 +621,10 @@
         var result = await ApiClient.AssignMatAsync(matchId, new AssignMatRequest(AssignMatNumber, scheduledUtc, AssignInTheHole));
         MatchSuccess = result.Success;
         MatchMessage = result.Success ? "Mat assignment saved and notifications dispatched." : result.Message;
+        if (result.Success)
+        {
+            Workflow.MatchId = matchId;
+        }
 
         IsBusy = false;
     }
@@ -543,6 +646,10 @@
 
         MatchSuccess = result.Success;
         MatchMessage = result.Success ? "Match result recorded and rankings updated." : result.Message;
+        if (result.Success)
+        {
+            Workflow.MatchId = matchId;
+        }
 
         IsBusy = false;
     }
@@ -568,6 +675,7 @@
         if (result.Success && result.Data is not null)
         {
             UpdateStreamId = result.Data.Id.ToString();
+            Workflow.StreamId = result.Data.Id;
         }
 
         IsBusy = false;
@@ -608,6 +716,10 @@
         StreamSuccess = result.Success;
         StreamMessage = result.Success ? $"Loaded {result.Data?.Count ?? 0} active streams." : result.Message;
         ActiveStreams = result.Data ?? [];
+        if (result.Success)
+        {
+            Workflow.EventId = eventId;
+        }
 
         IsBusy = false;
     }
@@ -616,6 +728,15 @@
     {
         AssignMatchId = matchId.ToString();
         ResultMatchId = matchId.ToString();
+        StreamMatchId = matchId.ToString();
+        Workflow.MatchId = matchId;
     }
 }
+
+
+
+
+
+
+
 

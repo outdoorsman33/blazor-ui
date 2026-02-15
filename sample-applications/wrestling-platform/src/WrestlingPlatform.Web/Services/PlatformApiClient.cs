@@ -13,6 +13,7 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
 {
     private readonly JsonSerializerOptions _jsonOptions = CreateJsonOptions();
     private readonly SemaphoreSlim _sessionLock = new(1, 1);
+    public Uri BaseAddress => httpClient.BaseAddress ?? new Uri("http://127.0.0.1:5099");
 
     public async Task<ApiResult<AuthTokenResponse>> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
@@ -116,6 +117,61 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
     {
         var response = await GetAsync("/api/events/grouped", cancellationToken);
         return await ReadResponseAsync<List<GroupedEventsResponse>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<TableWorkerEventSummary>>> GetTableWorkerEventsAsync(
+        string? state = null,
+        int? daysAhead = null,
+        CancellationToken cancellationToken = default)
+    {
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["state"] = state,
+            ["daysAhead"] = daysAhead?.ToString()
+        };
+
+        var url = BuildUrlWithQuery("/api/table-worker/events", queryParams);
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<List<TableWorkerEventSummary>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<TableWorkerEventBoard>> GetTableWorkerBoardAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/events/{eventId}/mats", cancellationToken);
+        return await ReadResponseAsync<TableWorkerEventBoard>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<TournamentDirectoryRow>> GetTournamentDirectoryAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/events/{eventId}/directory", cancellationToken);
+        return await ReadResponseAsync<TournamentDirectoryRow>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<TournamentControlSettings>> GetTournamentControlsAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/events/{eventId}/controls", cancellationToken);
+        return await ReadResponseAsync<TournamentControlSettings>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<TournamentControlSettings>> UpdateTournamentControlsAsync(
+        Guid eventId,
+        UpdateTournamentControlSettingsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PutAsJsonAsync($"/api/events/{eventId}/controls", request, cancellationToken);
+        return await ReadResponseAsync<TournamentControlSettings>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<TournamentControlSettings>> ReleaseBracketsAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync<object>($"/api/events/{eventId}/controls/release-brackets", new { }, cancellationToken);
+        return await ReadResponseAsync<TournamentControlSettings>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<TournamentBracketVisualBundle>> GetBracketVisualAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/events/{eventId}/brackets/visual", cancellationToken);
+        return await ReadResponseAsync<TournamentBracketVisualBundle>(response, cancellationToken);
     }
 
     public async Task<ApiResult<RegistrationSubmissionResponse>> RegisterAthleteForEventAsync(
@@ -268,6 +324,126 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         return await ReadResponseAsync<List<StreamSession>>(response, cancellationToken);
     }
 
+    public async Task<ApiResult<MatScoreboardSnapshot>> GetMatScoreboardAsync(Guid matchId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/matches/{matchId}/scoreboard", cancellationToken);
+        return await ReadResponseAsync<MatScoreboardSnapshot>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<MatchScoringRulesSnapshot>> GetMatScoringRulesAsync(Guid matchId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/matches/{matchId}/scoreboard/rules", cancellationToken);
+        return await ReadResponseAsync<MatchScoringRulesSnapshot>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<MatchScoringRulesSnapshot>> ConfigureMatScoringRulesAsync(
+        Guid matchId,
+        ConfigureMatchScoringRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync($"/api/matches/{matchId}/scoreboard/rules", request, cancellationToken);
+        return await ReadResponseAsync<MatchScoringRulesSnapshot>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<MatScoreboardSnapshot>> AddMatScoreEventAsync(
+        Guid matchId,
+        AddMatScoreEventRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync($"/api/matches/{matchId}/scoreboard/events", request, cancellationToken);
+        return await ReadResponseAsync<MatScoreboardSnapshot>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<MatScoreboardSnapshot>> ResetMatScoreboardAsync(
+        Guid matchId,
+        string? reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync($"/api/matches/{matchId}/scoreboard/reset", new ResetMatScoreboardRequest(reason), cancellationToken);
+        return await ReadResponseAsync<MatScoreboardSnapshot>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<AthleteHighlightClip>>> GetAthleteHighlightsAsync(Guid athleteId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/athletes/{athleteId}/highlights", cancellationToken);
+        return await ReadResponseAsync<List<AthleteHighlightClip>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<VideoAssetRecord>>> GetAthleteVideosAsync(Guid athleteId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/athletes/{athleteId}/videos", cancellationToken);
+        return await ReadResponseAsync<List<VideoAssetRecord>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<VideoAssetRecord>> CreateVideoAssetAsync(
+        CreateVideoAssetRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/media/videos", request, cancellationToken);
+        return await ReadResponseAsync<VideoAssetRecord>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AiHighlightJobSnapshot>> QueueAiHighlightsAsync(
+        QueueAiHighlightsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/media/highlights/queue", request, cancellationToken);
+        return await ReadResponseAsync<AiHighlightJobSnapshot>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<AiHighlightJobSnapshot>>> GetAiHighlightJobsAsync(
+        Guid athleteId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/media/highlights/jobs/{athleteId}", cancellationToken);
+        return await ReadResponseAsync<List<AiHighlightJobSnapshot>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteNilProfile>> GetAthleteNilProfileAsync(Guid athleteId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/athletes/{athleteId}/nil-profile", cancellationToken);
+        return await ReadResponseAsync<AthleteNilProfile>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<RecruitingAthleteCard>>> GetRecruitingAthletesAsync(
+        CompetitionLevel? level,
+        string? state,
+        int? minWins = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["level"] = level?.ToString(),
+            ["state"] = state,
+            ["minWins"] = minWins?.ToString(),
+            ["take"] = take.ToString()
+        };
+
+        var url = BuildUrlWithQuery("/api/recruiting/athletes", queryParams);
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<List<RecruitingAthleteCard>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<MfaEnrollmentResponse>> EnrollMfaAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync<object>($"/api/security/mfa/enroll/{userId}", new { }, cancellationToken);
+        return await ReadResponseAsync<MfaEnrollmentResponse>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<MfaVerifyResponse>> VerifyMfaAsync(VerifyMfaCodeRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/security/mfa/verify", request, cancellationToken);
+        return await ReadResponseAsync<MfaVerifyResponse>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<SecurityAuditRecord>>> GetSecurityAuditAsync(int take = 100, CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery("/api/security/audit", new Dictionary<string, string?> { ["take"] = take.ToString() });
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<List<SecurityAuditRecord>>(response, cancellationToken);
+    }
+
     private async Task<HttpResponseMessage> GetAsync(string requestUri, CancellationToken cancellationToken)
     {
         await EnsureAccessTokenAsync(cancellationToken);
@@ -289,6 +465,20 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         try
         {
             return await httpClient.PostAsJsonAsync(requestUri, payload, _jsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportException(ex))
+        {
+            return CreateTransportErrorResponse(ex);
+        }
+    }
+
+    private async Task<HttpResponseMessage> PutAsJsonAsync<T>(string requestUri, T payload, CancellationToken cancellationToken)
+    {
+        await EnsureAccessTokenAsync(cancellationToken);
+
+        try
+        {
+            return await httpClient.PutAsJsonAsync(requestUri, payload, _jsonOptions, cancellationToken);
         }
         catch (Exception ex) when (IsTransportException(ex))
         {
@@ -411,8 +601,17 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
             return ApiResult<T>.Fail(response.StatusCode, await ReadErrorMessageAsync(response, cancellationToken));
         }
 
-        var data = await response.Content.ReadFromJsonAsync<T>(_jsonOptions, cancellationToken);
-        return ApiResult<T>.Ok(data);
+        try
+        {
+            var data = await response.Content.ReadFromJsonAsync<T>(_jsonOptions, cancellationToken);
+            return ApiResult<T>.Ok(data);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            return ApiResult<T>.Fail(
+                HttpStatusCode.ServiceUnavailable,
+                "The API returned an unexpected response. Please retry in about 60 seconds.");
+        }
     }
 
     private static JsonSerializerOptions CreateJsonOptions()

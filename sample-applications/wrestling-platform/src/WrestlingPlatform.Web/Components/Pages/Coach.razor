@@ -1,5 +1,6 @@
 @page "/coach"
 @inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
 
 <PageTitle>Coach Portal - PinPoint Arena</PageTitle>
 
@@ -14,6 +15,16 @@
         <span class="tag">Free-Agent Board</span>
     </div>
 </div>
+
+<section class="panel">
+    <h3>Workflow Shortcuts</h3>
+    <div class="actions spacer-top">
+        <button class="btn ghost" @onclick="UseDemoCoachCredentials">Use Demo Coach Credentials</button>
+        <button class="btn ghost" @onclick="ApplyWorkflowContext">Apply Workflow IDs</button>
+        <button class="btn ghost" @onclick="LoadLatestEventAsync" disabled="@IsBusy">Find Latest Event</button>
+    </div>
+    <p class="helper spacer-top">Workflow coach id: <span class="mono">@Short(Workflow.CoachProfileId)</span> | team id: <span class="mono">@Short(Workflow.TeamId)</span> | event id: <span class="mono">@Short(Workflow.EventId)</span></p>
+</section>
 
 <div class="panel-grid two">
     <section class="panel">
@@ -277,6 +288,71 @@
 </div>
 
 @code {
+    protected override void OnInitialized()
+    {
+        ApplyWorkflowContext();
+    }
+
+    private void UseDemoCoachCredentials()
+    {
+        CoachEmail = "demo.coach@pinpointarena.local";
+        CoachPassword = "DemoPass!123";
+        CoachPhone = "+16145550001";
+    }
+
+    private void ApplyWorkflowContext()
+    {
+        if (Workflow.CoachUserId is not null)
+        {
+            CoachUserId = Workflow.CoachUserId.Value.ToString();
+        }
+
+        if (Workflow.CoachProfileId is not null)
+        {
+            AssociationCoachProfileId = Workflow.CoachProfileId.Value.ToString();
+        }
+
+        if (Workflow.TeamId is not null)
+        {
+            AssociationTeamId = Workflow.TeamId.Value.ToString();
+            InviteTeamId = Workflow.TeamId.Value.ToString();
+        }
+
+        if (Workflow.EventId is not null)
+        {
+            FreeAgentEventId = Workflow.EventId.Value.ToString();
+        }
+    }
+
+    private async Task LoadLatestEventAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.SearchEventsAsync(new SearchEventsQuery(
+            "OH",
+            null,
+            null,
+            DateTime.UtcNow.Date.AddDays(-1),
+            null,
+            null));
+
+        if (result.Success && result.Data is not null && result.Data.Count > 0)
+        {
+            var latest = result.Data.OrderBy(x => x.StartUtc).First();
+            FreeAgentEventId = latest.Id.ToString();
+            Workflow.EventId = latest.Id;
+            FreeAgentSuccess = true;
+            FreeAgentMessage = $"Selected event {latest.Name}.";
+        }
+        else
+        {
+            FreeAgentSuccess = false;
+            FreeAgentMessage = result.Success ? "No events found." : result.Message;
+        }
+
+        IsBusy = false;
+    }
+
+    private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString()[..8];
     private bool IsBusy;
 
     private string CoachEmail = "coach@example.com";
@@ -336,6 +412,7 @@
         {
             CreatedCoachUserId = result.Data.Id;
             CoachUserId = result.Data.Id.ToString();
+            Workflow.CoachUserId = result.Data.Id;
 
             var loginResult = await ApiClient.LoginAsync(new LoginRequest(CoachEmail, CoachPassword));
             if (!loginResult.Success)
@@ -370,6 +447,8 @@
         {
             CreatedCoachProfileId = result.Data.Id;
             AssociationCoachProfileId = result.Data.Id.ToString();
+            Workflow.CoachUserId = userId;
+            Workflow.CoachProfileId = result.Data.Id;
         }
 
         IsBusy = false;
@@ -388,6 +467,7 @@
             CreatedTeamId = result.Data.Id;
             AssociationTeamId = result.Data.Id.ToString();
             InviteTeamId = result.Data.Id.ToString();
+            Workflow.TeamId = result.Data.Id;
         }
 
         IsBusy = false;
@@ -413,6 +493,19 @@
 
         AssociationSuccess = result.Success;
         AssociationMessage = result.Success ? "Coach association created." : result.Message;
+        if (result.Success)
+        {
+            Workflow.CoachProfileId = coachProfileId;
+            if (athleteId is not null)
+            {
+                Workflow.AthleteProfileId = athleteId;
+            }
+
+            if (teamId is not null)
+            {
+                Workflow.TeamId = teamId;
+            }
+        }
 
         IsBusy = false;
     }
@@ -435,6 +528,7 @@
             if (CoachEvents.Count > 0)
             {
                 FreeAgentEventId = CoachEvents[0].Id.ToString();
+                Workflow.EventId = CoachEvents[0].Id;
             }
         }
         else
@@ -449,6 +543,7 @@
     private void SelectEvent(Guid eventId)
     {
         FreeAgentEventId = eventId.ToString();
+        Workflow.EventId = eventId;
     }
 
     private async Task LoadFreeAgentsAsync()
@@ -494,4 +589,11 @@
         IsBusy = false;
     }
 }
+
+
+
+
+
+
+
 

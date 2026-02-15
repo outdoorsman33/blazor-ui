@@ -1,0 +1,492 @@
+@page "/registration"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+
+<PageTitle>Tournament Registration - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Tournament Registration Center</h1>
+        <p class="page-subtitle">Search and enter tournaments fast, with director-controlled caps, bracket release timing, and bracket creation strategy.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Athlete-Centered</span>
+        <span class="tag">Cap or Unlimited</span>
+        <span class="tag">Director Controls</span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+}
+
+<div class="panel-grid two">
+    <section class="panel">
+        <h2>1) Search Tournaments</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>State</label>
+                <input class="input" @bind="SearchState" placeholder="OH" />
+            </div>
+            <div class="field">
+                <label>City</label>
+                <input class="input" @bind="SearchCity" placeholder="Columbus" />
+            </div>
+            <div class="field">
+                <label>Level</label>
+                <select class="select" @bind="SearchLevel">
+                    <option value="">Any</option>
+                    @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Max entry fee (cents)</label>
+                <input class="input" type="number" min="0" @bind="MaxFeeCents" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="SearchAsync" disabled="@IsBusy">Search</button>
+        </div>
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Event</th>
+                        <th>Location</th>
+                        <th>Date</th>
+                        <th>Fee</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Events.Count == 0)
+                    {
+                        <tr><td colspan="5">No events loaded yet.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in Events)
+                        {
+                            <tr>
+                                <td>@row.Name</td>
+                                <td>@row.State / @row.City</td>
+                                <td>@row.StartUtc.ToLocalTime().ToString("MMM dd yyyy")</td>
+                                <td>$@((row.EntryFeeCents / 100m).ToString("0.00"))</td>
+                                <td><button class="btn secondary" @onclick="() => SelectEventAsync(row.Id)">Select</button></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>2) Director Controls</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Selected Event Id</label>
+                <input class="input mono" @bind="SelectedEventIdText" />
+            </div>
+            <div class="field">
+                <label>Tournament Format</label>
+                <select class="select" @bind="TournamentFormat">
+                    @foreach (var format in Enum.GetValues<TournamentFormat>())
+                    {
+                        <option value="@format">@format</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Bracket Release</label>
+                <select class="select" @bind="BracketReleaseMode">
+                    @foreach (var mode in Enum.GetValues<BracketReleaseMode>())
+                    {
+                        <option value="@mode">@mode</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Bracket Release UTC (optional)</label>
+                <input class="input" @bind="BracketReleaseUtcText" placeholder="YYYY-MM-DDTHH:mm:ssZ" />
+            </div>
+            <div class="field">
+                <label>Bracket Creation</label>
+                <select class="select" @bind="BracketCreationMode">
+                    @foreach (var mode in Enum.GetValues<BracketCreationMode>())
+                    {
+                        <option value="@mode">@mode</option>
+                    }
+                </select>
+            </div>
+            <div class="field check-row">
+                <input id="capEnabled" type="checkbox" @bind="RegistrationCapEnabled" />
+                <label for="capEnabled">Enable registration cap</label>
+            </div>
+            <div class="field">
+                <label>Registration cap</label>
+                <input class="input" type="number" min="2" @bind="RegistrationCap" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn secondary" @onclick="LoadDirectoryAsync" disabled="@IsBusy">Load Directory</button>
+            <button class="btn primary" @onclick="SaveControlsAsync" disabled="@IsBusy">Save Controls</button>
+            <button class="btn ghost" @onclick="ReleaseBracketsNowAsync" disabled="@IsBusy">Release Brackets Now</button>
+        </div>
+
+        @if (Directory is not null)
+        {
+            <div class="metric-grid spacer-top">
+                <div class="metric-card">
+                    <div class="metric-label">Registrants</div>
+                    <div class="metric-value">@Directory.Controls.CurrentRegistrantCount</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Remaining</div>
+                    <div class="metric-value">@(Directory.Controls.RemainingSlots == int.MaxValue ? "Unlimited" : Directory.Controls.RemainingSlots)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Divisions</div>
+                    <div class="metric-value">@Directory.Divisions.Count</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Format</div>
+                    <div class="metric-value">@Directory.Controls.TournamentFormat</div>
+                </div>
+            </div>
+        }
+    </section>
+</div>
+
+<div class="panel-grid two spacer-top">
+    <section class="panel">
+        <h2>3) Athlete Registration</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Event Id</label>
+                <input class="input mono" @bind="RegistrationEventIdText" />
+            </div>
+            <div class="field">
+                <label>Athlete Id</label>
+                <input class="input mono" @bind="RegistrationAthleteIdText" />
+            </div>
+            <div class="field">
+                <label>Team Id (optional)</label>
+                <input class="input mono" @bind="RegistrationTeamIdText" />
+            </div>
+            <div class="field check-row">
+                <input id="freeAgent" type="checkbox" @bind="RegisterAsFreeAgent" />
+                <label for="freeAgent">Register as free agent</label>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="RegisterAsync" disabled="@IsBusy">Submit Registration</button>
+            <button class="btn ghost" @onclick="UseWorkflowAthlete">Use Workflow Athlete</button>
+        </div>
+
+        @if (LastPaymentIntent is not null)
+        {
+            <div class="alert success spacer-top">
+                Checkout URL:
+                <a href="@LastPaymentIntent.CheckoutUrl" target="_blank">@LastPaymentIntent.CheckoutUrl</a>
+            </div>
+        }
+    </section>
+
+    <section class="panel">
+        <h2>Directory View</h2>
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Division</th>
+                        <th>Age Group</th>
+                        <th>Weight</th>
+                        <th>Style</th>
+                        <th>Format</th>
+                        <th>Registrants</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Directory is null || Directory.Divisions.Count == 0)
+                    {
+                        <tr><td colspan="6">No division directory loaded yet.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in Directory.Divisions.OrderBy(x => x.Level).ThenBy(x => x.WeightClass))
+                        {
+                            <tr>
+                                <td>@row.Name</td>
+                                <td>@row.AgeGroup</td>
+                                <td>@row.WeightClass</td>
+                                <td>@row.Style</td>
+                                <td>@row.TournamentFormat</td>
+                                <td>@row.RegistrantCount</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@code {
+    private bool IsBusy;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+
+    private string SearchState = "OH";
+    private string SearchCity = string.Empty;
+    private CompetitionLevel? SearchLevel = null;
+    private int? MaxFeeCents = 5000;
+    private List<TournamentEvent> Events = [];
+
+    private string SelectedEventIdText = string.Empty;
+    private TournamentDirectoryRow? Directory;
+
+    private TournamentFormat TournamentFormat = TournamentFormat.EliminationBracket;
+    private BracketReleaseMode BracketReleaseMode = BracketReleaseMode.Immediate;
+    private string BracketReleaseUtcText = string.Empty;
+    private BracketCreationMode BracketCreationMode = BracketCreationMode.AiSeeded;
+    private bool RegistrationCapEnabled;
+    private int? RegistrationCap = 256;
+
+    private string RegistrationEventIdText = string.Empty;
+    private string RegistrationAthleteIdText = string.Empty;
+    private string RegistrationTeamIdText = string.Empty;
+    private bool RegisterAsFreeAgent;
+
+    private PaymentIntentResult? LastPaymentIntent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Workflow.EventId is not null)
+        {
+            SelectedEventIdText = Workflow.EventId.Value.ToString();
+            RegistrationEventIdText = Workflow.EventId.Value.ToString();
+        }
+
+        if (Workflow.AthleteProfileId is not null)
+        {
+            RegistrationAthleteIdText = Workflow.AthleteProfileId.Value.ToString();
+        }
+
+        await SearchAsync();
+        if (!string.IsNullOrWhiteSpace(SelectedEventIdText))
+        {
+            await LoadDirectoryAsync();
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.SearchEventsAsync(new SearchEventsQuery(
+                SearchState,
+                SearchCity,
+                SearchLevel,
+                DateTime.UtcNow.AddDays(-1),
+                DateTime.UtcNow.AddDays(180),
+                MaxFeeCents));
+
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Events = [];
+                return;
+            }
+
+            Events = result.Data ?? [];
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {Events.Count} events.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SelectEventAsync(Guid eventId)
+    {
+        SelectedEventIdText = eventId.ToString();
+        RegistrationEventIdText = eventId.ToString();
+        Workflow.EventId = eventId;
+        await LoadDirectoryAsync();
+    }
+
+    private async Task LoadDirectoryAsync()
+    {
+        if (!Guid.TryParse(SelectedEventIdText, out var eventId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid event id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var directoryResult = await ApiClient.GetTournamentDirectoryAsync(eventId);
+            if (!directoryResult.Success || directoryResult.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = directoryResult.Message;
+                Directory = null;
+                return;
+            }
+
+            Directory = directoryResult.Data;
+            TournamentFormat = Directory.Controls.TournamentFormat;
+            BracketReleaseMode = Directory.Controls.BracketReleaseMode;
+            BracketCreationMode = Directory.Controls.BracketCreationMode;
+            RegistrationCapEnabled = Directory.Controls.RegistrationCapEnabled;
+            RegistrationCap = Directory.Controls.RegistrationCap;
+            BracketReleaseUtcText = Directory.Controls.BracketReleaseUtc?.ToString("yyyy-MM-ddTHH:mm:ssZ") ?? string.Empty;
+
+            StatusSuccess = true;
+            StatusMessage = $"Loaded directory for {Directory.EventName}.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SaveControlsAsync()
+    {
+        if (!Guid.TryParse(SelectedEventIdText, out var eventId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid event id is required.";
+            return;
+        }
+
+        DateTime? releaseUtc = null;
+        if (!string.IsNullOrWhiteSpace(BracketReleaseUtcText) && DateTime.TryParse(BracketReleaseUtcText, out var parsedRelease))
+        {
+            releaseUtc = parsedRelease.ToUniversalTime();
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.UpdateTournamentControlsAsync(
+                eventId,
+                new UpdateTournamentControlSettingsRequest(
+                    TournamentFormat,
+                    BracketReleaseMode,
+                    releaseUtc,
+                    BracketCreationMode,
+                    RegistrationCapEnabled,
+                    RegistrationCapEnabled ? RegistrationCap : null));
+
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            StatusSuccess = true;
+            StatusMessage = "Tournament controls updated.";
+            await LoadDirectoryAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ReleaseBracketsNowAsync()
+    {
+        if (!Guid.TryParse(SelectedEventIdText, out var eventId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid event id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.ReleaseBracketsAsync(eventId);
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            StatusSuccess = true;
+            StatusMessage = "Brackets released.";
+            await LoadDirectoryAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RegisterAsync()
+    {
+        if (!Guid.TryParse(RegistrationEventIdText, out var eventId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid event id is required.";
+            return;
+        }
+
+        if (!Guid.TryParse(RegistrationAthleteIdText, out var athleteId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid athlete id is required.";
+            return;
+        }
+
+        Guid? teamId = Guid.TryParse(RegistrationTeamIdText, out var parsedTeamId) ? parsedTeamId : null;
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.RegisterAthleteForEventAsync(
+                eventId,
+                new RegisterForEventRequest(athleteId, teamId, RegisterAsFreeAgent));
+
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                LastPaymentIntent = null;
+                return;
+            }
+
+            Workflow.EventId = eventId;
+            Workflow.AthleteProfileId = athleteId;
+            LastPaymentIntent = result.Data.PaymentIntent;
+            StatusSuccess = true;
+            StatusMessage = "Registration submitted.";
+            await LoadDirectoryAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void UseWorkflowAthlete()
+    {
+        if (Workflow.AthleteProfileId is not null)
+        {
+            RegistrationAthleteIdText = Workflow.AthleteProfileId.Value.ToString();
+        }
+    }
+}

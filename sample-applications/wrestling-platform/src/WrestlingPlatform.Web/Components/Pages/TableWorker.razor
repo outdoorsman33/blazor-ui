@@ -1,0 +1,328 @@
+@page "/table-worker"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+@inject NavigationManager Navigation
+
+<PageTitle>Table Worker - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Table Worker Station</h1>
+        <p class="page-subtitle">Select tournament, choose mat, and run unlimited simultaneous match tables with direct handoff to live scoring.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Tournament -> Mat -> Match</span>
+        <span class="tag">Unlimited Mats</span>
+        <span class="tag">Real-Time Ops</span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+}
+
+<div class="panel-grid two">
+    <section class="panel">
+        <div class="item-head">
+            <h2>1) Select Tournament</h2>
+            <button class="btn ghost" @onclick="LoadEventsAsync" disabled="@IsBusy">Refresh</button>
+        </div>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>State filter</label>
+                <input class="input" @bind="StateFilter" placeholder="OH" />
+            </div>
+            <div class="field">
+                <label>Days ahead</label>
+                <input class="input" type="number" min="1" max="365" @bind="DaysAhead" />
+            </div>
+        </div>
+
+        <ul class="list spacer-top">
+            @if (EventSummaries.Count == 0)
+            {
+                <li class="list-item">No tournaments available for table workers yet.</li>
+            }
+            else
+            {
+                @foreach (var evt in EventSummaries)
+                {
+                    <li class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">@evt.EventName</span>
+                            <span class="item-meta">@evt.State / @evt.City</span>
+                        </div>
+                        <div class="split spacer-top">
+                            <span>@evt.StartUtc.ToLocalTime().ToString("MMM dd, yyyy h:mm tt")</span>
+                            <span>@evt.Style</span>
+                            <span>@evt.MatCount mats</span>
+                            <button class="btn secondary" @onclick="() => SelectEventAsync(evt.EventId)" disabled="@IsBusy">Load Mats</button>
+                        </div>
+                    </li>
+                }
+            }
+        </ul>
+    </section>
+
+    <section class="panel">
+        <h2>2) Choose Mat</h2>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Selected Event Id</label>
+                <input class="input mono" @bind="SelectedEventIdText" />
+            </div>
+            <div class="field">
+                <label>Mat</label>
+                <select class="select" @bind="SelectedMatNumber">
+                    @if (Board?.Mats is { Count: > 0 })
+                    {
+                        @foreach (var mat in Board.Mats)
+                        {
+                            <option value="@mat.MatNumber">@mat.MatNumber (@mat.Matches.Count)</option>
+                        }
+                    }
+                    else
+                    {
+                        <option value="">No mats loaded</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Scheduled local time</label>
+                <input class="input" type="text" @bind="ScheduledLocal" placeholder="YYYY-MM-DDTHH:mm" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="LoadBoardAsync" disabled="@IsBusy">Load Board</button>
+            <button class="btn ghost" @onclick="ApplyBoardToWorkflow">Apply Workflow</button>
+        </div>
+
+        @if (Board is not null)
+        {
+            <div class="metric-grid spacer-top">
+                <div class="metric-card">
+                    <div class="metric-label">Tournament</div>
+                    <div class="metric-value mono">@Board.EventName</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Style</div>
+                    <div class="metric-value">@Board.Style</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Cap Remaining</div>
+                    <div class="metric-value">@(Board.Controls.RemainingSlots == int.MaxValue ? "Unlimited" : Board.Controls.RemainingSlots)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Format</div>
+                    <div class="metric-value">@Board.Controls.TournamentFormat</div>
+                </div>
+            </div>
+        }
+    </section>
+</div>
+
+<section class="panel spacer-top">
+    <h2>3) Mat Match Queue</h2>
+    <div class="table-wrap spacer-top">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Match</th>
+                    <th>Round</th>
+                    <th>Status</th>
+                    <th>Athlete A</th>
+                    <th>Athlete B</th>
+                    <th>Score</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (CurrentMatMatches.Count == 0)
+                {
+                    <tr><td colspan="7">Select a tournament and mat to load matches.</td></tr>
+                }
+                else
+                {
+                    @foreach (var row in CurrentMatMatches)
+                    {
+                        <tr>
+                            <td class="mono">@Short(row.MatchId)</td>
+                            <td>@row.Round-@row.MatchNumber</td>
+                            <td>@row.Status</td>
+                            <td>@row.AthleteALabel</td>
+                            <td>@row.AthleteBLabel</td>
+                            <td>@(string.IsNullOrWhiteSpace(row.Score) ? "-" : row.Score)</td>
+                            <td>
+                                <div class="actions">
+                                    <button class="btn ghost" @onclick="() => SetInTheHoleAsync(row.MatchId)" disabled="@IsBusy">In-the-hole</button>
+                                    <button class="btn secondary" @onclick="() => StartScoring(row.MatchId)">Score</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private bool IsBusy;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+
+    private string StateFilter = "OH";
+    private int DaysAhead = 45;
+    private string SelectedEventIdText = string.Empty;
+    private string SelectedMatNumber = "Mat 1";
+    private string ScheduledLocal = DateTime.Now.AddMinutes(25).ToString("yyyy-MM-ddTHH:mm");
+
+    private List<TableWorkerEventSummary> EventSummaries = [];
+    private TableWorkerEventBoard? Board;
+
+    private IReadOnlyList<TableWorkerMatchSummary> CurrentMatMatches =>
+        Board?.Mats.FirstOrDefault(x => x.MatNumber == SelectedMatNumber)?.Matches
+        ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Workflow.EventId is not null)
+        {
+            SelectedEventIdText = Workflow.EventId.Value.ToString();
+        }
+
+        await LoadEventsAsync();
+        if (!string.IsNullOrWhiteSpace(SelectedEventIdText))
+        {
+            await LoadBoardAsync();
+        }
+    }
+
+    private async Task LoadEventsAsync()
+    {
+        IsBusy = true;
+        StatusMessage = null;
+
+        try
+        {
+            var result = await ApiClient.GetTableWorkerEventsAsync(StateFilter, DaysAhead);
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                EventSummaries = [];
+                return;
+            }
+
+            EventSummaries = result.Data ?? [];
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {EventSummaries.Count} table-worker tournaments.";
+
+            if (string.IsNullOrWhiteSpace(SelectedEventIdText) && EventSummaries.Count > 0)
+            {
+                SelectedEventIdText = EventSummaries[0].EventId.ToString();
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SelectEventAsync(Guid eventId)
+    {
+        SelectedEventIdText = eventId.ToString();
+        await LoadBoardAsync();
+    }
+
+    private async Task LoadBoardAsync()
+    {
+        if (!Guid.TryParse(SelectedEventIdText, out var eventId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Select a valid event id.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.GetTableWorkerBoardAsync(eventId);
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Board = null;
+                return;
+            }
+
+            Board = result.Data;
+            Workflow.EventId = eventId;
+            if (Board.Mats.Count > 0)
+            {
+                SelectedMatNumber = Board.Mats[0].MatNumber;
+            }
+
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {Board.Mats.Count} mats for {Board.EventName}.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ApplyBoardToWorkflow()
+    {
+        if (Board is null)
+        {
+            return;
+        }
+
+        Workflow.EventId = Board.EventId;
+        var matchId = CurrentMatMatches.FirstOrDefault()?.MatchId;
+        if (matchId is not null && matchId != Guid.Empty)
+        {
+            Workflow.MatchId = matchId;
+        }
+
+        StatusSuccess = true;
+        StatusMessage = "Workflow updated from table worker context.";
+    }
+
+    private async Task SetInTheHoleAsync(Guid matchId)
+    {
+        IsBusy = true;
+        try
+        {
+            DateTime? scheduledUtc = DateTime.TryParse(ScheduledLocal, out var local)
+                ? local.ToUniversalTime()
+                : null;
+
+            var result = await ApiClient.AssignMatAsync(matchId, new AssignMatRequest(SelectedMatNumber, scheduledUtc, MarkInTheHole: true));
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            StatusSuccess = true;
+            StatusMessage = $"Match {Short(matchId)} moved to in-the-hole on {SelectedMatNumber}.";
+            await LoadBoardAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void StartScoring(Guid matchId)
+    {
+        Workflow.MatchId = matchId;
+        Navigation.NavigateTo($"/mat-scoring?matchId={matchId:D}");
+    }
+
+    private static string Short(Guid id) => id.ToString("N")[..8];
+}
