@@ -27,10 +27,25 @@
         <div class="form-grid spacer-top">
             <div class="field">
                 <label>State filter</label>
-                <input class="input" @bind="StateFilter" placeholder="OH" />
+                <select class="select" @bind="StateFilter">
+                    @foreach (var state in FormOptions.UsStatesWithAny)
+                    {
+                        <option value="@state.Code">@state.Name</option>
+                    }
+                </select>
             </div>
             <div class="field">
-                <label>Event Id</label>
+                <label>Event</label>
+                <select class="select" @bind="SelectedEventIdText">
+                    <option value="">Select event...</option>
+                    @foreach (var evt in Events)
+                    {
+                        <option value="@evt.EventId">@evt.EventName (@evt.State / @evt.City)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Event Id (manual override)</label>
                 <input class="input mono" @bind="SelectedEventIdText" />
             </div>
         </div>

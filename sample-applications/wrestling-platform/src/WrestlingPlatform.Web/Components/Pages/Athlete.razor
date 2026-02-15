@@ -1,6 +1,7 @@
 @page "/athlete"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
+@inject NavigationManager Navigation
 
 <PageTitle>Athlete Portal - PinPoint Arena</PageTitle>
 
@@ -77,7 +78,12 @@
             </div>
             <div class="field">
                 <label>State</label>
-                <input class="input" @bind="State" />
+                <select class="select" @bind="State">
+                    @foreach (var state in FormOptions.UsStates)
+                    {
+                        <option value="@state.Code">@state.Name</option>
+                    }
+                </select>
             </div>
             <div class="field">
                 <label>City</label>
@@ -89,11 +95,21 @@
             </div>
             <div class="field">
                 <label>Grade</label>
-                <input class="input" type="number" min="0" max="12" @bind="Grade" />
+                <select class="select" @bind="Grade">
+                    @foreach (var grade in FormOptions.GradeOptions)
+                    {
+                        <option value="@grade.Value">@grade.Label</option>
+                    }
+                </select>
             </div>
             <div class="field">
                 <label>Weight Class</label>
-                <input class="input" type="number" step="0.1" @bind="WeightClass" />
+                <select class="select" @bind="WeightClass">
+                    @foreach (var weight in ProfileWeightOptions)
+                    {
+                        <option value="@weight">@weight lbs</option>
+                    }
+                </select>
             </div>
             <div class="field">
                 <label>Level</label>
@@ -123,7 +139,12 @@
         <div class="form-grid spacer-top">
             <div class="field">
                 <label>Search State</label>
-                <input class="input" @bind="SearchState" placeholder="OH" />
+                <select class="select" @bind="SearchState">
+                    @foreach (var state in FormOptions.UsStatesWithAny)
+                    {
+                        <option value="@state.Code">@state.Name</option>
+                    }
+                </select>
             </div>
             <div class="field">
                 <label>Search City</label>
@@ -157,12 +178,13 @@
                         <th>Date</th>
                         <th>Fee</th>
                         <th>Id</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     @if (SearchedEvents.Count == 0)
                     {
-                        <tr><td colspan="5">No results yet.</td></tr>
+                        <tr><td colspan="6">No results yet.</td></tr>
                     }
                     else
                     {
@@ -174,6 +196,12 @@
                                 <td>@tournamentEvent.StartUtc.ToLocalTime().ToString("MMM dd")</td>
                                 <td>$@((tournamentEvent.EntryFeeCents / 100m).ToString("0.00"))</td>
                                 <td class="mono">@tournamentEvent.Id.ToString()[..8]</td>
+                                <td>
+                                    <div class="actions">
+                                        <button class="btn ghost" @onclick="() => UseEventForRegistration(tournamentEvent.Id)">Use</button>
+                                        <button class="btn secondary" @onclick="() => OpenEventBrackets(tournamentEvent.Id)">Brackets</button>
+                                    </div>
+                                </td>
                             </tr>
                         }
                     }
@@ -232,7 +260,12 @@
             </div>
             <div class="field">
                 <label>Ranking State</label>
-                <input class="input" @bind="RankingState" placeholder="OH" />
+                <select class="select" @bind="RankingState">
+                    @foreach (var state in FormOptions.UsStatesWithAny)
+                    {
+                        <option value="@state.Code">@state.Name</option>
+                    }
+                </select>
             </div>
             <div class="field">
                 <label>Take</label>
@@ -737,6 +770,7 @@
     private int Grade = 10;
     private decimal WeightClass = 132m;
     private CompetitionLevel Level = CompetitionLevel.HighSchool;
+    private IReadOnlyList<decimal> ProfileWeightOptions => FormOptions.WeightClassesFor(Level);
     private string? ProfileMessage;
     private bool ProfileSuccess;
     private Guid? CreatedAthleteId;
@@ -842,6 +876,11 @@
             return;
         }
 
+        if (!ProfileWeightOptions.Contains(WeightClass))
+        {
+            WeightClass = ProfileWeightOptions[0];
+        }
+
         var request = new CreateAthleteProfileRequest(
             userId,
             FirstName,
@@ -906,6 +945,21 @@
         }
 
         IsBusy = false;
+    }
+
+    private void UseEventForRegistration(Guid eventId)
+    {
+        RegistrationEventId = eventId.ToString();
+        NotifyEventId = eventId.ToString();
+        Workflow.EventId = eventId;
+        RegistrationSuccess = true;
+        RegistrationMessage = $"Selected event {eventId.ToString()[..8]} for registration.";
+    }
+
+    private void OpenEventBrackets(Guid eventId)
+    {
+        Workflow.EventId = eventId;
+        Navigation.NavigateTo("/brackets");
     }
 
     private async Task RegisterForEventAsync()

@@ -225,7 +225,7 @@
         var destination = result.Type switch
         {
             GlobalSearchEntityType.Match => $"/mat-scoring?matchId={result.Id}",
-            GlobalSearchEntityType.Tournament => "/tournaments",
+            GlobalSearchEntityType.Tournament => "/brackets",
             GlobalSearchEntityType.Athlete => "/athlete",
             GlobalSearchEntityType.Coach => "/coach",
             GlobalSearchEntityType.Stream => "/live",

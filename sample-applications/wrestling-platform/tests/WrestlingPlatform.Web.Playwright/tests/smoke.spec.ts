@@ -33,4 +33,14 @@ test.describe("PinPoint Arena smoke", () => {
     await expect(page.getByRole("heading", { name: /Bracket Center/i })).toBeVisible();
     await expect(page.locator(".panel").nth(1)).toBeVisible();
   });
+
+  test("state dropdowns are populated", async ({ page }) => {
+    await page.goto("/registration");
+
+    const stateSelect = page.locator("section:has-text('Search Tournaments') select").first();
+    await expect(stateSelect).toBeVisible();
+
+    const optionCount = await stateSelect.locator("option").count();
+    expect(optionCount).toBeGreaterThan(40);
+  });
 });

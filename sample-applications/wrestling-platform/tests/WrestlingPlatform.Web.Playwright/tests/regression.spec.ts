@@ -82,4 +82,34 @@ test.describe("PinPoint Arena regression", () => {
     await page.getByRole("button", { name: /Load AI Highlights/i }).click();
     await expect(page.getByRole("heading", { name: /Highlight Clips/i })).toBeVisible();
   });
+
+  test("tournament explorer card actions navigate correctly", async ({ page }) => {
+    await page.goto("/tournaments");
+    await page.getByRole("button", { name: /Load Tournaments/i }).click();
+
+    const bracketsButton = page.getByRole("main").getByRole("button", { name: /^Brackets$/i }).first();
+    await expect(bracketsButton).toBeVisible();
+    await bracketsButton.click();
+
+    await expect(page).toHaveURL(/\/brackets/i);
+    await expect(page.getByRole("heading", { name: /Bracket Center/i })).toBeVisible();
+  });
+
+  test("support assistant suggestions are clickable", async ({ page }) => {
+    await page.goto("/support");
+    await page.getByPlaceholder(/How do I score overtime matches/i).fill("How do I view and run brackets?");
+    await page.getByRole("button", { name: /Ask Assistant/i }).click();
+
+    await expect(page.getByText(/Assistant response ready/i)).toBeVisible();
+
+    const openSuggestion = page
+      .locator(".list-item", { hasText: "Suggested Actions" })
+      .getByRole("button", { name: /^Open$/i })
+      .first();
+
+    await expect(openSuggestion).toBeVisible();
+    await openSuggestion.click();
+
+    await expect(page).toHaveURL(/\/(brackets|registration|support|mat-scoring|table-worker|live|athlete|coach|search)/i);
+  });
 });

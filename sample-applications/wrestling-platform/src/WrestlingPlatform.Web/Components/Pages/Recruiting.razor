@@ -36,7 +36,12 @@
         </div>
         <div class="field">
             <label>State</label>
-            <input class="input" @bind="State" placeholder="OH" />
+            <select class="select" @bind="State">
+                @foreach (var state in FormOptions.UsStatesWithAny)
+                {
+                    <option value="@state.Code">@state.Name</option>
+                }
+            </select>
         </div>
         <div class="field">
             <label>Min Wins</label>
@@ -164,4 +169,3 @@
         StatusMessage = $"Current workflow athlete: {Workflow.AthleteProfileId.Value.ToString()[..8]}";
     }
 }
-

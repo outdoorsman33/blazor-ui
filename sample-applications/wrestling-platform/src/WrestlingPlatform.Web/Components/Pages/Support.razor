@@ -30,7 +30,11 @@
         <div class="form-grid spacer-top">
             <div class="field">
                 <label>Search FAQs</label>
-                <input class="input" @bind="FaqQuery" @bind:event="oninput" placeholder="registration, scoring, stream, nil..." />
+                <input class="input"
+                       @bind="FaqQuery"
+                       @bind:event="oninput"
+                       @onkeydown="OnFaqKeyDownAsync"
+                       placeholder="registration, scoring, stream, nil..." />
             </div>
         </div>
         <div class="actions">
@@ -91,7 +95,11 @@
     <div class="form-grid spacer-top">
         <div class="field">
             <label>Your Question</label>
-            <input class="input" @bind="ChatMessage" @bind:event="oninput" placeholder="How do I score overtime matches?" />
+            <input class="input"
+                   @bind="ChatMessage"
+                   @bind:event="oninput"
+                   @onkeydown="OnChatKeyDownAsync"
+                   placeholder="How do I score overtime matches?" />
         </div>
         <div class="field">
             <label>Context (optional)</label>
@@ -117,7 +125,12 @@
                     <div class="timeline spacer-top">
                         @foreach (var action in ChatResponse.SuggestedActions)
                         {
-                            <div class="timeline-item">@action</div>
+                            <div class="timeline-item">
+                                <div class="split">
+                                    <span>@action</span>
+                                    <button class="btn ghost" @onclick="() => ExecuteSuggestedAction(action)">Open</button>
+                                </div>
+                            </div>
                         }
                     </div>
                 </div>
@@ -126,7 +139,12 @@
             {
                 <div class="list-item">
                     <div class="item-title">Related FAQs</div>
-                    <div class="helper spacer-top">@string.Join(", ", ChatResponse.SuggestedFaqIds)</div>
+                    <div class="actions">
+                        @foreach (var faqId in ChatResponse.SuggestedFaqIds)
+                        {
+                            <button class="btn ghost" @onclick="() => OpenFaqAsync(faqId)">@faqId</button>
+                        }
+                    </div>
                 </div>
             }
         </div>
@@ -148,6 +166,14 @@
     {
         await LoadFaqsAsync();
         await LoadGuideAsync();
+    }
+
+    private async Task OnFaqKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            await SearchFaqsAsync();
+        }
     }
 
     private async Task LoadFaqsAsync()
@@ -251,5 +277,97 @@
         {
             IsBusy = false;
         }
+    }
+
+    private async Task OnChatKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            await AskAssistantAsync();
+        }
+    }
+
+    private void ExecuteSuggestedAction(string action)
+    {
+        var route = ResolveRouteForAction(action);
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            StatusSuccess = false;
+            StatusMessage = "No route mapped for this suggestion yet.";
+            return;
+        }
+
+        Navigation.NavigateTo(route);
+    }
+
+    private async Task OpenFaqAsync(string faqId)
+    {
+        var result = await ApiClient.GetHelpFaqsAsync();
+        if (!result.Success)
+        {
+            StatusSuccess = false;
+            StatusMessage = result.Message;
+            return;
+        }
+
+        var allFaqs = result.Data ?? [];
+        var matched = allFaqs.FirstOrDefault(x => string.Equals(x.Id, faqId, StringComparison.OrdinalIgnoreCase));
+        if (matched is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = $"FAQ id '{faqId}' was not found.";
+            return;
+        }
+
+        Faqs = [matched];
+        StatusSuccess = true;
+        StatusMessage = $"Showing FAQ: {matched.Question}";
+    }
+
+    private static string? ResolveRouteForAction(string action)
+    {
+        var normalized = action.Trim().ToLowerInvariant();
+
+        if (normalized.Contains("registration") || normalized.Contains("register"))
+        {
+            return "/registration";
+        }
+
+        if (normalized.Contains("bracket"))
+        {
+            return "/brackets";
+        }
+
+        if (normalized.Contains("score"))
+        {
+            return "/mat-scoring";
+        }
+
+        if (normalized.Contains("table"))
+        {
+            return "/table-worker";
+        }
+
+        if (normalized.Contains("stream") || normalized.Contains("live"))
+        {
+            return "/live";
+        }
+
+        if (normalized.Contains("nil") || normalized.Contains("athlete"))
+        {
+            return "/athlete";
+        }
+
+        if (normalized.Contains("coach"))
+        {
+            return "/coach";
+        }
+
+        if (normalized.Contains("search") || normalized.Contains("find"))
+        {
+            return "/search";
+        }
+
+        return "/support";
     }
 }

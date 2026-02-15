@@ -70,7 +70,12 @@
             </div>
             <div class="field">
                 <label>State</label>
-                <input class="input" @bind="CoachState" />
+                <select class="select" @bind="CoachState">
+                    @foreach (var state in FormOptions.UsStates)
+                    {
+                        <option value="@state.Code">@state.Name</option>
+                    }
+                </select>
             </div>
             <div class="field">
                 <label>City</label>
@@ -115,7 +120,12 @@
             </div>
             <div class="field">
                 <label>State</label>
-                <input class="input" @bind="TeamState" />
+                <select class="select" @bind="TeamState">
+                    @foreach (var state in FormOptions.UsStates)
+                    {
+                        <option value="@state.Code">@state.Name</option>
+                    }
+                </select>
             </div>
             <div class="field">
                 <label>City</label>
@@ -177,7 +187,12 @@
         <div class="form-grid spacer-top">
             <div class="field">
                 <label>State</label>
-                <input class="input" @bind="SearchState" />
+                <select class="select" @bind="SearchState">
+                    @foreach (var state in FormOptions.UsStatesWithAny)
+                    {
+                        <option value="@state.Code">@state.Name</option>
+                    }
+                </select>
             </div>
             <div class="field">
                 <label>City</label>

@@ -1,6 +1,7 @@
 @page "/brackets"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
+@inject NavigationManager Navigation
 
 <PageTitle>Bracket Center - PinPoint Arena</PageTitle>
 
@@ -26,16 +27,32 @@
     <div class="form-grid spacer-top">
         <div class="field">
             <label>State filter</label>
-            <input class="input" @bind="StateFilter" placeholder="OH" />
+            <select class="select" @bind="StateFilter">
+                @foreach (var state in FormOptions.UsStatesWithAny)
+                {
+                    <option value="@state.Code">@state.Name</option>
+                }
+            </select>
         </div>
         <div class="field">
-            <label>Selected Event Id</label>
+            <label>Selected Event</label>
+            <select class="select" @bind="SelectedEventIdText">
+                <option value="">Select event...</option>
+                @foreach (var evt in Events)
+                {
+                    <option value="@evt.EventId">@evt.EventName (@evt.State / @evt.City)</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Selected Event Id (manual override)</label>
             <input class="input mono" @bind="SelectedEventIdText" />
         </div>
     </div>
     <div class="actions">
         <button class="btn ghost" @onclick="LoadEventsAsync" disabled="@IsBusy">Refresh Events</button>
         <button class="btn primary" @onclick="LoadVisualAsync" disabled="@IsBusy">Load Brackets</button>
+        <button class="btn ghost" @onclick="UseWorkflowEvent" disabled="@IsBusy">Use Workflow Event</button>
     </div>
     <ul class="list spacer-top">
         @if (Events.Count == 0)
@@ -156,6 +173,9 @@
                                     {
                                         <div class="helper spacer-top">Pending result</div>
                                     }
+                                    <div class="actions">
+                                        <button class="btn ghost" @onclick="() => OpenMatch(match.MatchId)">Open Mat Scoring</button>
+                                    </div>
                                 </article>
                             }
                         </div>
@@ -225,6 +245,26 @@
         {
             IsBusy = false;
         }
+    }
+
+    private void UseWorkflowEvent()
+    {
+        if (Workflow.EventId is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "Workflow event id is empty.";
+            return;
+        }
+
+        SelectedEventIdText = Workflow.EventId.Value.ToString();
+        StatusSuccess = true;
+        StatusMessage = $"Using workflow event {Workflow.EventId.Value.ToString()[..8]}.";
+    }
+
+    private void OpenMatch(Guid matchId)
+    {
+        Workflow.MatchId = matchId;
+        Navigation.NavigateTo($"/mat-scoring?matchId={matchId:D}");
     }
 
     private async Task SelectEventAsync(Guid eventId)

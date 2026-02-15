@@ -21,8 +21,13 @@
     <h2>Filters</h2>
     <div class="form-grid spacer-top">
         <div class="field">
-            <label>State (optional)</label>
-            <input class="input" @bind="StateFilter" placeholder="OH" />
+            <label>State</label>
+            <select class="select" @bind="StateFilter">
+                @foreach (var state in FormOptions.UsStatesWithAny)
+                {
+                    <option value="@state.Code">@state.Name</option>
+                }
+            </select>
         </div>
         <div class="field">
             <label>Days Back</label>
@@ -52,7 +57,41 @@
                 <h2>Live</h2>
                 <span class="tag">@Explorer.Live.Count</span>
             </div>
-            @RenderBucket(Explorer.Live, "No live tournaments right now.")
+            @if (Explorer.Live.Count == 0)
+            {
+                <p class="helper spacer-top">No live tournaments right now.</p>
+            }
+            else
+            {
+                <ul class="list spacer-top">
+                    @foreach (var card in Explorer.Live.Take(16))
+                    {
+                        <li class="list-item">
+                            <div class="item-head">
+                                <span class="item-title">@card.Name</span>
+                                <span class="item-meta">@card.City, @card.State</span>
+                            </div>
+                            <div class="helper spacer-top">@card.StartUtc.ToLocalTime():MMM dd, yyyy h:mm tt - @card.EndUtc.ToLocalTime():MMM dd, yyyy h:mm tt</div>
+                            <div class="split spacer-top">
+                                <span>Style: @card.Style</span>
+                                <span>Registrants: @card.RegisteredAthletes</span>
+                                <span>Active Mats: @card.ActiveMats</span>
+                                <span>Streams: @card.LiveStreams</span>
+                                <span>Completed: @card.CompletedMatches</span>
+                            </div>
+                            @if (Workflow.EventId == card.EventId)
+                            {
+                                <div class="tag spacer-top">Workflow Selected</div>
+                            }
+                            <div class="actions">
+                                <button class="btn secondary" @onclick="() => OpenRegistration(card.EventId)">Register</button>
+                                <button class="btn ghost" @onclick="() => OpenBrackets(card.EventId)">Brackets</button>
+                                <button class="btn ghost" @onclick="() => OpenLive(card.EventId)">Live</button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
         </section>
 
         <section class="panel">
@@ -60,7 +99,41 @@
                 <h2>Upcoming</h2>
                 <span class="tag">@Explorer.Upcoming.Count</span>
             </div>
-            @RenderBucket(Explorer.Upcoming, "No upcoming tournaments in this window.")
+            @if (Explorer.Upcoming.Count == 0)
+            {
+                <p class="helper spacer-top">No upcoming tournaments in this window.</p>
+            }
+            else
+            {
+                <ul class="list spacer-top">
+                    @foreach (var card in Explorer.Upcoming.Take(16))
+                    {
+                        <li class="list-item">
+                            <div class="item-head">
+                                <span class="item-title">@card.Name</span>
+                                <span class="item-meta">@card.City, @card.State</span>
+                            </div>
+                            <div class="helper spacer-top">@card.StartUtc.ToLocalTime():MMM dd, yyyy h:mm tt - @card.EndUtc.ToLocalTime():MMM dd, yyyy h:mm tt</div>
+                            <div class="split spacer-top">
+                                <span>Style: @card.Style</span>
+                                <span>Registrants: @card.RegisteredAthletes</span>
+                                <span>Active Mats: @card.ActiveMats</span>
+                                <span>Streams: @card.LiveStreams</span>
+                                <span>Completed: @card.CompletedMatches</span>
+                            </div>
+                            @if (Workflow.EventId == card.EventId)
+                            {
+                                <div class="tag spacer-top">Workflow Selected</div>
+                            }
+                            <div class="actions">
+                                <button class="btn secondary" @onclick="() => OpenRegistration(card.EventId)">Register</button>
+                                <button class="btn ghost" @onclick="() => OpenBrackets(card.EventId)">Brackets</button>
+                                <button class="btn ghost" @onclick="() => OpenLive(card.EventId)">Live</button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
         </section>
 
         <section class="panel">
@@ -68,7 +141,41 @@
                 <h2>Archive</h2>
                 <span class="tag">@Explorer.Past.Count</span>
             </div>
-            @RenderBucket(Explorer.Past, "No archived tournaments in this window.")
+            @if (Explorer.Past.Count == 0)
+            {
+                <p class="helper spacer-top">No archived tournaments in this window.</p>
+            }
+            else
+            {
+                <ul class="list spacer-top">
+                    @foreach (var card in Explorer.Past.Take(16))
+                    {
+                        <li class="list-item">
+                            <div class="item-head">
+                                <span class="item-title">@card.Name</span>
+                                <span class="item-meta">@card.City, @card.State</span>
+                            </div>
+                            <div class="helper spacer-top">@card.StartUtc.ToLocalTime():MMM dd, yyyy h:mm tt - @card.EndUtc.ToLocalTime():MMM dd, yyyy h:mm tt</div>
+                            <div class="split spacer-top">
+                                <span>Style: @card.Style</span>
+                                <span>Registrants: @card.RegisteredAthletes</span>
+                                <span>Active Mats: @card.ActiveMats</span>
+                                <span>Streams: @card.LiveStreams</span>
+                                <span>Completed: @card.CompletedMatches</span>
+                            </div>
+                            @if (Workflow.EventId == card.EventId)
+                            {
+                                <div class="tag spacer-top">Workflow Selected</div>
+                            }
+                            <div class="actions">
+                                <button class="btn secondary" @onclick="() => OpenRegistration(card.EventId)">Register</button>
+                                <button class="btn ghost" @onclick="() => OpenBrackets(card.EventId)">Brackets</button>
+                                <button class="btn ghost" @onclick="() => OpenLive(card.EventId)">Live</button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
         </section>
     </div>
 }
@@ -129,90 +236,6 @@
             ? "Workflow event is not visible in the current filter window."
             : $"Workflow event loaded: {selected.Name} ({selected.State}/{selected.City}).";
     }
-
-    private RenderFragment RenderBucket(List<TournamentExplorerCard> cards, string emptyMessage) => builder =>
-    {
-        if (cards.Count == 0)
-        {
-            builder.OpenElement(0, "p");
-            builder.AddAttribute(1, "class", "helper spacer-top");
-            builder.AddContent(2, emptyMessage);
-            builder.CloseElement();
-            return;
-        }
-
-        builder.OpenElement(3, "ul");
-        builder.AddAttribute(4, "class", "list spacer-top");
-
-        var seq = 5;
-        foreach (var card in cards.Take(16))
-        {
-            var isSelected = Workflow.EventId == card.EventId;
-
-            builder.OpenElement(seq++, "li");
-            builder.AddAttribute(seq++, "class", "list-item");
-
-            builder.OpenElement(seq++, "div");
-            builder.AddAttribute(seq++, "class", "item-head");
-            builder.OpenElement(seq++, "span");
-            builder.AddAttribute(seq++, "class", "item-title");
-            builder.AddContent(seq++, card.Name);
-            builder.CloseElement();
-            builder.OpenElement(seq++, "span");
-            builder.AddAttribute(seq++, "class", "item-meta");
-            builder.AddContent(seq++, $"{card.City}, {card.State}");
-            builder.CloseElement();
-            builder.CloseElement();
-
-            builder.OpenElement(seq++, "div");
-            builder.AddAttribute(seq++, "class", "helper spacer-top");
-            builder.AddContent(seq++, $"{card.StartUtc.ToLocalTime():MMM dd, yyyy h:mm tt} - {card.EndUtc.ToLocalTime():MMM dd, yyyy h:mm tt}");
-            builder.CloseElement();
-
-            builder.OpenElement(seq++, "div");
-            builder.AddAttribute(seq++, "class", "split spacer-top");
-            builder.AddContent(seq++, $"Style: {card.Style}");
-            builder.AddContent(seq++, $"Registrants: {card.RegisteredAthletes}");
-            builder.AddContent(seq++, $"Active Mats: {card.ActiveMats}");
-            builder.AddContent(seq++, $"Streams: {card.LiveStreams}");
-            builder.AddContent(seq++, $"Completed: {card.CompletedMatches}");
-            builder.CloseElement();
-
-            if (isSelected)
-            {
-                builder.OpenElement(seq++, "div");
-                builder.AddAttribute(seq++, "class", "tag spacer-top");
-                builder.AddContent(seq++, "Workflow Selected");
-                builder.CloseElement();
-            }
-
-            builder.OpenElement(seq++, "div");
-            builder.AddAttribute(seq++, "class", "actions");
-
-            builder.OpenElement(seq++, "button");
-            builder.AddAttribute(seq++, "class", "btn secondary");
-            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => OpenRegistration(card.EventId)));
-            builder.AddContent(seq++, "Register");
-            builder.CloseElement();
-
-            builder.OpenElement(seq++, "button");
-            builder.AddAttribute(seq++, "class", "btn ghost");
-            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => OpenBrackets(card.EventId)));
-            builder.AddContent(seq++, "Brackets");
-            builder.CloseElement();
-
-            builder.OpenElement(seq++, "button");
-            builder.AddAttribute(seq++, "class", "btn ghost");
-            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => OpenLive(card.EventId)));
-            builder.AddContent(seq++, "Live");
-            builder.CloseElement();
-
-            builder.CloseElement();
-            builder.CloseElement();
-        }
-
-        builder.CloseElement();
-    };
 
     private void OpenRegistration(Guid eventId)
     {

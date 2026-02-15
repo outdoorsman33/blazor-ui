@@ -27,7 +27,12 @@
         <div class="form-grid spacer-top">
             <div class="field">
                 <label>State</label>
-                <input class="input" @bind="SearchState" placeholder="OH" />
+                <select class="select" @bind="SearchState">
+                    @foreach (var state in FormOptions.UsStatesWithAny)
+                    {
+                        <option value="@state.Code">@state.Name</option>
+                    }
+                </select>
             </div>
             <div class="field">
                 <label>City</label>
