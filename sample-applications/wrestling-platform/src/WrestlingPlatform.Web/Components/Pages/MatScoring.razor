@@ -91,6 +91,10 @@
             <input id="suddenOvertime" type="checkbox" @bind="EndOnFirstOvertimeScore" />
             <label for="suddenOvertime">End on first overtime score</label>
         </div>
+        <div class="field check-row">
+            <input id="strictScoring" type="checkbox" @bind="StrictRuleEnforcement" />
+            <label for="strictScoring">Strict rule enforcement</label>
+        </div>
     </div>
     <div class="actions">
         <button class="btn primary" @onclick="ConnectAndLoadAsync" disabled="@IsBusy">Connect + Load</button>
@@ -105,6 +109,7 @@
         | Fallback Polling: @(IsPollingActive ? "on" : "off")
         | Auto-End: @(AutoEndEnabled ? "on" : "off")
         | OT: @SelectedOvertimeFormat (@MaxOvertimePeriods)
+        | Strict: @(StrictRuleEnforcement ? "on" : "off")
         | workflow match: <span class="mono">@Short(Workflow.MatchId)</span>
     </p>
 </section>
@@ -237,6 +242,7 @@
     private OvertimeFormat SelectedOvertimeFormat = OvertimeFormat.FolkstyleStandard;
     private int MaxOvertimePeriods = 3;
     private bool EndOnFirstOvertimeScore;
+    private bool StrictRuleEnforcement = true;
 
     private string CurrentStyleLabel => $"Style: {(Rules?.Style ?? SelectedStyle)}";
 
@@ -353,7 +359,8 @@
                     RegulationPeriods,
                     SelectedOvertimeFormat,
                     MaxOvertimePeriods,
-                    EndOnFirstOvertimeScore));
+                    EndOnFirstOvertimeScore,
+                    StrictRuleEnforcement));
 
             if (!result.Success || result.Data is null)
             {
@@ -593,6 +600,7 @@
         SelectedOvertimeFormat = Rules.OvertimeFormat;
         MaxOvertimePeriods = Rules.MaxOvertimePeriods;
         EndOnFirstOvertimeScore = Rules.EndOnFirstOvertimeScore;
+        StrictRuleEnforcement = Rules.StrictRuleEnforcement;
         SelectedActionCode = Rules.Actions.FirstOrDefault(x => x.DefaultPoints > 0)?.ActionCode ?? ScoringActionCode.Takedown;
     }
 

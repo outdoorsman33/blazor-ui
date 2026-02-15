@@ -36,6 +36,11 @@ public sealed class TournamentControlService : ITournamentControlService
             throw new ArgumentOutOfRangeException(nameof(request.RegistrationCap), "Registration cap must be at least 2 when cap is enabled.");
         }
 
+        if (request.MaxOvertimePeriods is < 0 or > 8)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request.MaxOvertimePeriods), "Max overtime periods must be between 0 and 8.");
+        }
+
         var state = _states.AddOrUpdate(
             eventId,
             _ => TournamentControlState.FromRequest(request),
@@ -124,6 +129,11 @@ public sealed class TournamentControlService : ITournamentControlService
         public BracketCreationMode BracketCreationMode { get; set; }
         public bool RegistrationCapEnabled { get; set; }
         public int? RegistrationCap { get; set; }
+        public ScoringPreset ScoringPreset { get; set; }
+        public bool StrictScoringEnforcement { get; set; }
+        public OvertimeFormat OvertimeFormat { get; set; }
+        public int MaxOvertimePeriods { get; set; }
+        public bool EndOnFirstOvertimeScore { get; set; }
         public DateTime? ManuallyReleasedUtc { get; set; }
 
         public static TournamentControlState Default()
@@ -136,6 +146,11 @@ public sealed class TournamentControlService : ITournamentControlService
                 BracketCreationMode = BracketCreationMode.AiSeeded,
                 RegistrationCapEnabled = false,
                 RegistrationCap = null,
+                ScoringPreset = ScoringPreset.NfhsHighSchool,
+                StrictScoringEnforcement = true,
+                OvertimeFormat = OvertimeFormat.FolkstyleStandard,
+                MaxOvertimePeriods = 3,
+                EndOnFirstOvertimeScore = false,
                 ManuallyReleasedUtc = DateTime.UtcNow
             };
         }
@@ -150,6 +165,11 @@ public sealed class TournamentControlService : ITournamentControlService
                 BracketCreationMode = request.BracketCreationMode,
                 RegistrationCapEnabled = request.RegistrationCapEnabled,
                 RegistrationCap = request.RegistrationCapEnabled ? request.RegistrationCap : null,
+                ScoringPreset = request.ScoringPreset,
+                StrictScoringEnforcement = request.StrictScoringEnforcement,
+                OvertimeFormat = request.OvertimeFormat,
+                MaxOvertimePeriods = request.MaxOvertimePeriods,
+                EndOnFirstOvertimeScore = request.EndOnFirstOvertimeScore,
                 ManuallyReleasedUtc = request.BracketReleaseMode == BracketReleaseMode.Immediate ? DateTime.UtcNow : null
             };
         }
@@ -162,6 +182,11 @@ public sealed class TournamentControlService : ITournamentControlService
             BracketCreationMode = request.BracketCreationMode;
             RegistrationCapEnabled = request.RegistrationCapEnabled;
             RegistrationCap = request.RegistrationCapEnabled ? request.RegistrationCap : null;
+            ScoringPreset = request.ScoringPreset;
+            StrictScoringEnforcement = request.StrictScoringEnforcement;
+            OvertimeFormat = request.OvertimeFormat;
+            MaxOvertimePeriods = request.MaxOvertimePeriods;
+            EndOnFirstOvertimeScore = request.EndOnFirstOvertimeScore;
 
             if (request.BracketReleaseMode == BracketReleaseMode.Immediate)
             {
@@ -190,7 +215,12 @@ public sealed class TournamentControlService : ITournamentControlService
                 RegistrationCapEnabled,
                 cap,
                 currentRegistrantCount,
-                remaining);
+                remaining,
+                ScoringPreset,
+                StrictScoringEnforcement,
+                OvertimeFormat,
+                MaxOvertimePeriods,
+                EndOnFirstOvertimeScore);
         }
     }
 }

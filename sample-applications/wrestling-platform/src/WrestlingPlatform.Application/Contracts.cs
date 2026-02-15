@@ -128,7 +128,12 @@ public sealed record UpdateTournamentControlSettingsRequest(
     DateTime? BracketReleaseUtc,
     BracketCreationMode BracketCreationMode,
     bool RegistrationCapEnabled,
-    int? RegistrationCap);
+    int? RegistrationCap,
+    ScoringPreset ScoringPreset = ScoringPreset.NfhsHighSchool,
+    bool StrictScoringEnforcement = true,
+    OvertimeFormat OvertimeFormat = OvertimeFormat.FolkstyleStandard,
+    int MaxOvertimePeriods = 3,
+    bool EndOnFirstOvertimeScore = false);
 
 public sealed record TournamentControlSettings(
     Guid EventId,
@@ -139,7 +144,21 @@ public sealed record TournamentControlSettings(
     bool RegistrationCapEnabled,
     int? RegistrationCap,
     int CurrentRegistrantCount,
-    int RemainingSlots);
+    int RemainingSlots,
+    ScoringPreset ScoringPreset = ScoringPreset.NfhsHighSchool,
+    bool StrictScoringEnforcement = true,
+    OvertimeFormat OvertimeFormat = OvertimeFormat.FolkstyleStandard,
+    int MaxOvertimePeriods = 3,
+    bool EndOnFirstOvertimeScore = false);
+
+public enum ScoringPreset
+{
+    NfhsHighSchool,
+    NcaaFolkstyle,
+    UwwFreestyle,
+    UwwGrecoRoman,
+    Custom
+}
 
 public enum ScoreCompetitor
 {
@@ -198,7 +217,8 @@ public sealed record ConfigureMatchScoringRequest(
     int RegulationPeriods = 3,
     OvertimeFormat OvertimeFormat = OvertimeFormat.FolkstyleStandard,
     int MaxOvertimePeriods = 3,
-    bool EndOnFirstOvertimeScore = false);
+    bool EndOnFirstOvertimeScore = false,
+    bool StrictRuleEnforcement = true);
 
 public sealed record ScoringActionDefinition(
     ScoringActionCode ActionCode,
@@ -217,7 +237,8 @@ public sealed record MatchScoringRulesSnapshot(
     List<ScoringActionDefinition> Actions,
     OvertimeFormat OvertimeFormat = OvertimeFormat.FolkstyleStandard,
     int MaxOvertimePeriods = 3,
-    bool EndOnFirstOvertimeScore = false);
+    bool EndOnFirstOvertimeScore = false,
+    bool StrictRuleEnforcement = true);
 
 public sealed record ResetMatScoreboardRequest(string? Reason);
 

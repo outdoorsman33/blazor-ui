@@ -1939,6 +1939,7 @@ matches.MapGet("/{matchId:guid}/scoreboard", async (
 matches.MapGet("/{matchId:guid}/scoreboard/rules", async (
     Guid matchId,
     WrestlingPlatformDbContext dbContext,
+    ITournamentControlService tournamentControlService,
     ILiveMatScoringService liveMatScoringService,
     CancellationToken cancellationToken) =>
 {
@@ -1951,14 +1952,11 @@ matches.MapGet("/{matchId:guid}/scoreboard/rules", async (
     var bracket = await dbContext.Brackets.AsNoTracking().FirstOrDefaultAsync(x => x.Id == match.BracketId, cancellationToken);
     if (bracket is not null)
     {
+        var controls = tournamentControlService.GetOrCreate(bracket.TournamentEventId, 0);
+        var configuredRules = BuildScoringRequestFromPreset(bracket, controls);
         liveMatScoringService.Configure(
             match,
-            new ConfigureMatchScoringRequest(
-                InferStyleForLevel(bracket.Level),
-                bracket.Level,
-                AutoEndEnabled: true,
-                TechFallPointGap: null,
-                RegulationPeriods: 3));
+            configuredRules);
     }
 
     return Results.Ok(liveMatScoringService.GetRules(match));
@@ -1991,19 +1989,26 @@ matches.MapPost("/{matchId:guid}/scoreboard/rules", async (
 api.MapGet("/scoring/rules", (
     [FromQuery] WrestlingStyle? style,
     [FromQuery] CompetitionLevel? level,
+    [FromQuery] ScoringPreset? preset,
     ILiveMatScoringService liveMatScoringService) =>
 {
     var selectedStyle = style ?? WrestlingStyle.Folkstyle;
     var selectedLevel = level ?? CompetitionLevel.HighSchool;
+    var selectedPreset = preset ?? ScoringPreset.NfhsHighSchool;
     var fallbackMatch = new Match
     {
         Id = Guid.Empty,
         Status = MatchStatus.Scheduled
     };
 
+    var seededRequest = BuildPresetScoringRequest(
+        selectedPreset,
+        selectedStyle,
+        selectedLevel,
+        strictEnforcement: true);
     var rules = liveMatScoringService.Configure(
         fallbackMatch,
-        new ConfigureMatchScoringRequest(selectedStyle, selectedLevel, true, null, 3));
+        seededRequest);
 
     return Results.Ok(rules with { MatchId = Guid.Empty });
 }).AllowAnonymous();
@@ -2012,6 +2017,7 @@ matches.MapPost("/{matchId:guid}/scoreboard/events", async (
     Guid matchId,
     AddMatScoreEventRequest request,
     WrestlingPlatformDbContext dbContext,
+    ITournamentControlService tournamentControlService,
     ILiveMatScoringService liveMatScoringService,
     IRankingService rankingService,
     INotificationDispatcher notificationDispatcher,
@@ -2028,14 +2034,11 @@ matches.MapPost("/{matchId:guid}/scoreboard/events", async (
     var tournamentEventId = bracket?.TournamentEventId ?? Guid.Empty;
     if (bracket is not null)
     {
+        var controls = tournamentControlService.GetOrCreate(bracket.TournamentEventId, 0);
+        var configuredRules = BuildScoringRequestFromPreset(bracket, controls);
         liveMatScoringService.Configure(
             match,
-            new ConfigureMatchScoringRequest(
-                InferStyleForLevel(bracket.Level),
-                bracket.Level,
-                AutoEndEnabled: true,
-                TechFallPointGap: null,
-                RegulationPeriods: 3));
+            configuredRules);
     }
 
     MatScoreboardSnapshot scoreboard;
@@ -2886,6 +2889,83 @@ static async Task AdvanceBracketProgressionAsync(
         .ToListAsync(cancellationToken);
 
     BracketProgressionEngine.Resolve(bracketMatches);
+}
+
+static ConfigureMatchScoringRequest BuildScoringRequestFromPreset(Bracket bracket, TournamentControlSettings controls)
+{
+    var inferredStyle = InferStyleForLevel(bracket.Level);
+    return BuildPresetScoringRequest(
+        controls.ScoringPreset,
+        inferredStyle,
+        bracket.Level,
+        controls.StrictScoringEnforcement,
+        controls.OvertimeFormat,
+        controls.MaxOvertimePeriods,
+        controls.EndOnFirstOvertimeScore);
+}
+
+static ConfigureMatchScoringRequest BuildPresetScoringRequest(
+    ScoringPreset preset,
+    WrestlingStyle style,
+    CompetitionLevel level,
+    bool strictEnforcement,
+    OvertimeFormat? overtimeFormatOverride = null,
+    int? maxOvertimePeriodsOverride = null,
+    bool? endOnFirstOvertimeScoreOverride = null)
+{
+    return preset switch
+    {
+        ScoringPreset.NcaaFolkstyle => new ConfigureMatchScoringRequest(
+            Style: WrestlingStyle.Folkstyle,
+            Level: level,
+            AutoEndEnabled: true,
+            TechFallPointGap: 15,
+            RegulationPeriods: 3,
+            OvertimeFormat: OvertimeFormat.FolkstyleStandard,
+            MaxOvertimePeriods: 5,
+            EndOnFirstOvertimeScore: false,
+            StrictRuleEnforcement: strictEnforcement),
+        ScoringPreset.UwwFreestyle => new ConfigureMatchScoringRequest(
+            Style: WrestlingStyle.Freestyle,
+            Level: level,
+            AutoEndEnabled: true,
+            TechFallPointGap: 10,
+            RegulationPeriods: 2,
+            OvertimeFormat: OvertimeFormat.FreestyleCriteria,
+            MaxOvertimePeriods: 0,
+            EndOnFirstOvertimeScore: false,
+            StrictRuleEnforcement: strictEnforcement),
+        ScoringPreset.UwwGrecoRoman => new ConfigureMatchScoringRequest(
+            Style: WrestlingStyle.GrecoRoman,
+            Level: level,
+            AutoEndEnabled: true,
+            TechFallPointGap: 8,
+            RegulationPeriods: 2,
+            OvertimeFormat: OvertimeFormat.GrecoCriteria,
+            MaxOvertimePeriods: 0,
+            EndOnFirstOvertimeScore: false,
+            StrictRuleEnforcement: strictEnforcement),
+        ScoringPreset.Custom => new ConfigureMatchScoringRequest(
+            Style: style,
+            Level: level,
+            AutoEndEnabled: true,
+            TechFallPointGap: null,
+            RegulationPeriods: style == WrestlingStyle.Folkstyle ? 3 : 2,
+            OvertimeFormat: overtimeFormatOverride ?? (style == WrestlingStyle.Folkstyle ? OvertimeFormat.FolkstyleStandard : OvertimeFormat.None),
+            MaxOvertimePeriods: Math.Max(0, maxOvertimePeriodsOverride ?? (style == WrestlingStyle.Folkstyle ? 3 : 0)),
+            EndOnFirstOvertimeScore: endOnFirstOvertimeScoreOverride ?? false,
+            StrictRuleEnforcement: strictEnforcement),
+        _ => new ConfigureMatchScoringRequest(
+            Style: WrestlingStyle.Folkstyle,
+            Level: level,
+            AutoEndEnabled: true,
+            TechFallPointGap: 15,
+            RegulationPeriods: 3,
+            OvertimeFormat: OvertimeFormat.FolkstyleStandard,
+            MaxOvertimePeriods: 3,
+            EndOnFirstOvertimeScore: false,
+            StrictRuleEnforcement: strictEnforcement)
+    };
 }
 
 static string ResolveAgeGroupLabel(CompetitionLevel level)

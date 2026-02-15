@@ -1,5 +1,6 @@
 using WrestlingPlatform.Web.Components;
 using WrestlingPlatform.Web.Services;
+using MudBlazor.Services;
 
 namespace WrestlingPlatform.Web;
 
@@ -15,6 +16,7 @@ public class Program
 
         builder.Services.AddScoped<AuthSession>();
         builder.Services.AddScoped<WorkflowState>();
+        builder.Services.AddMudServices();
         builder.Services.AddHttpClient<PlatformApiClient>(client =>
         {
             client.BaseAddress = ResolveApiBaseUri(builder.Configuration);

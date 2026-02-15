@@ -74,7 +74,8 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             WrestlingRuleBook.GetActionCatalog(request.Style),
             normalizedOvertimeFormat,
             maxOvertimePeriods,
-            request.EndOnFirstOvertimeScore);
+            request.EndOnFirstOvertimeScore,
+            request.StrictRuleEnforcement);
 
         _rulesByMatch.AddOrUpdate(match.Id, configured, (_, _) => configured);
 
@@ -131,6 +132,19 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             if (points < 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(request.Points), "Points cannot be negative.");
+            }
+
+            if (rules.StrictRuleEnforcement)
+            {
+                if (request.ActionCode == ScoringActionCode.Custom && !request.EndMatch)
+                {
+                    throw new InvalidOperationException("Custom non-terminal scoring actions are disabled in strict rules mode.");
+                }
+
+                if (request.ActionCode != ScoringActionCode.Custom && request.Points is not null && request.Points.Value != action.DefaultPoints)
+                {
+                    throw new InvalidOperationException($"Strict rules mode requires default points for {action.Label} ({action.DefaultPoints}).");
+                }
             }
 
             if (competitor == ScoreCompetitor.AthleteA)
@@ -451,7 +465,8 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
         List<ScoringActionDefinition> Actions,
         OvertimeFormat OvertimeFormat,
         int MaxOvertimePeriods,
-        bool EndOnFirstOvertimeScore)
+        bool EndOnFirstOvertimeScore,
+        bool StrictRuleEnforcement)
     {
         public static MatchScoringConfiguration CreateDefault()
         {
@@ -465,7 +480,8 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 WrestlingRuleBook.GetActionCatalog(defaultStyle),
                 WrestlingRuleBook.GetDefaultOvertimeFormat(defaultStyle),
                 MaxOvertimePeriods: 3,
-                EndOnFirstOvertimeScore: false);
+                EndOnFirstOvertimeScore: false,
+                StrictRuleEnforcement: true);
         }
 
         public MatchScoringRulesSnapshot ToSnapshot(Guid matchId)
@@ -480,7 +496,8 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 Actions.ToList(),
                 OvertimeFormat,
                 MaxOvertimePeriods,
-                EndOnFirstOvertimeScore);
+                EndOnFirstOvertimeScore,
+                StrictRuleEnforcement);
         }
     }
 

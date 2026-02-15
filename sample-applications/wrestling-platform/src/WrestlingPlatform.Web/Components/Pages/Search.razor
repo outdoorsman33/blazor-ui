@@ -18,22 +18,23 @@
 </div>
 
 <section class="panel">
-    <div class="form-grid">
-        <div class="field">
-            <label>Search Query</label>
-            <input class="input"
-                   value="@Query"
-                   @oninput="OnQueryInput"
-                   @onkeydown="OnQueryKeyDown"
-                   placeholder="Try athlete name, city, team, event, mat, stream..." />
-        </div>
-        <div class="field">
-            <label>Max Results</label>
-            <input class="input" type="number" min="5" max="60" @bind="Take" />
-        </div>
-    </div>
+    <MudStack Row="true" Spacing="2" Class="spacer-top">
+        <MudTextField T="string"
+                      Label="Search Query"
+                      Variant="Variant.Outlined"
+                      @bind-Value="Query"
+                      Immediate="true"
+                      Placeholder="Try athlete name, city, team, event, mat, stream..."
+                      OnKeyDown="OnQueryKeyDown" />
+        <MudNumericField T="int"
+                         Label="Max Results"
+                         Variant="Variant.Outlined"
+                         Min="5"
+                         Max="60"
+                         @bind-Value="Take" />
+    </MudStack>
     <div class="actions">
-        <button class="btn primary" @onclick="SearchAsync" disabled="@IsBusy">Search</button>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchAsync" Disabled="@IsBusy">Search</MudButton>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(StatusMessage))
@@ -57,11 +58,11 @@
         <div class="table-wrap spacer-top">
             <table class="table">
                 <thead>
-                    <tr>
-                        <th>Type</th>
-                        <th>Title</th>
-                        <th>Details</th>
-                        <th>When</th>
+                        <tr>
+                            <th>Type</th>
+                            <th>Title</th>
+                            <th>Details</th>
+                            <th>When</th>
                         <th>Action</th>
                     </tr>
                 </thead>
@@ -69,7 +70,7 @@
                     @foreach (var item in Results)
                     {
                         <tr>
-                            <td>@item.Type</td>
+                            <td><MudChip T="string" Size="Size.Small" Color="Color.Secondary">@item.Type</MudChip></td>
                             <td>@item.Title</td>
                             <td>@item.Subtitle</td>
                             <td>@(item.DateUtc?.ToLocalTime().ToString("MMM dd yyyy HH:mm") ?? "-")</td>
@@ -105,11 +106,6 @@
         {
             await SearchAsync();
         }
-    }
-
-    private void OnQueryInput(ChangeEventArgs args)
-    {
-        Query = args.Value?.ToString() ?? string.Empty;
     }
 
     private async Task OnQueryKeyDown(KeyboardEventArgs args)

@@ -123,6 +123,15 @@
                     }
                 </select>
             </div>
+            <div class="field">
+                <label>Scoring Preset</label>
+                <select class="select" @bind="ScoringPreset">
+                    @foreach (var preset in Enum.GetValues<ScoringPreset>())
+                    {
+                        <option value="@preset">@preset</option>
+                    }
+                </select>
+            </div>
             <div class="field check-row">
                 <input id="capEnabled" type="checkbox" @bind="RegistrationCapEnabled" />
                 <label for="capEnabled">Enable registration cap</label>
@@ -130,6 +139,27 @@
             <div class="field">
                 <label>Registration cap</label>
                 <input class="input" type="number" min="2" @bind="RegistrationCap" />
+            </div>
+            <div class="field">
+                <label>Overtime Format</label>
+                <select class="select" @bind="OvertimeFormat">
+                    @foreach (var format in Enum.GetValues<OvertimeFormat>())
+                    {
+                        <option value="@format">@format</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Max Overtime Periods</label>
+                <input class="input" type="number" min="0" max="8" @bind="MaxOvertimePeriods" />
+            </div>
+            <div class="field check-row">
+                <input id="strictRules" type="checkbox" @bind="StrictScoringEnforcement" />
+                <label for="strictRules">Strict scoring enforcement</label>
+            </div>
+            <div class="field check-row">
+                <input id="suddenOt" type="checkbox" @bind="EndOnFirstOvertimeScore" />
+                <label for="suddenOt">End on first overtime score</label>
             </div>
         </div>
         <div class="actions">
@@ -156,6 +186,10 @@
                 <div class="metric-card">
                     <div class="metric-label">Format</div>
                     <div class="metric-value">@Directory.Controls.TournamentFormat</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Scoring</div>
+                    <div class="metric-value">@Directory.Controls.ScoringPreset</div>
                 </div>
             </div>
         }
@@ -254,6 +288,11 @@
     private BracketReleaseMode BracketReleaseMode = BracketReleaseMode.Immediate;
     private string BracketReleaseUtcText = string.Empty;
     private BracketCreationMode BracketCreationMode = BracketCreationMode.AiSeeded;
+    private ScoringPreset ScoringPreset = ScoringPreset.NfhsHighSchool;
+    private OvertimeFormat OvertimeFormat = OvertimeFormat.FolkstyleStandard;
+    private int MaxOvertimePeriods = 3;
+    private bool StrictScoringEnforcement = true;
+    private bool EndOnFirstOvertimeScore;
     private bool RegistrationCapEnabled;
     private int? RegistrationCap = 256;
 
@@ -348,6 +387,11 @@
             TournamentFormat = Directory.Controls.TournamentFormat;
             BracketReleaseMode = Directory.Controls.BracketReleaseMode;
             BracketCreationMode = Directory.Controls.BracketCreationMode;
+            ScoringPreset = Directory.Controls.ScoringPreset;
+            OvertimeFormat = Directory.Controls.OvertimeFormat;
+            MaxOvertimePeriods = Directory.Controls.MaxOvertimePeriods;
+            StrictScoringEnforcement = Directory.Controls.StrictScoringEnforcement;
+            EndOnFirstOvertimeScore = Directory.Controls.EndOnFirstOvertimeScore;
             RegistrationCapEnabled = Directory.Controls.RegistrationCapEnabled;
             RegistrationCap = Directory.Controls.RegistrationCap;
             BracketReleaseUtcText = Directory.Controls.BracketReleaseUtc?.ToString("yyyy-MM-ddTHH:mm:ssZ") ?? string.Empty;
@@ -387,7 +431,12 @@
                     releaseUtc,
                     BracketCreationMode,
                     RegistrationCapEnabled,
-                    RegistrationCapEnabled ? RegistrationCap : null));
+                    RegistrationCapEnabled ? RegistrationCap : null,
+                    ScoringPreset,
+                    StrictScoringEnforcement,
+                    OvertimeFormat,
+                    MaxOvertimePeriods,
+                    EndOnFirstOvertimeScore));
 
             if (!result.Success || result.Data is null)
             {
