@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
@@ -41,6 +42,7 @@ var stripeWebhookToleranceSeconds = int.TryParse(builder.Configuration["Payments
     : 300;
 var mfaRequiredRoles = ResolveMfaRequiredRoles(builder.Configuration);
 var samplePlaybackUrls = ResolveSamplePlaybackUrls(builder.Configuration);
+var nilOverridesByAthlete = new ConcurrentDictionary<Guid, UpdateAthleteNilProfileRequest>();
 
 var signingKeyBytes = Encoding.UTF8.GetBytes(jwtSigningKeyRaw);
 if (signingKeyBytes.Length < 32)
@@ -734,6 +736,166 @@ events.MapGet("/grouped", async (IDistributedCache cache, WrestlingPlatformDbCon
     return Results.Ok(grouped);
 }).AllowAnonymous();
 
+events.MapGet("/explorer", async (
+    [FromQuery] int? daysBack,
+    [FromQuery] int? daysAhead,
+    [FromQuery] string? state,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var nowUtc = DateTime.UtcNow;
+    var safeDaysBack = Math.Clamp(daysBack ?? 180, 7, 730);
+    var safeDaysAhead = Math.Clamp(daysAhead ?? 180, 7, 730);
+    var fromUtc = nowUtc.AddDays(-safeDaysBack);
+    var toUtc = nowUtc.AddDays(safeDaysAhead);
+
+    var eventQuery = dbContext.TournamentEvents
+        .AsNoTracking()
+        .Where(x => x.EndUtc >= fromUtc && x.StartUtc <= toUtc);
+
+    if (!string.IsNullOrWhiteSpace(state))
+    {
+        var normalizedState = state.Trim().ToUpperInvariant();
+        eventQuery = eventQuery.Where(x => x.State == normalizedState);
+    }
+
+    var eventRows = await eventQuery
+        .OrderBy(x => x.StartUtc)
+        .ThenBy(x => x.Name)
+        .ToListAsync(cancellationToken);
+
+    var eventIds = eventRows.Select(x => x.Id).ToList();
+    if (eventIds.Count == 0)
+    {
+        return Results.Ok(new TournamentExplorerResponse(nowUtc, [], [], []));
+    }
+
+    var registrationCounts = await dbContext.EventRegistrations.AsNoTracking()
+        .Where(x => eventIds.Contains(x.TournamentEventId) && x.Status != RegistrationStatus.Cancelled)
+        .GroupBy(x => x.TournamentEventId)
+        .Select(group => new { EventId = group.Key, Count = group.Count() })
+        .ToListAsync(cancellationToken);
+    var registrationCountByEvent = registrationCounts.ToDictionary(x => x.EventId, x => x.Count);
+
+    var liveStreamCounts = await dbContext.StreamSessions.AsNoTracking()
+        .Where(x => eventIds.Contains(x.TournamentEventId) && x.Status == StreamStatus.Live)
+        .GroupBy(x => x.TournamentEventId)
+        .Select(group => new { EventId = group.Key, Count = group.Count() })
+        .ToListAsync(cancellationToken);
+    var liveStreamCountByEvent = liveStreamCounts.ToDictionary(x => x.EventId, x => x.Count);
+
+    var divisions = await dbContext.TournamentDivisions.AsNoTracking()
+        .Where(x => eventIds.Contains(x.TournamentEventId))
+        .ToListAsync(cancellationToken);
+    var styleByEvent = divisions
+        .GroupBy(x => x.TournamentEventId)
+        .ToDictionary(
+            group => group.Key,
+            group =>
+            {
+                var firstDivision = group
+                    .OrderBy(x => x.Level)
+                    .ThenBy(x => x.WeightClass)
+                    .First();
+                return InferDivisionStyle(firstDivision);
+            });
+
+    var brackets = await dbContext.Brackets.AsNoTracking()
+        .Where(x => eventIds.Contains(x.TournamentEventId))
+        .Select(x => new { x.Id, x.TournamentEventId })
+        .ToListAsync(cancellationToken);
+    var bracketIds = brackets.Select(x => x.Id).ToList();
+    var eventIdByBracketId = brackets.ToDictionary(x => x.Id, x => x.TournamentEventId);
+
+    var activeMatSetByEvent = new Dictionary<Guid, HashSet<string>>();
+    var completedMatchCountByEvent = new Dictionary<Guid, int>();
+
+    if (bracketIds.Count > 0)
+    {
+        var matchRows = await dbContext.Matches.AsNoTracking()
+            .Where(x => bracketIds.Contains(x.BracketId))
+            .Select(x => new { x.BracketId, x.Status, x.MatNumber })
+            .ToListAsync(cancellationToken);
+
+        foreach (var match in matchRows)
+        {
+            if (!eventIdByBracketId.TryGetValue(match.BracketId, out var eventId))
+            {
+                continue;
+            }
+
+            if (match.Status == MatchStatus.Completed)
+            {
+                completedMatchCountByEvent[eventId] = completedMatchCountByEvent.TryGetValue(eventId, out var currentCompleted)
+                    ? currentCompleted + 1
+                    : 1;
+            }
+
+            if (match.Status is MatchStatus.OnMat or MatchStatus.InTheHole)
+            {
+                var matLabel = string.IsNullOrWhiteSpace(match.MatNumber) ? "Unassigned" : match.MatNumber.Trim();
+                if (!activeMatSetByEvent.TryGetValue(eventId, out var matSet))
+                {
+                    matSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    activeMatSetByEvent[eventId] = matSet;
+                }
+
+                matSet.Add(matLabel);
+            }
+        }
+    }
+
+    var cards = eventRows.Select(tournamentEvent =>
+    {
+        var registeredAthletes = registrationCountByEvent.GetValueOrDefault(tournamentEvent.Id);
+        var activeMats = activeMatSetByEvent.TryGetValue(tournamentEvent.Id, out var mats) ? mats.Count : 0;
+        var completedMatches = completedMatchCountByEvent.GetValueOrDefault(tournamentEvent.Id);
+        var liveStreams = liveStreamCountByEvent.GetValueOrDefault(tournamentEvent.Id);
+        var style = styleByEvent.GetValueOrDefault(tournamentEvent.Id, WrestlingStyle.Folkstyle);
+        var isWithinEventWindow = tournamentEvent.StartUtc <= nowUtc && tournamentEvent.EndUtc >= nowUtc;
+        var isNearWindowWithLiveStreams = liveStreams > 0
+                                          && tournamentEvent.StartUtc <= nowUtc.AddHours(2)
+                                          && tournamentEvent.EndUtc >= nowUtc.AddHours(-2);
+        var isLive = isWithinEventWindow || activeMats > 0 || isNearWindowWithLiveStreams;
+
+        return new TournamentExplorerCard(
+            tournamentEvent.Id,
+            tournamentEvent.Name,
+            tournamentEvent.State,
+            tournamentEvent.City,
+            tournamentEvent.Venue,
+            tournamentEvent.StartUtc,
+            tournamentEvent.EndUtc,
+            tournamentEvent.EntryFeeCents,
+            style,
+            registeredAthletes,
+            activeMats,
+            completedMatches,
+            liveStreams,
+            isLive);
+    }).ToList();
+
+    var live = cards
+        .Where(x => x.IsLive)
+        .OrderBy(x => x.StartUtc)
+        .ThenBy(x => x.Name)
+        .ToList();
+
+    var upcoming = cards
+        .Where(x => !x.IsLive && x.StartUtc > nowUtc)
+        .OrderBy(x => x.StartUtc)
+        .ThenBy(x => x.Name)
+        .ToList();
+
+    var past = cards
+        .Where(x => !x.IsLive && x.EndUtc < nowUtc)
+        .OrderByDescending(x => x.EndUtc)
+        .ThenBy(x => x.Name)
+        .ToList();
+
+    return Results.Ok(new TournamentExplorerResponse(nowUtc, live, upcoming, past));
+}).AllowAnonymous();
+
 events.MapGet("/{eventId:guid}/controls", async (
     Guid eventId,
     WrestlingPlatformDbContext dbContext,
@@ -1419,6 +1581,151 @@ events.MapGet("/{eventId:guid}/brackets", async (
     return Results.Ok(result);
 }).AllowAnonymous();
 
+api.MapGet("/search/global", async (
+    [FromQuery] string? q,
+    [FromQuery] int? take,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var queryText = q?.Trim() ?? string.Empty;
+    if (queryText.Length < 2)
+    {
+        return Results.Ok(new GlobalSearchResponse(queryText, 0, []));
+    }
+
+    var safeTake = take is null or < 1 or > 60 ? 24 : take.Value;
+    var queryLower = queryText.ToLowerInvariant();
+    var athletePoolSize = safeTake * 2;
+    var results = new List<GlobalSearchResultItem>(safeTake * 2);
+
+    var athleteRows = await dbContext.AthleteProfiles.AsNoTracking()
+        .Where(x =>
+            (x.FirstName + " " + x.LastName).ToLower().Contains(queryLower)
+            || x.City.ToLower().Contains(queryLower)
+            || x.State.ToLower().Contains(queryLower)
+            || (x.SchoolOrClubName ?? string.Empty).ToLower().Contains(queryLower))
+        .OrderBy(x => x.LastName)
+        .ThenBy(x => x.FirstName)
+        .Take(athletePoolSize)
+        .ToListAsync(cancellationToken);
+
+    results.AddRange(athleteRows.Select(athlete => new GlobalSearchResultItem(
+        GlobalSearchEntityType.Athlete,
+        athlete.Id,
+        $"{athlete.FirstName} {athlete.LastName}",
+        $"{athlete.Level} | {athlete.WeightClass:0.#} lbs | {athlete.City}, {athlete.State}",
+        "/athlete",
+        State: athlete.State,
+        City: athlete.City,
+        Badge: "Athlete")));
+
+    var coachRows = await dbContext.CoachProfiles.AsNoTracking()
+        .Where(x =>
+            (x.FirstName + " " + x.LastName).ToLower().Contains(queryLower)
+            || x.City.ToLower().Contains(queryLower)
+            || x.State.ToLower().Contains(queryLower)
+            || (x.Bio ?? string.Empty).ToLower().Contains(queryLower))
+        .OrderBy(x => x.LastName)
+        .ThenBy(x => x.FirstName)
+        .Take(Math.Max(8, safeTake / 2))
+        .ToListAsync(cancellationToken);
+
+    results.AddRange(coachRows.Select(coach => new GlobalSearchResultItem(
+        GlobalSearchEntityType.Coach,
+        coach.Id,
+        $"{coach.FirstName} {coach.LastName}",
+        $"Coach | {coach.City}, {coach.State}",
+        "/coach",
+        State: coach.State,
+        City: coach.City,
+        Badge: "Coach")));
+
+    var teamRows = await dbContext.Teams.AsNoTracking()
+        .Where(x =>
+            x.Name.ToLower().Contains(queryLower)
+            || x.City.ToLower().Contains(queryLower)
+            || x.State.ToLower().Contains(queryLower))
+        .OrderBy(x => x.Name)
+        .Take(Math.Max(10, safeTake))
+        .ToListAsync(cancellationToken);
+
+    results.AddRange(teamRows.Select(team => new GlobalSearchResultItem(
+        GlobalSearchEntityType.Team,
+        team.Id,
+        team.Name,
+        $"{team.Type} | {team.City}, {team.State}",
+        "/coach",
+        State: team.State,
+        City: team.City,
+        Badge: team.Type.ToString())));
+
+    var eventRows = await dbContext.TournamentEvents.AsNoTracking()
+        .Where(x =>
+            x.Name.ToLower().Contains(queryLower)
+            || x.City.ToLower().Contains(queryLower)
+            || x.State.ToLower().Contains(queryLower)
+            || x.Venue.ToLower().Contains(queryLower))
+        .OrderBy(x => x.StartUtc)
+        .Take(Math.Max(12, safeTake))
+        .ToListAsync(cancellationToken);
+
+    results.AddRange(eventRows.Select(tournamentEvent => new GlobalSearchResultItem(
+        GlobalSearchEntityType.Tournament,
+        tournamentEvent.Id,
+        tournamentEvent.Name,
+        $"{tournamentEvent.City}, {tournamentEvent.State} | {tournamentEvent.StartUtc.ToLocalTime():MMM dd, yyyy}",
+        "/tournaments",
+        tournamentEvent.StartUtc,
+        tournamentEvent.State,
+        tournamentEvent.City,
+        Badge: "Tournament")));
+
+    var streamRows = await dbContext.StreamSessions.AsNoTracking()
+        .Where(x =>
+            x.DeviceName.ToLower().Contains(queryLower)
+            || x.PlaybackUrl.ToLower().Contains(queryLower))
+        .OrderByDescending(x => x.StartedUtc)
+        .Take(Math.Max(8, safeTake / 2))
+        .ToListAsync(cancellationToken);
+
+    results.AddRange(streamRows.Select(stream => new GlobalSearchResultItem(
+        GlobalSearchEntityType.Stream,
+        stream.Id,
+        stream.DeviceName,
+        $"Stream {stream.Status} | Event {stream.TournamentEventId.ToString()[..8]}",
+        "/live",
+        stream.StartedUtc,
+        Badge: "Live Stream")));
+
+    var matchRows = await dbContext.Matches.AsNoTracking()
+        .Where(x =>
+            (x.MatNumber ?? string.Empty).ToLower().Contains(queryLower)
+            || (x.ResultMethod ?? string.Empty).ToLower().Contains(queryLower)
+            || (x.Score ?? string.Empty).ToLower().Contains(queryLower))
+        .OrderByDescending(x => x.CompletedUtc)
+        .Take(Math.Max(8, safeTake / 2))
+        .ToListAsync(cancellationToken);
+
+    results.AddRange(matchRows.Select(match => new GlobalSearchResultItem(
+        GlobalSearchEntityType.Match,
+        match.Id,
+        $"Match {match.MatchNumber} - Round {match.Round}",
+        $"{match.Status} | Mat {(string.IsNullOrWhiteSpace(match.MatNumber) ? "Unassigned" : match.MatNumber)} | Score {match.Score ?? "N/A"}",
+        "/mat-scoring",
+        match.CompletedUtc ?? match.ScheduledUtc,
+        Badge: "Match")));
+
+    var ordered = results
+        .OrderByDescending(item => ScoreSearchHit(item.Title, queryLower))
+        .ThenByDescending(item => ScoreSearchHit(item.Subtitle, queryLower))
+        .ThenByDescending(item => item.DateUtc)
+        .ThenBy(item => item.Title)
+        .Take(safeTake)
+        .ToList();
+
+    return Results.Ok(new GlobalSearchResponse(queryText, ordered.Count, ordered));
+}).AllowAnonymous();
+
 api.MapGet("/table-worker/events", async (
     [FromQuery] string? state,
     [FromQuery] int? daysAhead,
@@ -1953,54 +2260,35 @@ athletes.MapGet("/{athleteId:guid}/nil-profile", async (
     WrestlingPlatformDbContext dbContext,
     CancellationToken cancellationToken) =>
 {
-    var athlete = await dbContext.AthleteProfiles.AsNoTracking()
-        .FirstOrDefaultAsync(x => x.Id == athleteId, cancellationToken);
+    var profile = await BuildAthleteNilProfileAsync(athleteId, dbContext, nilOverridesByAthlete, cancellationToken);
+    return profile is null ? Results.NotFound("Athlete not found.") : Results.Ok(profile);
+}).AllowAnonymous();
 
-    if (athlete is null)
+athletes.MapPut("/{athleteId:guid}/nil-profile", async (
+    Guid athleteId,
+    UpdateAthleteNilProfileRequest request,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var canManageAthlete = await ApiSecurityHelpers.CanManageAthleteProfileAsync(dbContext, httpContext.User, athleteId, cancellationToken);
+    if (!canManageAthlete)
+    {
+        return Results.Forbid();
+    }
+
+    var athleteExists = await dbContext.AthleteProfiles
+        .AsNoTracking()
+        .AnyAsync(x => x.Id == athleteId, cancellationToken);
+    if (!athleteExists)
     {
         return Results.NotFound("Athlete not found.");
     }
 
-    var latestStats = await dbContext.AthleteStatsSnapshots.AsNoTracking()
-        .Where(x => x.AthleteProfileId == athleteId)
-        .OrderByDescending(x => x.SnapshotUtc)
-        .FirstOrDefaultAsync(cancellationToken);
-
-    var ranking = await dbContext.AthleteRankings.AsNoTracking()
-        .Where(x => x.AthleteProfileId == athleteId)
-        .OrderBy(x => x.Rank)
-        .FirstOrDefaultAsync(cancellationToken);
-
-    var wins = latestStats?.Wins ?? 0;
-    var losses = latestStats?.Losses ?? 0;
-    var ratingPoints = ranking?.RatingPoints ?? 0m;
-    var followers = (int)Math.Clamp(500 + (wins * 24) + Math.Round(ratingPoints * 0.6m), 500, 175_000);
-    var marketabilityScore = Math.Round(Math.Clamp((wins * 1.7m) + (ratingPoints * 0.35m), 40m, 99m), 1);
-
-    var tags = new List<string>
-    {
-        athlete.Level.ToString(),
-        $"{athlete.WeightClass:0.#} lbs",
-        $"#{athlete.State}",
-        ranking is null ? "Unranked watchlist" : $"Ranked #{ranking.Rank}"
-    };
-
-    var profile = new AthleteNilProfile(
-        athlete.Id,
-        $"{athlete.FirstName} {athlete.LastName}",
-        athlete.Level,
-        athlete.State,
-        athlete.City,
-        athlete.WeightClass,
-        followers,
-        wins,
-        losses,
-        ratingPoints,
-        marketabilityScore,
-        tags);
-
+    nilOverridesByAthlete[athleteId] = NormalizeNilProfileUpdate(request);
+    var profile = await BuildAthleteNilProfileAsync(athleteId, dbContext, nilOverridesByAthlete, cancellationToken);
     return Results.Ok(profile);
-}).AllowAnonymous();
+}).RequireAuthorization();
 
 athletes.MapGet("/{athleteId:guid}/videos", (Guid athleteId, IMediaPipelineService mediaPipelineService) =>
 {
@@ -2131,6 +2419,49 @@ recruiting.MapGet("/athletes", async (
     }
 
     return Results.Ok(result);
+}).AllowAnonymous();
+
+var nil = api.MapGroup("/nil");
+nil.MapGet("/policy", () =>
+{
+    return Results.Ok(BuildNilPolicyResponse());
+}).AllowAnonymous();
+
+var help = api.MapGroup("/help");
+help.MapGet("/faqs", ([FromQuery] string? q) =>
+{
+    var query = q?.Trim();
+    var faqs = GetHelpFaqItems();
+
+    if (!string.IsNullOrWhiteSpace(query))
+    {
+        var normalized = query.ToLowerInvariant();
+        faqs = faqs
+            .Where(item =>
+                item.Question.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || item.Answer.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || item.Category.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || item.SearchTags.Any(tag => tag.Contains(normalized, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    return Results.Ok(faqs);
+}).AllowAnonymous();
+
+help.MapGet("/guide", () =>
+{
+    return Results.Ok(GetSupportGuideSteps());
+}).AllowAnonymous();
+
+help.MapPost("/chat", (HelpChatRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Message))
+    {
+        return Results.BadRequest("Message is required.");
+    }
+
+    var response = BuildHelpChatResponse(request.Message, request.Context);
+    return Results.Ok(response);
 }).AllowAnonymous();
 
 api.MapGet("/rankings", async (
@@ -2718,6 +3049,322 @@ static string SelectSamplePlaybackUrl(Guid eventId, Guid streamId, IReadOnlyList
 
     var index = Math.Abs(HashCode.Combine(eventId, streamId)) % samplePlaybackUrls.Count;
     return samplePlaybackUrls[index];
+}
+
+static int ScoreSearchHit(string text, string queryLower)
+{
+    if (string.IsNullOrWhiteSpace(text))
+    {
+        return 0;
+    }
+
+    var normalized = text.Trim().ToLowerInvariant();
+    if (normalized == queryLower)
+    {
+        return 120;
+    }
+
+    if (normalized.StartsWith(queryLower, StringComparison.Ordinal))
+    {
+        return 100;
+    }
+
+    if (normalized.Contains($" {queryLower}", StringComparison.Ordinal))
+    {
+        return 80;
+    }
+
+    return normalized.Contains(queryLower, StringComparison.Ordinal) ? 60 : 0;
+}
+
+static async Task<AthleteNilProfile?> BuildAthleteNilProfileAsync(
+    Guid athleteId,
+    WrestlingPlatformDbContext dbContext,
+    ConcurrentDictionary<Guid, UpdateAthleteNilProfileRequest> nilOverridesByAthlete,
+    CancellationToken cancellationToken)
+{
+    var athlete = await dbContext.AthleteProfiles.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.Id == athleteId, cancellationToken);
+
+    if (athlete is null)
+    {
+        return null;
+    }
+
+    var latestStats = await dbContext.AthleteStatsSnapshots.AsNoTracking()
+        .Where(x => x.AthleteProfileId == athleteId)
+        .OrderByDescending(x => x.SnapshotUtc)
+        .FirstOrDefaultAsync(cancellationToken);
+
+    var ranking = await dbContext.AthleteRankings.AsNoTracking()
+        .Where(x => x.AthleteProfileId == athleteId)
+        .OrderBy(x => x.Rank)
+        .FirstOrDefaultAsync(cancellationToken);
+
+    var wins = latestStats?.Wins ?? 0;
+    var losses = latestStats?.Losses ?? 0;
+    var ratingPoints = ranking?.RatingPoints ?? 0m;
+    var followers = (int)Math.Clamp(500 + (wins * 24) + Math.Round(ratingPoints * 0.6m), 500, 175_000);
+    var marketabilityScore = Math.Round(Math.Clamp((wins * 1.7m) + (ratingPoints * 0.35m), 40m, 99m), 1);
+
+    var tags = new List<string>
+    {
+        athlete.Level.ToString(),
+        $"{athlete.WeightClass:0.#} lbs",
+        $"#{athlete.State}",
+        ranking is null ? "Unranked watchlist" : $"Ranked #{ranking.Rank}",
+        wins >= 30 ? "High-volume season" : "Building season volume"
+    };
+
+    var suggestedHandle = $"{athlete.FirstName}.{athlete.LastName}".Replace(" ", string.Empty).ToLowerInvariant();
+    var defaultOverride = new UpdateAthleteNilProfileRequest(
+        XHandle: suggestedHandle,
+        InstagramHandle: suggestedHandle,
+        TwitterHandle: suggestedHandle,
+        ContactEmail: $"{athlete.FirstName}.{athlete.LastName}@pinpointarena.local".ToLowerInvariant(),
+        OpenToBrandDeals: true,
+        OpenToCampsClinics: true,
+        OpenToCollectives: athlete.Level == CompetitionLevel.College,
+        Bio: $"{athlete.FirstName} is a {ResolveAgeGroupLabel(athlete.Level)} wrestler from {athlete.City}, {athlete.State}.");
+
+    var nilOverride = nilOverridesByAthlete.GetValueOrDefault(athleteId, defaultOverride);
+
+    return new AthleteNilProfile(
+        athlete.Id,
+        $"{athlete.FirstName} {athlete.LastName}",
+        athlete.Level,
+        athlete.State,
+        athlete.City,
+        athlete.WeightClass,
+        followers,
+        wins,
+        losses,
+        ratingPoints,
+        marketabilityScore,
+        tags,
+        nilOverride.XHandle,
+        nilOverride.InstagramHandle,
+        nilOverride.TwitterHandle,
+        nilOverride.ContactEmail,
+        nilOverride.OpenToBrandDeals,
+        nilOverride.OpenToCampsClinics,
+        nilOverride.OpenToCollectives,
+        nilOverride.Bio);
+}
+
+static UpdateAthleteNilProfileRequest NormalizeNilProfileUpdate(UpdateAthleteNilProfileRequest request)
+{
+    return new UpdateAthleteNilProfileRequest(
+        NormalizeSocialHandle(request.XHandle),
+        NormalizeSocialHandle(request.InstagramHandle),
+        NormalizeSocialHandle(request.TwitterHandle),
+        NormalizeEmail(request.ContactEmail),
+        request.OpenToBrandDeals,
+        request.OpenToCampsClinics,
+        request.OpenToCollectives,
+        string.IsNullOrWhiteSpace(request.Bio) ? null : request.Bio.Trim());
+}
+
+static string? NormalizeSocialHandle(string? raw)
+{
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+        return null;
+    }
+
+    var trimmed = raw.Trim();
+    if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+    {
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            trimmed = uri.Segments.LastOrDefault()?.Trim('/') ?? trimmed;
+        }
+    }
+
+    trimmed = trimmed.Trim().TrimStart('@');
+    if (trimmed.Length > 32)
+    {
+        trimmed = trimmed[..32];
+    }
+
+    return string.IsNullOrWhiteSpace(trimmed) ? null : $"@{trimmed}";
+}
+
+static string? NormalizeEmail(string? raw)
+{
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+        return null;
+    }
+
+    var trimmed = raw.Trim();
+    return trimmed.Contains('@', StringComparison.Ordinal) ? trimmed : null;
+}
+
+static NilPolicyResponse BuildNilPolicyResponse()
+{
+    return new NilPolicyResponse(
+        DateTime.UtcNow,
+        "NIL policies vary by state law, school policy, sanctioning body rules, and event policy. This is product guidance, not legal advice.",
+        [
+            new NilComplianceRule(
+                "College athletes",
+                "United States",
+                "NCAA schools may permit NIL activity, but athletes must still comply with school/conference policy and disclosure requirements.",
+                "NCAA NIL Resource Hub",
+                "https://www.ncaa.org/sports/2021/2/10/name-image-likeness.aspx",
+                "Check institution policy each season."),
+            new NilComplianceRule(
+                "High school athletes",
+                "United States (state-by-state)",
+                "High school NIL eligibility and allowed activities vary by state association and district policy; verification is required before activation.",
+                "NFHS NIL Guidance",
+                "https://www.nfhs.org/articles/nfhs-offers-name-image-and-likeness-resources-and-guidance-for-high-school-student-athletes/",
+                "Rules differ significantly across states."),
+            new NilComplianceRule(
+                "K-8 athletes",
+                "United States",
+                "Youth athletes generally require parent/guardian consent and stricter identity, safety, and publicity controls.",
+                "Platform Safety Policy",
+                "https://support.pinpointarena.local/nil-youth",
+                "Always require verified guardian approval.")
+        ],
+        [
+            "Require athlete + guardian disclosure workflow for minors.",
+            "Capture sponsor category and conflict checks before publishing campaigns.",
+            "Store immutable audit trails for NIL offer acceptance and disclosures.",
+            "Enable school/club compliance review queues before public profile changes.",
+            "Enforce clear separation between recruiting communications and paid endorsements."
+        ],
+        [
+            "Do not post misleading endorsements or unverifiable claims.",
+            "Do not accept deals that conflict with school, conference, or state restrictions.",
+            "Do not publish minor athlete contact details publicly without guardian controls.",
+            "Do not use copyrighted logos/media without permission."
+        ]);
+}
+
+static List<HelpFaqItem> GetHelpFaqItems()
+{
+    return
+    [
+        new HelpFaqItem(
+            "faq-registration-01",
+            "Registration",
+            "How do I register an athlete for a tournament?",
+            "Go to Tournament Registration, search events, select one, enter athlete ID, choose team or free-agent, then submit registration.",
+            ["registration", "athlete", "event", "entry", "free-agent"]),
+        new HelpFaqItem(
+            "faq-brackets-01",
+            "Brackets",
+            "How are brackets released?",
+            "Event directors control release mode in Registration controls: Immediate, Scheduled, or Manual release.",
+            ["brackets", "release", "director", "manual", "scheduled"]),
+        new HelpFaqItem(
+            "faq-scoring-01",
+            "Mat Scoring",
+            "How do table workers score in real time?",
+            "Open Table Worker, select event/mat/match, then use Mat Scoring to push scoring actions and live updates to dashboards.",
+            ["mat", "scoring", "table worker", "real-time", "signalr"]),
+        new HelpFaqItem(
+            "faq-nil-01",
+            "NIL",
+            "Can athletes add social accounts for NIL?",
+            "Yes. In Athlete Portal NIL section, update X, Instagram, and Twitter handles and configure NIL availability settings.",
+            ["nil", "social", "x", "instagram", "twitter"]),
+        new HelpFaqItem(
+            "faq-stream-01",
+            "Live Streaming",
+            "How do I start a live stream from mat-side?",
+            "Open Live Hub, choose event, create stream session, set source URL or sample URL, then set stream status to Live.",
+            ["stream", "live", "video", "mat cam", "playback"]),
+        new HelpFaqItem(
+            "faq-search-01",
+            "Search",
+            "What can I search from the top search bar?",
+            "You can search athletes, coaches, teams, tournaments, streams, and match identifiers from any page.",
+            ["search", "athlete", "tournament", "team", "match"])
+    ];
+}
+
+static List<SupportGuideStep> GetSupportGuideSteps()
+{
+    return
+    [
+        new SupportGuideStep(1, "Sign In", "Use demo credentials or your account to unlock role-based workflows.", "/", "Open Command Center"),
+        new SupportGuideStep(2, "Find Tournaments", "Use the Tournaments page to browse live, upcoming, and past archived events.", "/tournaments", "Open Tournaments"),
+        new SupportGuideStep(3, "Register Athlete", "Submit athlete registration under a team or as free-agent.", "/registration", "Open Registration"),
+        new SupportGuideStep(4, "Run Mat Ops", "Table workers choose event + mat and manage scoring in real time.", "/table-worker", "Open Table Worker"),
+        new SupportGuideStep(5, "Score Matches", "Apply style-specific scoring actions and finalize winner/loser.", "/mat-scoring", "Open Mat Scoring"),
+        new SupportGuideStep(6, "Watch/Stream", "Provision and monitor live streams plus playback archives.", "/live", "Open Live Hub"),
+        new SupportGuideStep(7, "Build Athlete Brand", "Update NIL profile, social links, highlights, and recruiting cards.", "/athlete", "Open Athlete Portal")
+    ];
+}
+
+static HelpChatResponse BuildHelpChatResponse(string message, string? context)
+{
+    var normalized = message.Trim().ToLowerInvariant();
+    var suggestions = new List<string>();
+    var faqSuggestions = new List<string>();
+    string reply;
+
+    if (normalized.Contains("register", StringComparison.Ordinal)
+        || normalized.Contains("entry", StringComparison.Ordinal))
+    {
+        reply = "Use the Registration page: search event, select it, add athlete id, choose team/free-agent, then submit.";
+        suggestions.Add("Open /registration");
+        suggestions.Add("Open /tournaments");
+        faqSuggestions.Add("faq-registration-01");
+    }
+    else if (normalized.Contains("score", StringComparison.Ordinal)
+             || normalized.Contains("mat", StringComparison.Ordinal)
+             || normalized.Contains("overtime", StringComparison.Ordinal))
+    {
+        reply = "For live scoring, open Table Worker to pick the match, then score on Mat Scoring. Configure style + overtime rules before match start.";
+        suggestions.Add("Open /table-worker");
+        suggestions.Add("Open /mat-scoring");
+        faqSuggestions.Add("faq-scoring-01");
+    }
+    else if (normalized.Contains("nil", StringComparison.Ordinal)
+             || normalized.Contains("instagram", StringComparison.Ordinal)
+             || normalized.Contains("twitter", StringComparison.Ordinal)
+             || normalized.Contains("x ", StringComparison.Ordinal))
+    {
+        reply = "NIL social links are managed in Athlete Portal. Add handles, contact email, and deal preferences. Verify school/state eligibility first.";
+        suggestions.Add("Open /athlete");
+        suggestions.Add("View /api/nil/policy");
+        faqSuggestions.Add("faq-nil-01");
+    }
+    else if (normalized.Contains("stream", StringComparison.Ordinal)
+             || normalized.Contains("video", StringComparison.Ordinal)
+             || normalized.Contains("playback", StringComparison.Ordinal))
+    {
+        reply = "Live Hub handles stream session creation, live status changes, and playback links. Use sample URLs if you are testing locally.";
+        suggestions.Add("Open /live");
+        suggestions.Add("Open /athlete");
+        faqSuggestions.Add("faq-stream-01");
+    }
+    else if (normalized.Contains("search", StringComparison.Ordinal)
+             || normalized.Contains("find", StringComparison.Ordinal))
+    {
+        reply = "Use the top search bar to find athletes, teams, tournaments, matches, and streams from any page.";
+        suggestions.Add("Open /search");
+        faqSuggestions.Add("faq-search-01");
+    }
+    else
+    {
+        reply = "I can help with registration, brackets, mat scoring, streaming, NIL setup, and recruiting workflows. Ask in plain language and I’ll route you.";
+        suggestions.Add("Open /support");
+        suggestions.Add("Open /tournaments");
+    }
+
+    if (!string.IsNullOrWhiteSpace(context))
+    {
+        suggestions.Add($"Context: {context.Trim()}");
+    }
+
+    return new HelpChatResponse(reply, suggestions.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), faqSuggestions);
 }
 
 static HashSet<UserRole> ResolveMfaRequiredRoles(IConfiguration configuration)

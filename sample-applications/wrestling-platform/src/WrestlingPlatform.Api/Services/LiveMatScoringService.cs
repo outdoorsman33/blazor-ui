@@ -48,11 +48,22 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             throw new ArgumentOutOfRangeException(nameof(request.RegulationPeriods), "Regulation periods must be between 1 and 10.");
         }
 
+        if (request.MaxOvertimePeriods is < 0 or > 8)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request.MaxOvertimePeriods), "Overtime periods must be between 0 and 8.");
+        }
+
         var techFallGap = request.TechFallPointGap ?? WrestlingRuleBook.GetDefaultTechFallPointGap(request.Style);
         if (techFallGap is < 4 or > 30)
         {
             throw new ArgumentOutOfRangeException(nameof(request.TechFallPointGap), "Tech-fall threshold must be between 4 and 30.");
         }
+
+        var normalizedOvertimeFormat = WrestlingRuleBook.NormalizeOvertimeFormat(request.Style, request.OvertimeFormat);
+        var allowsOvertime = normalizedOvertimeFormat != OvertimeFormat.None;
+        var maxOvertimePeriods = allowsOvertime
+            ? Math.Max(1, request.MaxOvertimePeriods)
+            : 0;
 
         var configured = new MatchScoringConfiguration(
             request.Style,
@@ -60,7 +71,10 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             request.AutoEndEnabled,
             techFallGap,
             request.RegulationPeriods,
-            WrestlingRuleBook.GetActionCatalog(request.Style));
+            WrestlingRuleBook.GetActionCatalog(request.Style),
+            normalizedOvertimeFormat,
+            maxOvertimePeriods,
+            request.EndOnFirstOvertimeScore);
 
         _rulesByMatch.AddOrUpdate(match.Id, configured, (_, _) => configured);
 
@@ -82,9 +96,16 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             throw new ArgumentOutOfRangeException(nameof(request.Points), "Points must be between 0 and 8.");
         }
 
-        if (request.Period is < 1 or > 10)
+        var maxPeriods = rules.RegulationPeriods + rules.MaxOvertimePeriods;
+        if (request.Period is < 1 || request.Period > maxPeriods)
         {
-            throw new ArgumentOutOfRangeException(nameof(request.Period), "Period must be between 1 and 10.");
+            throw new ArgumentOutOfRangeException(nameof(request.Period), $"Period must be between 1 and {maxPeriods} for the configured rules.");
+        }
+
+        var isOvertimePeriod = request.Period > rules.RegulationPeriods;
+        if (isOvertimePeriod && rules.OvertimeFormat == OvertimeFormat.None)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request.Period), "Overtime is disabled for this match.");
         }
 
         if (request.MatchClockSeconds is < 0 or > 420)
@@ -161,6 +182,15 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             {
                 var leader = state.AthleteAScore >= state.AthleteBScore ? ScoreCompetitor.AthleteA : ScoreCompetitor.AthleteB;
                 FinalizeMatch(state, match, leader, "Technical Fall");
+            }
+            else if (rules.EndOnFirstOvertimeScore
+                     && isOvertimePeriod
+                     && state.AthleteAScore != state.AthleteBScore)
+            {
+                var overtimeLeader = state.AthleteAScore > state.AthleteBScore
+                    ? ScoreCompetitor.AthleteA
+                    : ScoreCompetitor.AthleteB;
+                FinalizeMatch(state, match, overtimeLeader, "Overtime Sudden Victory");
             }
 
             return state.ToSnapshot(rules);
@@ -418,17 +448,24 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
         bool AutoEndEnabled,
         int TechFallPointGap,
         int RegulationPeriods,
-        List<ScoringActionDefinition> Actions)
+        List<ScoringActionDefinition> Actions,
+        OvertimeFormat OvertimeFormat,
+        int MaxOvertimePeriods,
+        bool EndOnFirstOvertimeScore)
     {
         public static MatchScoringConfiguration CreateDefault()
         {
+            var defaultStyle = WrestlingStyle.Folkstyle;
             return new MatchScoringConfiguration(
-                WrestlingStyle.Folkstyle,
+                defaultStyle,
                 CompetitionLevel.HighSchool,
                 AutoEndEnabled: true,
-                TechFallPointGap: WrestlingRuleBook.GetDefaultTechFallPointGap(WrestlingStyle.Folkstyle),
+                TechFallPointGap: WrestlingRuleBook.GetDefaultTechFallPointGap(defaultStyle),
                 RegulationPeriods: 3,
-                WrestlingRuleBook.GetActionCatalog(WrestlingStyle.Folkstyle));
+                WrestlingRuleBook.GetActionCatalog(defaultStyle),
+                WrestlingRuleBook.GetDefaultOvertimeFormat(defaultStyle),
+                MaxOvertimePeriods: 3,
+                EndOnFirstOvertimeScore: false);
         }
 
         public MatchScoringRulesSnapshot ToSnapshot(Guid matchId)
@@ -440,12 +477,42 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 AutoEndEnabled,
                 TechFallPointGap,
                 RegulationPeriods,
-                Actions.ToList());
+                Actions.ToList(),
+                OvertimeFormat,
+                MaxOvertimePeriods,
+                EndOnFirstOvertimeScore);
         }
     }
 
     private static class WrestlingRuleBook
     {
+        public static OvertimeFormat GetDefaultOvertimeFormat(WrestlingStyle style)
+        {
+            return style switch
+            {
+                WrestlingStyle.Folkstyle => OvertimeFormat.FolkstyleStandard,
+                WrestlingStyle.Freestyle => OvertimeFormat.FreestyleCriteria,
+                WrestlingStyle.GrecoRoman => OvertimeFormat.GrecoCriteria,
+                _ => OvertimeFormat.None
+            };
+        }
+
+        public static OvertimeFormat NormalizeOvertimeFormat(WrestlingStyle style, OvertimeFormat requested)
+        {
+            if (requested == OvertimeFormat.TournamentCustom)
+            {
+                return requested;
+            }
+
+            return style switch
+            {
+                WrestlingStyle.Folkstyle when requested is OvertimeFormat.FolkstyleStandard or OvertimeFormat.FolkstyleSuddenVictoryOnly or OvertimeFormat.None => requested,
+                WrestlingStyle.Freestyle when requested is OvertimeFormat.FreestyleCriteria or OvertimeFormat.None => requested,
+                WrestlingStyle.GrecoRoman when requested is OvertimeFormat.GrecoCriteria or OvertimeFormat.None => requested,
+                _ => GetDefaultOvertimeFormat(style)
+            };
+        }
+
         public static int GetDefaultTechFallPointGap(WrestlingStyle style)
         {
             return style switch

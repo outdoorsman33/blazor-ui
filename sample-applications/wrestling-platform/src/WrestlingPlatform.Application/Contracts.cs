@@ -170,6 +170,16 @@ public enum ScoringActionCode
     Disqualification
 }
 
+public enum OvertimeFormat
+{
+    None,
+    FolkstyleStandard,
+    FolkstyleSuddenVictoryOnly,
+    FreestyleCriteria,
+    GrecoCriteria,
+    TournamentCustom
+}
+
 public sealed record AddMatScoreEventRequest(
     ScoreCompetitor Competitor,
     int? Points,
@@ -185,7 +195,10 @@ public sealed record ConfigureMatchScoringRequest(
     CompetitionLevel Level,
     bool AutoEndEnabled = true,
     int? TechFallPointGap = null,
-    int RegulationPeriods = 3);
+    int RegulationPeriods = 3,
+    OvertimeFormat OvertimeFormat = OvertimeFormat.FolkstyleStandard,
+    int MaxOvertimePeriods = 3,
+    bool EndOnFirstOvertimeScore = false);
 
 public sealed record ScoringActionDefinition(
     ScoringActionCode ActionCode,
@@ -201,7 +214,10 @@ public sealed record MatchScoringRulesSnapshot(
     bool AutoEndEnabled,
     int TechFallPointGap,
     int RegulationPeriods,
-    List<ScoringActionDefinition> Actions);
+    List<ScoringActionDefinition> Actions,
+    OvertimeFormat OvertimeFormat = OvertimeFormat.FolkstyleStandard,
+    int MaxOvertimePeriods = 3,
+    bool EndOnFirstOvertimeScore = false);
 
 public sealed record ResetMatScoreboardRequest(string? Reason);
 
@@ -437,7 +453,109 @@ public sealed record AthleteNilProfile(
     int CareerLosses,
     decimal RatingPoints,
     decimal MarketabilityScore,
-    List<string> RecruitingTags);
+    List<string> RecruitingTags,
+    string? XHandle = null,
+    string? InstagramHandle = null,
+    string? TwitterHandle = null,
+    string? ContactEmail = null,
+    bool OpenToBrandDeals = true,
+    bool OpenToCampsClinics = true,
+    bool OpenToCollectives = true,
+    string? Bio = null);
+
+public sealed record UpdateAthleteNilProfileRequest(
+    string? XHandle,
+    string? InstagramHandle,
+    string? TwitterHandle,
+    string? ContactEmail,
+    bool OpenToBrandDeals = true,
+    bool OpenToCampsClinics = true,
+    bool OpenToCollectives = true,
+    string? Bio = null);
+
+public sealed record NilComplianceRule(
+    string Audience,
+    string Jurisdiction,
+    string Summary,
+    string SourceName,
+    string SourceUrl,
+    string EffectiveDateNote);
+
+public sealed record NilPolicyResponse(
+    DateTime GeneratedUtc,
+    string LegalNotice,
+    List<NilComplianceRule> Rules,
+    List<string> BestPractices,
+    List<string> ProhibitedExamples);
+
+public enum GlobalSearchEntityType
+{
+    Athlete,
+    Coach,
+    Team,
+    Tournament,
+    Match,
+    Stream
+}
+
+public sealed record GlobalSearchResultItem(
+    GlobalSearchEntityType Type,
+    Guid Id,
+    string Title,
+    string Subtitle,
+    string Route,
+    DateTime? DateUtc = null,
+    string? State = null,
+    string? City = null,
+    string? Badge = null);
+
+public sealed record GlobalSearchResponse(
+    string Query,
+    int Total,
+    List<GlobalSearchResultItem> Results);
+
+public sealed record TournamentExplorerCard(
+    Guid EventId,
+    string Name,
+    string State,
+    string City,
+    string Venue,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    int EntryFeeCents,
+    WrestlingStyle Style,
+    int RegisteredAthletes,
+    int ActiveMats,
+    int CompletedMatches,
+    int LiveStreams,
+    bool IsLive);
+
+public sealed record TournamentExplorerResponse(
+    DateTime GeneratedUtc,
+    List<TournamentExplorerCard> Live,
+    List<TournamentExplorerCard> Upcoming,
+    List<TournamentExplorerCard> Past);
+
+public sealed record HelpFaqItem(
+    string Id,
+    string Category,
+    string Question,
+    string Answer,
+    List<string> SearchTags);
+
+public sealed record SupportGuideStep(
+    int StepNumber,
+    string Title,
+    string Description,
+    string Route,
+    string ActionLabel);
+
+public sealed record HelpChatRequest(string Message, string? Context = null);
+
+public sealed record HelpChatResponse(
+    string Reply,
+    List<string> SuggestedActions,
+    List<string> SuggestedFaqIds);
 
 public sealed record RecruitingAthleteCard(
     Guid AthleteProfileId,

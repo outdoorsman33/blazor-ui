@@ -1,0 +1,17 @@
+@page "/faq"
+@inject NavigationManager Navigation
+
+<PageTitle>FAQ - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">FAQ</h1>
+        <p class="page-subtitle">The full FAQ + support assistant is now centralized in the Support Center.</p>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="actions">
+        <button class="btn primary" @onclick='() => Navigation.NavigateTo("/support")'>Open Support Center</button>
+    </div>
+</section>

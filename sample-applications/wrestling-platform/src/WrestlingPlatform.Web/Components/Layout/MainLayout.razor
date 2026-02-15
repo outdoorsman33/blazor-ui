@@ -2,47 +2,89 @@
 @inject PlatformApiClient ApiClient
 @inject AuthSession AuthSession
 @inject WorkflowState Workflow
+@inject NavigationManager Navigation
 
-<div class="app-shell">
+<div class="app-shell" @onclick="CloseSearchMenu">
     <div class="ambient ambient-left"></div>
     <div class="ambient ambient-right"></div>
 
-    <header class="topbar">
-        <div class="brand-block">
-            <span class="brand-badge">USA Wrestling Platform</span>
-            <a href="/" class="brand-link">PinPoint Arena</a>
+    <header class="topbar" @onclick:stopPropagation="true">
+        <div class="topbar-row">
+            <div class="brand-block">
+                <span class="brand-badge">USA Wrestling Platform</span>
+                <a href="/" class="brand-link">PinPoint Arena</a>
+            </div>
+
+            <div class="global-search-shell">
+                <input class="global-search-input"
+                       value="@SearchText"
+                       @oninput="OnSearchInputAsync"
+                       @onkeydown="OnSearchKeyDown"
+                       placeholder="Search athletes, tournaments, teams, coaches, matches..."
+                       aria-label="Global Search" />
+                <button class="global-search-btn" @onclick="RunFullSearchAsync">Search</button>
+
+                @if (SearchOpen)
+                {
+                    <div class="search-dropdown">
+                        @if (!string.IsNullOrWhiteSpace(SearchStatus))
+                        {
+                            <div class="search-hint">@SearchStatus</div>
+                        }
+                        else if (SearchResults.Count == 0)
+                        {
+                            <div class="search-hint">No matches found.</div>
+                        }
+                        else
+                        {
+                            @foreach (var result in SearchResults)
+                            {
+                                <button class="search-item" @onclick="() => OpenSearchResult(result)">
+                                    <span class="search-title">@result.Title</span>
+                                    <span class="search-meta">@result.Subtitle</span>
+                                </button>
+                            }
+                            <button class="search-more" @onclick="RunFullSearchAsync">Open full search page</button>
+                        }
+                    </div>
+                }
+            </div>
+
+            <button class="nav-toggle" @onclick="ToggleNavMenu" aria-expanded="@NavMenuOpen">Menu</button>
+
+            <div class="auth-panel">
+                @if (!AuthSession.IsAuthenticated)
+                {
+                    <input class="mini-input" @bind="Email" placeholder="email" />
+                    <input class="mini-input" @bind="Password" type="password" placeholder="password" />
+                    <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
+                    <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
+                    <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
+                    <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
+                }
+                else
+                {
+                    <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
+                    <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
+                }
+            </div>
         </div>
 
-        <nav class="main-nav" aria-label="Main navigation">
+        <nav class="main-nav @(NavMenuOpen ? "is-open" : string.Empty)" aria-label="Main navigation">
             <NavLink href="/" Match="NavLinkMatch.All">Command Center</NavLink>
             <NavLink href="/lab">Operations Lab</NavLink>
+            <NavLink href="/tournaments">Tournaments</NavLink>
             <NavLink href="/registration">Registration</NavLink>
             <NavLink href="/brackets">Bracket Center</NavLink>
             <NavLink href="/table-worker">Table Worker</NavLink>
+            <NavLink href="/mat-scoring">Mat Scoring</NavLink>
             <NavLink href="/live">Live Hub</NavLink>
             <NavLink href="/athlete">Athlete Portal</NavLink>
             <NavLink href="/coach">Coach Portal</NavLink>
-            <NavLink href="/admin">Event Admin</NavLink>
-            <NavLink href="/mat-scoring">Mat Scoring</NavLink>
             <NavLink href="/recruiting">Recruiting Hub</NavLink>
+            <NavLink href="/admin">Event Admin</NavLink>
+            <NavLink href="/support">Support</NavLink>
         </nav>
-
-        <div class="auth-panel">
-            @if (!AuthSession.IsAuthenticated)
-            {
-                <input class="mini-input" @bind="Email" placeholder="email" />
-                <input class="mini-input" @bind="Password" type="password" placeholder="password" />
-                <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
-                <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
-                <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
-                <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
-            }
-            else
-            {
-                <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
-                <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
-            }
-        </div>
     </header>
 
     @if (!string.IsNullOrWhiteSpace(AuthMessage))
@@ -84,6 +126,11 @@
     private string MfaCode = "";
     private string? AuthMessage;
     private bool AuthOk;
+    private string SearchText = string.Empty;
+    private string? SearchStatus;
+    private List<GlobalSearchResultItem> SearchResults = [];
+    private bool SearchOpen;
+    private bool NavMenuOpen;
 
     private async Task SignInAsync()
     {
@@ -124,6 +171,98 @@
         AuthMessage = "Signed out.";
     }
 
+    private void ToggleNavMenu() => NavMenuOpen = !NavMenuOpen;
+
+    private async Task OnSearchInputAsync(ChangeEventArgs args)
+    {
+        SearchText = args.Value?.ToString() ?? string.Empty;
+        var trimmed = SearchText.Trim();
+        if (trimmed.Length < 2)
+        {
+            SearchResults = [];
+            SearchStatus = trimmed.Length == 0 ? null : "Type at least 2 characters.";
+            SearchOpen = trimmed.Length > 0;
+            return;
+        }
+
+        SearchStatus = "Searching...";
+        SearchOpen = true;
+        var response = await ApiClient.SearchGlobalAsync(trimmed, 8);
+        if (!response.Success || response.Data is null)
+        {
+            SearchResults = [];
+            SearchStatus = response.Message;
+            return;
+        }
+
+        SearchResults = response.Data.Results ?? [];
+        SearchStatus = null;
+    }
+
+    private async Task OnSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunFullSearchAsync();
+        }
+    }
+
+    private Task RunFullSearchAsync()
+    {
+        var query = Uri.EscapeDataString(SearchText.Trim());
+        SearchOpen = false;
+        NavMenuOpen = false;
+        Navigation.NavigateTo($"/search?q={query}");
+        return Task.CompletedTask;
+    }
+
+    private void OpenSearchResult(GlobalSearchResultItem result)
+    {
+        SearchOpen = false;
+        NavMenuOpen = false;
+        ApplyWorkflowFromSearch(result);
+
+        var destination = result.Type switch
+        {
+            GlobalSearchEntityType.Match => $"/mat-scoring?matchId={result.Id}",
+            GlobalSearchEntityType.Tournament => "/tournaments",
+            GlobalSearchEntityType.Athlete => "/athlete",
+            GlobalSearchEntityType.Coach => "/coach",
+            GlobalSearchEntityType.Stream => "/live",
+            GlobalSearchEntityType.Team => "/coach",
+            _ => "/search"
+        };
+
+        Navigation.NavigateTo(destination);
+    }
+
+    private void ApplyWorkflowFromSearch(GlobalSearchResultItem result)
+    {
+        switch (result.Type)
+        {
+            case GlobalSearchEntityType.Athlete:
+                Workflow.AthleteProfileId = result.Id;
+                break;
+            case GlobalSearchEntityType.Tournament:
+                Workflow.EventId = result.Id;
+                break;
+            case GlobalSearchEntityType.Match:
+                Workflow.MatchId = result.Id;
+                break;
+            case GlobalSearchEntityType.Team:
+                Workflow.TeamId = result.Id;
+                break;
+            case GlobalSearchEntityType.Coach:
+                Workflow.CoachProfileId = result.Id;
+                break;
+        }
+    }
+
+    private void CloseSearchMenu()
+    {
+        SearchOpen = false;
+    }
+
     private void ClearWorkflow() => Workflow.Clear();
 
     private static string Short(Guid? id)
@@ -131,4 +270,3 @@
         return id is null ? "-" : id.Value.ToString()[..8];
     }
 }
-

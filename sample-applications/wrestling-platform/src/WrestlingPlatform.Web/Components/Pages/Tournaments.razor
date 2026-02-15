@@ -1,0 +1,234 @@
+@page "/tournaments"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+@inject NavigationManager Navigation
+
+<PageTitle>Tournaments - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Tournament Explorer</h1>
+        <p class="page-subtitle">Browse live, upcoming, and archived tournaments with quick entry to registration, brackets, scoring, and streams.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Live + Upcoming + Past</span>
+        <span class="tag">Archive-Ready</span>
+        <span class="tag">State Filter</span>
+    </div>
+</div>
+
+<section class="panel">
+    <h2>Filters</h2>
+    <div class="form-grid spacer-top">
+        <div class="field">
+            <label>State (optional)</label>
+            <input class="input" @bind="StateFilter" placeholder="OH" />
+        </div>
+        <div class="field">
+            <label>Days Back</label>
+            <input class="input" type="number" min="7" max="730" @bind="DaysBack" />
+        </div>
+        <div class="field">
+            <label>Days Ahead</label>
+            <input class="input" type="number" min="7" max="730" @bind="DaysAhead" />
+        </div>
+    </div>
+    <div class="actions">
+        <button class="btn primary" @onclick="LoadExplorerAsync" disabled="@IsBusy">Load Tournaments</button>
+        <button class="btn ghost" @onclick="UseWorkflowEvent">Use Workflow Event</button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(StatusMessage))
+    {
+        <div class="alert @(StatusSuccess ? "success" : "error") spacer-top">@StatusMessage</div>
+    }
+</section>
+
+@if (Explorer is not null)
+{
+    <div class="panel-grid three spacer-top">
+        <section class="panel">
+            <div class="item-head">
+                <h2>Live</h2>
+                <span class="tag">@Explorer.Live.Count</span>
+            </div>
+            @RenderBucket(Explorer.Live, "No live tournaments right now.")
+        </section>
+
+        <section class="panel">
+            <div class="item-head">
+                <h2>Upcoming</h2>
+                <span class="tag">@Explorer.Upcoming.Count</span>
+            </div>
+            @RenderBucket(Explorer.Upcoming, "No upcoming tournaments in this window.")
+        </section>
+
+        <section class="panel">
+            <div class="item-head">
+                <h2>Archive</h2>
+                <span class="tag">@Explorer.Past.Count</span>
+            </div>
+            @RenderBucket(Explorer.Past, "No archived tournaments in this window.")
+        </section>
+    </div>
+}
+
+@code {
+    private bool IsBusy;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+    private string StateFilter = "OH";
+    private int DaysBack = 180;
+    private int DaysAhead = 180;
+    private TournamentExplorerResponse? Explorer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadExplorerAsync();
+    }
+
+    private async Task LoadExplorerAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.GetTournamentExplorerAsync(
+                DaysBack,
+                DaysAhead,
+                string.IsNullOrWhiteSpace(StateFilter) ? null : StateFilter.Trim().ToUpperInvariant());
+
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Explorer = null;
+                return;
+            }
+
+            Explorer = result.Data;
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {Explorer.Live.Count + Explorer.Upcoming.Count + Explorer.Past.Count} tournaments.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void UseWorkflowEvent()
+    {
+        if (Workflow.EventId is null || Explorer is null)
+        {
+            return;
+        }
+
+        var all = Explorer.Live.Concat(Explorer.Upcoming).Concat(Explorer.Past).ToList();
+        var selected = all.FirstOrDefault(x => x.EventId == Workflow.EventId.Value);
+        StatusSuccess = selected is not null;
+        StatusMessage = selected is null
+            ? "Workflow event is not visible in the current filter window."
+            : $"Workflow event loaded: {selected.Name} ({selected.State}/{selected.City}).";
+    }
+
+    private RenderFragment RenderBucket(List<TournamentExplorerCard> cards, string emptyMessage) => builder =>
+    {
+        if (cards.Count == 0)
+        {
+            builder.OpenElement(0, "p");
+            builder.AddAttribute(1, "class", "helper spacer-top");
+            builder.AddContent(2, emptyMessage);
+            builder.CloseElement();
+            return;
+        }
+
+        builder.OpenElement(3, "ul");
+        builder.AddAttribute(4, "class", "list spacer-top");
+
+        var seq = 5;
+        foreach (var card in cards.Take(16))
+        {
+            var isSelected = Workflow.EventId == card.EventId;
+
+            builder.OpenElement(seq++, "li");
+            builder.AddAttribute(seq++, "class", "list-item");
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "item-head");
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "item-title");
+            builder.AddContent(seq++, card.Name);
+            builder.CloseElement();
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "item-meta");
+            builder.AddContent(seq++, $"{card.City}, {card.State}");
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "helper spacer-top");
+            builder.AddContent(seq++, $"{card.StartUtc.ToLocalTime():MMM dd, yyyy h:mm tt} - {card.EndUtc.ToLocalTime():MMM dd, yyyy h:mm tt}");
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "split spacer-top");
+            builder.AddContent(seq++, $"Style: {card.Style}");
+            builder.AddContent(seq++, $"Registrants: {card.RegisteredAthletes}");
+            builder.AddContent(seq++, $"Active Mats: {card.ActiveMats}");
+            builder.AddContent(seq++, $"Streams: {card.LiveStreams}");
+            builder.AddContent(seq++, $"Completed: {card.CompletedMatches}");
+            builder.CloseElement();
+
+            if (isSelected)
+            {
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "tag spacer-top");
+                builder.AddContent(seq++, "Workflow Selected");
+                builder.CloseElement();
+            }
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "actions");
+
+            builder.OpenElement(seq++, "button");
+            builder.AddAttribute(seq++, "class", "btn secondary");
+            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => OpenRegistration(card.EventId)));
+            builder.AddContent(seq++, "Register");
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "button");
+            builder.AddAttribute(seq++, "class", "btn ghost");
+            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => OpenBrackets(card.EventId)));
+            builder.AddContent(seq++, "Brackets");
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "button");
+            builder.AddAttribute(seq++, "class", "btn ghost");
+            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => OpenLive(card.EventId)));
+            builder.AddContent(seq++, "Live");
+            builder.CloseElement();
+
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private void OpenRegistration(Guid eventId)
+    {
+        Workflow.EventId = eventId;
+        Navigation.NavigateTo("/registration");
+    }
+
+    private void OpenBrackets(Guid eventId)
+    {
+        Workflow.EventId = eventId;
+        Navigation.NavigateTo("/brackets");
+    }
+
+    private void OpenLive(Guid eventId)
+    {
+        Workflow.EventId = eventId;
+        Navigation.NavigateTo("/live");
+    }
+}

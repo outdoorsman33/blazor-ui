@@ -113,6 +113,38 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         return await ReadResponseAsync<List<TournamentEvent>>(response, cancellationToken);
     }
 
+    public async Task<ApiResult<GlobalSearchResponse>> SearchGlobalAsync(
+        string query,
+        int take = 24,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery("/api/search/global", new Dictionary<string, string?>
+        {
+            ["q"] = query,
+            ["take"] = take.ToString()
+        });
+
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<GlobalSearchResponse>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<TournamentExplorerResponse>> GetTournamentExplorerAsync(
+        int? daysBack = null,
+        int? daysAhead = null,
+        string? state = null,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery("/api/events/explorer", new Dictionary<string, string?>
+        {
+            ["daysBack"] = daysBack?.ToString(),
+            ["daysAhead"] = daysAhead?.ToString(),
+            ["state"] = state
+        });
+
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<TournamentExplorerResponse>(response, cancellationToken);
+    }
+
     public async Task<ApiResult<List<GroupedEventsResponse>>> GetGroupedEventsAsync(CancellationToken cancellationToken = default)
     {
         var response = await GetAsync("/api/events/grouped", cancellationToken);
@@ -403,6 +435,44 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
     {
         var response = await GetAsync($"/api/athletes/{athleteId}/nil-profile", cancellationToken);
         return await ReadResponseAsync<AthleteNilProfile>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteNilProfile>> UpdateAthleteNilProfileAsync(
+        Guid athleteId,
+        UpdateAthleteNilProfileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PutAsJsonAsync($"/api/athletes/{athleteId}/nil-profile", request, cancellationToken);
+        return await ReadResponseAsync<AthleteNilProfile>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<NilPolicyResponse>> GetNilPolicyAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync("/api/nil/policy", cancellationToken);
+        return await ReadResponseAsync<NilPolicyResponse>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<HelpFaqItem>>> GetHelpFaqsAsync(string? query = null, CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery("/api/help/faqs", new Dictionary<string, string?>
+        {
+            ["q"] = query
+        });
+
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<List<HelpFaqItem>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<SupportGuideStep>>> GetSupportGuideAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync("/api/help/guide", cancellationToken);
+        return await ReadResponseAsync<List<SupportGuideStep>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<HelpChatResponse>> AskHelpAssistantAsync(HelpChatRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/help/chat", request, cancellationToken);
+        return await ReadResponseAsync<HelpChatResponse>(response, cancellationToken);
     }
 
     public async Task<ApiResult<List<RecruitingAthleteCard>>> GetRecruitingAthletesAsync(

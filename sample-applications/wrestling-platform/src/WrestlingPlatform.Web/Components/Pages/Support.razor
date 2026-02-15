@@ -1,0 +1,255 @@
+@page "/support"
+@inject PlatformApiClient ApiClient
+@inject NavigationManager Navigation
+
+<PageTitle>Support - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Support Center</h1>
+        <p class="page-subtitle">Searchable FAQs, step-by-step playbooks, and an in-app assistant to guide every workflow.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">FAQ Search</span>
+        <span class="tag">Guided Steps</span>
+        <span class="tag">Help Assistant</span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+}
+
+<div class="panel-grid two">
+    <section class="panel">
+        <div class="item-head">
+            <h2>FAQ Search</h2>
+            <button class="btn ghost" @onclick="LoadFaqsAsync" disabled="@IsBusy">Refresh</button>
+        </div>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Search FAQs</label>
+                <input class="input" @bind="FaqQuery" @bind:event="oninput" placeholder="registration, scoring, stream, nil..." />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="SearchFaqsAsync" disabled="@IsBusy">Search FAQs</button>
+        </div>
+        <ul class="list spacer-top">
+            @if (Faqs.Count == 0)
+            {
+                <li class="list-item">No FAQs loaded.</li>
+            }
+            else
+            {
+                @foreach (var item in Faqs)
+                {
+                    <li class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">@item.Question</span>
+                            <span class="tag">@item.Category</span>
+                        </div>
+                        <div class="helper spacer-top">@item.Answer</div>
+                    </li>
+                }
+            }
+        </ul>
+    </section>
+
+    <section class="panel">
+        <div class="item-head">
+            <h2>Step-by-Step Guide</h2>
+            <button class="btn ghost" @onclick="LoadGuideAsync" disabled="@IsBusy">Reload</button>
+        </div>
+        <div class="timeline spacer-top">
+            @if (GuideSteps.Count == 0)
+            {
+                <div class="timeline-item">No guide steps loaded yet.</div>
+            }
+            else
+            {
+                @foreach (var step in GuideSteps.OrderBy(x => x.StepNumber))
+                {
+                    <div class="timeline-item">
+                        <strong>@step.StepNumber. @step.Title</strong>
+                        <div class="helper spacer-top">@step.Description</div>
+                        <div class="actions">
+                            <button class="btn secondary" @onclick="() => Navigation.NavigateTo(step.Route)">@step.ActionLabel</button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </section>
+</div>
+
+<section class="panel spacer-top">
+    <h2>Help Assistant</h2>
+    <p class="helper">Ask questions in plain language. The assistant routes you to the right workflow and FAQs.</p>
+
+    <div class="form-grid spacer-top">
+        <div class="field">
+            <label>Your Question</label>
+            <input class="input" @bind="ChatMessage" @bind:event="oninput" placeholder="How do I score overtime matches?" />
+        </div>
+        <div class="field">
+            <label>Context (optional)</label>
+            <input class="input" @bind="ChatContext" placeholder="event admin, table worker, coach..." />
+        </div>
+    </div>
+
+    <div class="actions">
+        <button class="btn primary" @onclick="AskAssistantAsync" disabled="@IsBusy">Ask Assistant</button>
+    </div>
+
+    @if (ChatResponse is not null)
+    {
+        <div class="list spacer-top">
+            <div class="list-item">
+                <div class="item-title">Assistant Reply</div>
+                <div class="helper spacer-top">@ChatResponse.Reply</div>
+            </div>
+            @if (ChatResponse.SuggestedActions.Count > 0)
+            {
+                <div class="list-item">
+                    <div class="item-title">Suggested Actions</div>
+                    <div class="timeline spacer-top">
+                        @foreach (var action in ChatResponse.SuggestedActions)
+                        {
+                            <div class="timeline-item">@action</div>
+                        }
+                    </div>
+                </div>
+            }
+            @if (ChatResponse.SuggestedFaqIds.Count > 0)
+            {
+                <div class="list-item">
+                    <div class="item-title">Related FAQs</div>
+                    <div class="helper spacer-top">@string.Join(", ", ChatResponse.SuggestedFaqIds)</div>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private bool IsBusy;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+    private string FaqQuery = string.Empty;
+    private List<HelpFaqItem> Faqs = [];
+    private List<SupportGuideStep> GuideSteps = [];
+    private string ChatMessage = string.Empty;
+    private string ChatContext = string.Empty;
+    private HelpChatResponse? ChatResponse;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFaqsAsync();
+        await LoadGuideAsync();
+    }
+
+    private async Task LoadFaqsAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.GetHelpFaqsAsync();
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Faqs = [];
+                return;
+            }
+
+            Faqs = result.Data ?? [];
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {Faqs.Count} FAQs.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SearchFaqsAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.GetHelpFaqsAsync(FaqQuery);
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Faqs = [];
+                return;
+            }
+
+            Faqs = result.Data ?? [];
+            StatusSuccess = true;
+            StatusMessage = $"Found {Faqs.Count} FAQ results.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task LoadGuideAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.GetSupportGuideAsync();
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                GuideSteps = [];
+                return;
+            }
+
+            GuideSteps = result.Data ?? [];
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {GuideSteps.Count} guide steps.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task AskAssistantAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ChatMessage))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Ask a question first.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.AskHelpAssistantAsync(new HelpChatRequest(ChatMessage, ChatContext));
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                ChatResponse = null;
+                return;
+            }
+
+            ChatResponse = result.Data;
+            StatusSuccess = true;
+            StatusMessage = "Assistant response ready.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+}

@@ -1,0 +1,188 @@
+@page "/search"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+@inject NavigationManager Navigation
+
+<PageTitle>Search - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Global Search</h1>
+        <p class="page-subtitle">Search athletes, coaches, teams, tournaments, matches, and live streams from one place.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Search Anything</span>
+        <span class="tag">Workflow-Aware</span>
+        <span class="tag">Fast Results</span>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="form-grid">
+        <div class="field">
+            <label>Search Query</label>
+            <input class="input"
+                   value="@Query"
+                   @oninput="OnQueryInput"
+                   @onkeydown="OnQueryKeyDown"
+                   placeholder="Try athlete name, city, team, event, mat, stream..." />
+        </div>
+        <div class="field">
+            <label>Max Results</label>
+            <input class="input" type="number" min="5" max="60" @bind="Take" />
+        </div>
+    </div>
+    <div class="actions">
+        <button class="btn primary" @onclick="SearchAsync" disabled="@IsBusy">Search</button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(StatusMessage))
+    {
+        <div class="alert @(StatusSuccess ? "success" : "error") spacer-top">@StatusMessage</div>
+    }
+</section>
+
+<section class="panel spacer-top">
+    <div class="item-head">
+        <h2>Results</h2>
+        <span class="tag">@(Results?.Count ?? 0) returned</span>
+    </div>
+
+    @if (Results is null || Results.Count == 0)
+    {
+        <p class="helper spacer-top">No results yet.</p>
+    }
+    else
+    {
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Title</th>
+                        <th>Details</th>
+                        <th>When</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Results)
+                    {
+                        <tr>
+                            <td>@item.Type</td>
+                            <td>@item.Title</td>
+                            <td>@item.Subtitle</td>
+                            <td>@(item.DateUtc?.ToLocalTime().ToString("MMM dd yyyy HH:mm") ?? "-")</td>
+                            <td><button class="btn secondary" @onclick="() => OpenResult(item)">Open</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? QueryParameter { get; set; }
+
+    private bool IsBusy;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+    private string Query = string.Empty;
+    private int Take = 24;
+    private List<GlobalSearchResultItem>? Results;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (QueryParameter is not null && !string.Equals(Query, QueryParameter, StringComparison.Ordinal))
+        {
+            Query = QueryParameter;
+        }
+
+        if (!string.IsNullOrWhiteSpace(Query))
+        {
+            await SearchAsync();
+        }
+    }
+
+    private void OnQueryInput(ChangeEventArgs args)
+    {
+        Query = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private async Task OnQueryKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            await SearchAsync();
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        var trimmed = Query.Trim();
+        if (trimmed.Length < 2)
+        {
+            Results = [];
+            StatusSuccess = false;
+            StatusMessage = "Enter at least 2 characters.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.SearchGlobalAsync(trimmed, Take);
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Results = [];
+                return;
+            }
+
+            Results = result.Data.Results ?? [];
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {Results.Count} results for \"{trimmed}\".";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void OpenResult(GlobalSearchResultItem item)
+    {
+        switch (item.Type)
+        {
+            case GlobalSearchEntityType.Athlete:
+                Workflow.AthleteProfileId = item.Id;
+                Navigation.NavigateTo("/athlete");
+                return;
+            case GlobalSearchEntityType.Tournament:
+                Workflow.EventId = item.Id;
+                Navigation.NavigateTo("/tournaments");
+                return;
+            case GlobalSearchEntityType.Match:
+                Workflow.MatchId = item.Id;
+                Navigation.NavigateTo($"/mat-scoring?matchId={item.Id}");
+                return;
+            case GlobalSearchEntityType.Team:
+                Workflow.TeamId = item.Id;
+                Navigation.NavigateTo("/coach");
+                return;
+            case GlobalSearchEntityType.Coach:
+                Workflow.CoachProfileId = item.Id;
+                Navigation.NavigateTo("/coach");
+                return;
+            case GlobalSearchEntityType.Stream:
+                Navigation.NavigateTo("/live");
+                return;
+            default:
+                Navigation.NavigateTo(item.Route);
+                return;
+        }
+    }
+}

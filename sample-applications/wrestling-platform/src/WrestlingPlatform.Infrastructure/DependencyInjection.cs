@@ -297,6 +297,20 @@ public static class DependencyInjection
             true,
             cancellationToken);
 
+        var archiveClassicEvent = await EnsureEventAsync(
+            dbContext,
+            "Midwest Winter Classic (Archive)",
+            OrganizerType.Club,
+            primaryTeam.Id,
+            "OH",
+            "Dayton",
+            "Dayton Civic Arena",
+            todayUtc.AddDays(-35).AddHours(14),
+            todayUtc.AddDays(-34).AddHours(1),
+            2800,
+            true,
+            cancellationToken);
+
         var showcaseDivision = await EnsureDivisionAsync(
             dbContext,
             showcaseEvent.Id,
@@ -359,6 +373,14 @@ public static class DependencyInjection
             "Elementary 78",
             CompetitionLevel.ElementaryK6,
             78m,
+            cancellationToken);
+
+        var archiveDivision = await EnsureDivisionAsync(
+            dbContext,
+            archiveClassicEvent.Id,
+            "High School 132",
+            CompetitionLevel.HighSchool,
+            132m,
             cancellationToken);
 
         var showcaseAthletes = new[]
@@ -460,6 +482,50 @@ public static class DependencyInjection
             RegistrationStatus.Confirmed,
             PaymentStatus.Paid,
             collegeDualEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            archiveClassicEvent.Id,
+            athleteProfilesByEmail["demo.athlete@pinpointarena.local"].Id,
+            primaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            archiveClassicEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            archiveClassicEvent.Id,
+            athleteProfilesByEmail["noah.miller@pinpointarena.local"].Id,
+            secondaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            archiveClassicEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            archiveClassicEvent.Id,
+            athleteProfilesByEmail["jayden.clark@pinpointarena.local"].Id,
+            secondaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            archiveClassicEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            archiveClassicEvent.Id,
+            athleteProfilesByEmail["logan.price@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            archiveClassicEvent.EntryFeeCents,
             cancellationToken);
 
         if (freeAgentRegistrations.Count > 0)
@@ -647,6 +713,88 @@ public static class DependencyInjection
             "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
             startedUtc: null,
             endedUtc: null,
+            cancellationToken);
+
+        var archiveBracket = await EnsureBracketAsync(
+            dbContext,
+            archiveClassicEvent.Id,
+            archiveDivision.Id,
+            CompetitionLevel.HighSchool,
+            132m,
+            BracketGenerationMode.Seeded,
+            cancellationToken);
+
+        var archiveAthletes = new[]
+        {
+            athleteProfilesByEmail["demo.athlete@pinpointarena.local"],
+            athleteProfilesByEmail["noah.miller@pinpointarena.local"],
+            athleteProfilesByEmail["jayden.clark@pinpointarena.local"],
+            athleteProfilesByEmail["logan.price@pinpointarena.local"]
+        };
+
+        for (var seed = 0; seed < archiveAthletes.Length; seed++)
+        {
+            await EnsureBracketEntryAsync(dbContext, archiveBracket.Id, archiveAthletes[seed].Id, seed + 1, cancellationToken);
+        }
+
+        var archiveStartUtc = archiveClassicEvent.StartUtc;
+        var archiveSemiFinal1 = await EnsureMatchAsync(
+            dbContext,
+            archiveBracket.Id,
+            1,
+            1,
+            archiveAthletes[0].Id,
+            archiveAthletes[3].Id,
+            archiveAthletes[0].Id,
+            "8-3",
+            "Decision",
+            "Mat 3",
+            MatchStatus.Completed,
+            archiveStartUtc.AddMinutes(8),
+            archiveStartUtc.AddMinutes(26),
+            cancellationToken);
+
+        var archiveSemiFinal2 = await EnsureMatchAsync(
+            dbContext,
+            archiveBracket.Id,
+            1,
+            2,
+            archiveAthletes[1].Id,
+            archiveAthletes[2].Id,
+            archiveAthletes[2].Id,
+            "Fall 2:11",
+            "Pin",
+            "Mat 3",
+            MatchStatus.Completed,
+            archiveStartUtc.AddMinutes(32),
+            archiveStartUtc.AddMinutes(43),
+            cancellationToken);
+
+        var archiveFinal = await EnsureMatchAsync(
+            dbContext,
+            archiveBracket.Id,
+            2,
+            3,
+            archiveSemiFinal1.WinnerAthleteId,
+            archiveSemiFinal2.WinnerAthleteId,
+            archiveSemiFinal1.WinnerAthleteId,
+            "5-1",
+            "Decision",
+            "Mat 3",
+            MatchStatus.Completed,
+            archiveStartUtc.AddMinutes(85),
+            archiveStartUtc.AddMinutes(103),
+            cancellationToken);
+
+        await EnsureStreamSessionAsync(
+            dbContext,
+            archiveClassicEvent.Id,
+            archiveFinal.Id,
+            "Archive Cam - Mat 3",
+            StreamStatus.Ended,
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            archiveStartUtc.AddMinutes(80),
+            archiveStartUtc.AddMinutes(110),
             cancellationToken);
 
         await EnsureDemoBracketAndStreamCoverageAsync(dbContext, athleteProfilesByEmail, cancellationToken);

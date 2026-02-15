@@ -537,10 +537,12 @@
 
     <section class="panel">
         <h2>7) NIL Profile Snapshot</h2>
-        <p class="helper">Athlete brand profile built from verified performance and engagement signals.</p>
+        <p class="helper">Athlete brand profile built from verified performance and engagement signals plus configurable NIL social presence.</p>
 
         <div class="actions spacer-top">
             <button class="btn primary" @onclick="LoadNilProfileAsync" disabled="@IsBusy">Load NIL Profile</button>
+            <button class="btn secondary" @onclick="SaveNilProfileAsync" disabled="@IsBusy">Save NIL Socials</button>
+            <button class="btn ghost" @onclick="LoadNilPolicyAsync" disabled="@IsBusy">Load NIL Policy</button>
         </div>
 
         @if (NilProfile is null)
@@ -573,6 +575,71 @@
                 {
                     <div class="timeline-item">@tag</div>
                 }
+            </div>
+
+            <div class="form-grid spacer-top">
+                <div class="field">
+                    <label>X handle</label>
+                    <input class="input" @bind="NilXHandle" placeholder="athletex" />
+                </div>
+                <div class="field">
+                    <label>Instagram handle</label>
+                    <input class="input" @bind="NilInstagramHandle" placeholder="athletegram" />
+                </div>
+                <div class="field">
+                    <label>Twitter handle</label>
+                    <input class="input" @bind="NilTwitterHandle" placeholder="athletetwitter" />
+                </div>
+                <div class="field">
+                    <label>NIL contact email</label>
+                    <input class="input" @bind="NilContactEmail" placeholder="athlete@school.edu" />
+                </div>
+                <div class="field check-row">
+                    <input id="nilBrands" type="checkbox" @bind="NilOpenToBrandDeals" />
+                    <label for="nilBrands">Open to brand deals</label>
+                </div>
+                <div class="field check-row">
+                    <input id="nilCamps" type="checkbox" @bind="NilOpenToCampsClinics" />
+                    <label for="nilCamps">Open to camps/clinics</label>
+                </div>
+                <div class="field check-row">
+                    <input id="nilCollectives" type="checkbox" @bind="NilOpenToCollectives" />
+                    <label for="nilCollectives">Open to collectives</label>
+                </div>
+                <div class="field">
+                    <label>NIL bio</label>
+                    <textarea class="textarea" @bind="NilBio"></textarea>
+                </div>
+            </div>
+        }
+
+        @if (NilPolicy is not null)
+        {
+            <hr class="soft" />
+            <h3>NIL Compliance Quick Guidance</h3>
+            <p class="helper spacer-top">@NilPolicy.LegalNotice</p>
+            <div class="table-wrap spacer-top">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Audience</th>
+                            <th>Jurisdiction</th>
+                            <th>Summary</th>
+                            <th>Source</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var rule in NilPolicy.Rules)
+                        {
+                            <tr>
+                                <td>@rule.Audience</td>
+                                <td>@rule.Jurisdiction</td>
+                                <td>@rule.Summary</td>
+                                <td><a href="@rule.SourceUrl" target="_blank">@rule.SourceName</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             </div>
         }
     </section>
@@ -717,6 +784,15 @@
     private string? MediaMessage;
     private bool MediaSuccess;
     private AthleteNilProfile? NilProfile;
+    private NilPolicyResponse? NilPolicy;
+    private string NilXHandle = string.Empty;
+    private string NilInstagramHandle = string.Empty;
+    private string NilTwitterHandle = string.Empty;
+    private string NilContactEmail = string.Empty;
+    private bool NilOpenToBrandDeals = true;
+    private bool NilOpenToCampsClinics = true;
+    private bool NilOpenToCollectives = true;
+    private string NilBio = string.Empty;
 
     private async Task RegisterUserAsync()
     {
@@ -1116,6 +1192,58 @@
         MediaMessage = result.Success ? "NIL profile loaded." : result.Message;
         NilProfile = result.Data;
 
+        if (NilProfile is not null)
+        {
+            NilXHandle = NilProfile.XHandle ?? string.Empty;
+            NilInstagramHandle = NilProfile.InstagramHandle ?? string.Empty;
+            NilTwitterHandle = NilProfile.TwitterHandle ?? string.Empty;
+            NilContactEmail = NilProfile.ContactEmail ?? string.Empty;
+            NilOpenToBrandDeals = NilProfile.OpenToBrandDeals;
+            NilOpenToCampsClinics = NilProfile.OpenToCampsClinics;
+            NilOpenToCollectives = NilProfile.OpenToCollectives;
+            NilBio = NilProfile.Bio ?? string.Empty;
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task SaveNilProfileAsync()
+    {
+        IsBusy = true;
+
+        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        {
+            MediaSuccess = false;
+            MediaMessage = "Valid athlete id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.UpdateAthleteNilProfileAsync(
+            athleteId,
+            new UpdateAthleteNilProfileRequest(
+                NilXHandle,
+                NilInstagramHandle,
+                NilTwitterHandle,
+                NilContactEmail,
+                NilOpenToBrandDeals,
+                NilOpenToCampsClinics,
+                NilOpenToCollectives,
+                NilBio));
+
+        MediaSuccess = result.Success;
+        MediaMessage = result.Success ? "NIL social profile saved." : result.Message;
+        NilProfile = result.Data;
+        IsBusy = false;
+    }
+
+    private async Task LoadNilPolicyAsync()
+    {
+        IsBusy = true;
+        var result = await ApiClient.GetNilPolicyAsync();
+        MediaSuccess = result.Success;
+        MediaMessage = result.Success ? "NIL policy loaded." : result.Message;
+        NilPolicy = result.Data;
         IsBusy = false;
     }
 }

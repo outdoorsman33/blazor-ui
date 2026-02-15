@@ -74,6 +74,23 @@
             <label>Tech fall threshold</label>
             <input class="input" type="number" min="4" max="30" @bind="TechFallPointGap" />
         </div>
+        <div class="field">
+            <label>Overtime Format</label>
+            <select class="select" @bind="SelectedOvertimeFormat">
+                @foreach (var format in Enum.GetValues<OvertimeFormat>())
+                {
+                    <option value="@format">@format</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Max Overtime Periods</label>
+            <input class="input" type="number" min="0" max="8" @bind="MaxOvertimePeriods" />
+        </div>
+        <div class="field check-row">
+            <input id="suddenOvertime" type="checkbox" @bind="EndOnFirstOvertimeScore" />
+            <label for="suddenOvertime">End on first overtime score</label>
+        </div>
     </div>
     <div class="actions">
         <button class="btn primary" @onclick="ConnectAndLoadAsync" disabled="@IsBusy">Connect + Load</button>
@@ -87,6 +104,7 @@
         Hub: @(IsHubConnected ? "connected" : "not connected")
         | Fallback Polling: @(IsPollingActive ? "on" : "off")
         | Auto-End: @(AutoEndEnabled ? "on" : "off")
+        | OT: @SelectedOvertimeFormat (@MaxOvertimePeriods)
         | workflow match: <span class="mono">@Short(Workflow.MatchId)</span>
     </p>
 </section>
@@ -216,6 +234,9 @@
     private bool AutoEndEnabled = true;
     private int TechFallPointGap = 15;
     private int RegulationPeriods = 3;
+    private OvertimeFormat SelectedOvertimeFormat = OvertimeFormat.FolkstyleStandard;
+    private int MaxOvertimePeriods = 3;
+    private bool EndOnFirstOvertimeScore;
 
     private string CurrentStyleLabel => $"Style: {(Rules?.Style ?? SelectedStyle)}";
 
@@ -329,7 +350,10 @@
                     SelectedLevel,
                     AutoEndEnabled,
                     TechFallPointGap,
-                    RegulationPeriods));
+                    RegulationPeriods,
+                    SelectedOvertimeFormat,
+                    MaxOvertimePeriods,
+                    EndOnFirstOvertimeScore));
 
             if (!result.Success || result.Data is null)
             {
@@ -566,6 +590,9 @@
         AutoEndEnabled = Rules.AutoEndEnabled;
         TechFallPointGap = Rules.TechFallPointGap;
         RegulationPeriods = Rules.RegulationPeriods;
+        SelectedOvertimeFormat = Rules.OvertimeFormat;
+        MaxOvertimePeriods = Rules.MaxOvertimePeriods;
+        EndOnFirstOvertimeScore = Rules.EndOnFirstOvertimeScore;
         SelectedActionCode = Rules.Actions.FirstOrDefault(x => x.DefaultPoints > 0)?.ActionCode ?? ScoringActionCode.Takedown;
     }
 
