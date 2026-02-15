@@ -1,7 +1,6 @@
 @page "/brackets"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
-@inject NavigationManager Navigation
 
 <PageTitle>Bracket Center - PinPoint Arena</PageTitle>
 
@@ -71,7 +70,7 @@
                     <div class="split spacer-top">
                         <span>@evt.StartUtc.ToLocalTime().ToString("MMM dd yyyy")</span>
                         <span>@evt.Style</span>
-                        <button class="btn secondary" @onclick="() => SelectEventAsync(evt.EventId)">Select</button>
+                        <a class="btn secondary" href="@BracketsRoute(evt.EventId)">Select</a>
                     </div>
                 </li>
             }
@@ -174,7 +173,7 @@
                                         <div class="helper spacer-top">Pending result</div>
                                     }
                                     <div class="actions">
-                                        <button class="btn ghost" @onclick="() => OpenMatch(match.MatchId)">Open Mat Scoring</button>
+                                        <a class="btn ghost" href="@MatScoringRoute(match.MatchId)">Open Mat Scoring</a>
                                     </div>
                                 </article>
                             }
@@ -187,6 +186,9 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "eventId")]
+    public Guid? EventId { get; set; }
+
     private bool IsBusy;
     private bool StatusSuccess;
     private string? StatusMessage;
@@ -209,6 +211,12 @@
         if (Workflow.EventId is not null)
         {
             SelectedEventIdText = Workflow.EventId.Value.ToString();
+        }
+
+        if (EventId is not null)
+        {
+            SelectedEventIdText = EventId.Value.ToString();
+            Workflow.EventId = EventId.Value;
         }
 
         await LoadEventsAsync();
@@ -261,19 +269,6 @@
         StatusMessage = $"Using workflow event {Workflow.EventId.Value.ToString()[..8]}.";
     }
 
-    private void OpenMatch(Guid matchId)
-    {
-        Workflow.MatchId = matchId;
-        Navigation.NavigateTo($"/mat-scoring?matchId={matchId:D}");
-    }
-
-    private async Task SelectEventAsync(Guid eventId)
-    {
-        SelectedEventIdText = eventId.ToString();
-        Workflow.EventId = eventId;
-        await LoadVisualAsync();
-    }
-
     private async Task LoadVisualAsync()
     {
         if (!Guid.TryParse(SelectedEventIdText, out var eventId))
@@ -320,4 +315,8 @@
 
         return $"{athlete.Name} (Seed {athlete.Seed}, Rank {athlete.Rank})";
     }
+
+    private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
+
+    private static string MatScoringRoute(Guid matchId) => $"/mat-scoring?matchId={matchId:D}";
 }

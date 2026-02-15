@@ -69,7 +69,7 @@
                         </div>
                         <div class="split spacer-top">
                             <span>@evt.StartUtc.ToLocalTime().ToString("MMM dd yyyy h:mm tt")</span>
-                            <button class="btn secondary" @onclick="() => SelectEventAsync(evt.EventId)">Select</button>
+                            <a class="btn secondary" href="@LiveRoute(evt.EventId)">Select</a>
                         </div>
                     </li>
                 }
@@ -191,6 +191,9 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "eventId")]
+    public Guid? EventId { get; set; }
+
     private bool IsBusy;
     private bool StatusSuccess;
     private string? StatusMessage;
@@ -220,6 +223,12 @@
         if (Workflow.EventId is not null)
         {
             SelectedEventIdText = Workflow.EventId.Value.ToString();
+        }
+
+        if (EventId is not null)
+        {
+            SelectedEventIdText = EventId.Value.ToString();
+            Workflow.EventId = EventId.Value;
         }
 
         if (Workflow.MatchId is not null)
@@ -261,13 +270,6 @@
         {
             IsBusy = false;
         }
-    }
-
-    private async Task SelectEventAsync(Guid eventId)
-    {
-        SelectedEventIdText = eventId.ToString();
-        Workflow.EventId = eventId;
-        await LoadStreamsAsync();
     }
 
     private async Task LoadStreamsAsync()
@@ -439,6 +441,8 @@
     }
 
     private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString("N")[..8];
+
+    private static string LiveRoute(Guid eventId) => $"/live?eventId={eventId:D}";
 
     private sealed record SamplePlaybackOption(string Name, string Url);
 }

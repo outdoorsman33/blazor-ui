@@ -1,6 +1,5 @@
 @page "/support"
 @inject PlatformApiClient ApiClient
-@inject NavigationManager Navigation
 
 <PageTitle>Support - PinPoint Arena</PageTitle>
 
@@ -27,19 +26,23 @@
             <h2>FAQ Search</h2>
             <button class="btn ghost" @onclick="LoadFaqsAsync" disabled="@IsBusy">Refresh</button>
         </div>
-        <div class="form-grid spacer-top">
-            <div class="field">
-                <label>Search FAQs</label>
-                <input class="input"
-                       @bind="FaqQuery"
-                       @bind:event="oninput"
-                       @onkeydown="OnFaqKeyDownAsync"
-                       placeholder="registration, scoring, stream, nil..." />
+        <form method="get" action="/support">
+            <div class="form-grid spacer-top">
+                <div class="field">
+                    <label>Search FAQs</label>
+                    <input class="input"
+                           name="faq"
+                           @bind="FaqQuery"
+                           @bind:event="oninput"
+                           @onkeydown="OnFaqKeyDownAsync"
+                           placeholder="registration, scoring, stream, nil..." />
+                </div>
             </div>
-        </div>
-        <div class="actions">
-            <button class="btn primary" @onclick="SearchFaqsAsync" disabled="@IsBusy">Search FAQs</button>
-        </div>
+            <div class="actions">
+                <button class="btn primary" @onclick="SearchFaqsAsync" disabled="@IsBusy" type="button">Search FAQs</button>
+                <button class="btn ghost" type="submit">Search via URL</button>
+            </div>
+        </form>
         <ul class="list spacer-top">
             @if (Faqs.Count == 0)
             {
@@ -79,7 +82,7 @@
                         <strong>@step.StepNumber. @step.Title</strong>
                         <div class="helper spacer-top">@step.Description</div>
                         <div class="actions">
-                            <button class="btn secondary" @onclick="() => Navigation.NavigateTo(step.Route)">@step.ActionLabel</button>
+                            <a class="btn secondary" href="@step.Route">@step.ActionLabel</a>
                         </div>
                     </div>
                 }
@@ -92,24 +95,28 @@
     <h2>Help Assistant</h2>
     <p class="helper">Ask questions in plain language. The assistant routes you to the right workflow and FAQs.</p>
 
-    <div class="form-grid spacer-top">
-        <div class="field">
-            <label>Your Question</label>
-            <input class="input"
-                   @bind="ChatMessage"
-                   @bind:event="oninput"
-                   @onkeydown="OnChatKeyDownAsync"
-                   placeholder="How do I score overtime matches?" />
+    <form method="get" action="/support">
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Your Question</label>
+                <input class="input"
+                       name="ask"
+                       @bind="ChatMessage"
+                       @bind:event="oninput"
+                       @onkeydown="OnChatKeyDownAsync"
+                       placeholder="How do I score overtime matches?" />
+            </div>
+            <div class="field">
+                <label>Context (optional)</label>
+                <input class="input" name="context" @bind="ChatContext" placeholder="event admin, table worker, coach..." />
+            </div>
         </div>
-        <div class="field">
-            <label>Context (optional)</label>
-            <input class="input" @bind="ChatContext" placeholder="event admin, table worker, coach..." />
-        </div>
-    </div>
 
-    <div class="actions">
-        <button class="btn primary" @onclick="AskAssistantAsync" disabled="@IsBusy">Ask Assistant</button>
-    </div>
+        <div class="actions">
+            <button class="btn primary" @onclick="AskAssistantAsync" disabled="@IsBusy" type="button">Ask Assistant</button>
+            <button class="btn ghost" type="submit">Ask via URL</button>
+        </div>
+    </form>
 
     @if (ChatResponse is not null)
     {
@@ -128,7 +135,7 @@
                             <div class="timeline-item">
                                 <div class="split">
                                     <span>@action</span>
-                                    <button class="btn ghost" @onclick="() => ExecuteSuggestedAction(action)">Open</button>
+                                    <a class="btn ghost" href="@ResolveRouteForAction(action)">Open</a>
                                 </div>
                             </div>
                         }
@@ -142,7 +149,7 @@
                     <div class="actions">
                         @foreach (var faqId in ChatResponse.SuggestedFaqIds)
                         {
-                            <button class="btn ghost" @onclick="() => OpenFaqAsync(faqId)">@faqId</button>
+                            <a class="btn ghost" href="@FaqRoute(faqId)">@faqId</a>
                         }
                     </div>
                 </div>
@@ -152,6 +159,18 @@
 </section>
 
 @code {
+    [SupplyParameterFromQuery(Name = "faq")]
+    public string? FaqQueryParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "faqId")]
+    public string? FaqIdParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "ask")]
+    public string? AskParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "context")]
+    public string? AskContextParam { get; set; }
+
     private bool IsBusy;
     private bool StatusSuccess;
     private string? StatusMessage;
@@ -161,11 +180,48 @@
     private string ChatMessage = string.Empty;
     private string ChatContext = string.Empty;
     private HelpChatResponse? ChatResponse;
+    private string? LastFaqQueryParamHandled;
+    private string? LastFaqIdParamHandled;
+    private string? LastAskCompositeHandled;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadFaqsAsync();
         await LoadGuideAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.Equals(LastFaqQueryParamHandled, FaqQueryParam, StringComparison.Ordinal))
+        {
+            LastFaqQueryParamHandled = FaqQueryParam;
+            if (!string.IsNullOrWhiteSpace(FaqQueryParam))
+            {
+                FaqQuery = FaqQueryParam;
+                await SearchFaqsAsync();
+            }
+        }
+
+        if (!string.Equals(LastFaqIdParamHandled, FaqIdParam, StringComparison.OrdinalIgnoreCase))
+        {
+            LastFaqIdParamHandled = FaqIdParam;
+            if (!string.IsNullOrWhiteSpace(FaqIdParam))
+            {
+                await OpenFaqAsync(FaqIdParam);
+            }
+        }
+
+        var askComposite = $"{AskParam ?? string.Empty}|{AskContextParam ?? string.Empty}";
+        if (!string.Equals(LastAskCompositeHandled, askComposite, StringComparison.Ordinal))
+        {
+            LastAskCompositeHandled = askComposite;
+            if (!string.IsNullOrWhiteSpace(AskParam))
+            {
+                ChatMessage = AskParam;
+                ChatContext = AskContextParam ?? string.Empty;
+                await AskAssistantAsync();
+            }
+        }
     }
 
     private async Task OnFaqKeyDownAsync(KeyboardEventArgs args)
@@ -287,19 +343,6 @@
         }
     }
 
-    private void ExecuteSuggestedAction(string action)
-    {
-        var route = ResolveRouteForAction(action);
-        if (string.IsNullOrWhiteSpace(route))
-        {
-            StatusSuccess = false;
-            StatusMessage = "No route mapped for this suggestion yet.";
-            return;
-        }
-
-        Navigation.NavigateTo(route);
-    }
-
     private async Task OpenFaqAsync(string faqId)
     {
         var result = await ApiClient.GetHelpFaqsAsync();
@@ -324,7 +367,7 @@
         StatusMessage = $"Showing FAQ: {matched.Question}";
     }
 
-    private static string? ResolveRouteForAction(string action)
+    private static string ResolveRouteForAction(string action)
     {
         var normalized = action.Trim().ToLowerInvariant();
 
@@ -370,4 +413,6 @@
 
         return "/support";
     }
+
+    private static string FaqRoute(string faqId) => $"/support?faqId={Uri.EscapeDataString(faqId)}";
 }

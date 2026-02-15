@@ -276,6 +276,9 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "eventId")]
+    public Guid? EventId { get; set; }
+
     private bool IsBusy;
     private bool StatusSuccess;
     private string? StatusMessage;
@@ -314,6 +317,13 @@
         {
             SelectedEventIdText = Workflow.EventId.Value.ToString();
             RegistrationEventIdText = Workflow.EventId.Value.ToString();
+        }
+
+        if (EventId is not null)
+        {
+            SelectedEventIdText = EventId.Value.ToString();
+            RegistrationEventIdText = EventId.Value.ToString();
+            Workflow.EventId = EventId.Value;
         }
 
         if (Workflow.AthleteProfileId is not null)

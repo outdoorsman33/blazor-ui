@@ -1,7 +1,6 @@
 @page "/tournaments"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
-@inject NavigationManager Navigation
 
 <PageTitle>Tournaments - PinPoint Arena</PageTitle>
 
@@ -84,9 +83,9 @@
                                 <div class="tag spacer-top">Workflow Selected</div>
                             }
                             <div class="actions">
-                                <button class="btn secondary" @onclick="() => OpenRegistration(card.EventId)">Register</button>
-                                <button class="btn ghost" @onclick="() => OpenBrackets(card.EventId)">Brackets</button>
-                                <button class="btn ghost" @onclick="() => OpenLive(card.EventId)">Live</button>
+                                <a class="btn secondary" href="@RegistrationRoute(card.EventId)">Register</a>
+                                <a class="btn ghost" href="@BracketsRoute(card.EventId)">Brackets</a>
+                                <a class="btn ghost" href="@LiveRoute(card.EventId)">Live</a>
                             </div>
                         </li>
                     }
@@ -126,9 +125,9 @@
                                 <div class="tag spacer-top">Workflow Selected</div>
                             }
                             <div class="actions">
-                                <button class="btn secondary" @onclick="() => OpenRegistration(card.EventId)">Register</button>
-                                <button class="btn ghost" @onclick="() => OpenBrackets(card.EventId)">Brackets</button>
-                                <button class="btn ghost" @onclick="() => OpenLive(card.EventId)">Live</button>
+                                <a class="btn secondary" href="@RegistrationRoute(card.EventId)">Register</a>
+                                <a class="btn ghost" href="@BracketsRoute(card.EventId)">Brackets</a>
+                                <a class="btn ghost" href="@LiveRoute(card.EventId)">Live</a>
                             </div>
                         </li>
                     }
@@ -168,9 +167,9 @@
                                 <div class="tag spacer-top">Workflow Selected</div>
                             }
                             <div class="actions">
-                                <button class="btn secondary" @onclick="() => OpenRegistration(card.EventId)">Register</button>
-                                <button class="btn ghost" @onclick="() => OpenBrackets(card.EventId)">Brackets</button>
-                                <button class="btn ghost" @onclick="() => OpenLive(card.EventId)">Live</button>
+                                <a class="btn secondary" href="@RegistrationRoute(card.EventId)">Register</a>
+                                <a class="btn ghost" href="@BracketsRoute(card.EventId)">Brackets</a>
+                                <a class="btn ghost" href="@LiveRoute(card.EventId)">Live</a>
                             </div>
                         </li>
                     }
@@ -237,21 +236,9 @@
             : $"Workflow event loaded: {selected.Name} ({selected.State}/{selected.City}).";
     }
 
-    private void OpenRegistration(Guid eventId)
-    {
-        Workflow.EventId = eventId;
-        Navigation.NavigateTo("/registration");
-    }
+    private static string RegistrationRoute(Guid eventId) => $"/registration?eventId={eventId:D}";
 
-    private void OpenBrackets(Guid eventId)
-    {
-        Workflow.EventId = eventId;
-        Navigation.NavigateTo("/brackets");
-    }
+    private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
 
-    private void OpenLive(Guid eventId)
-    {
-        Workflow.EventId = eventId;
-        Navigation.NavigateTo("/live");
-    }
+    private static string LiveRoute(Guid eventId) => $"/live?eventId={eventId:D}";
 }
