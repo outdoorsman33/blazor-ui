@@ -40,6 +40,7 @@ var stripeWebhookToleranceSeconds = int.TryParse(builder.Configuration["Payments
     ? configuredToleranceSeconds
     : 300;
 var mfaRequiredRoles = ResolveMfaRequiredRoles(builder.Configuration);
+var samplePlaybackUrls = ResolveSamplePlaybackUrls(builder.Configuration);
 
 var signingKeyBytes = Encoding.UTF8.GetBytes(jwtSigningKeyRaw);
 if (signingKeyBytes.Length < 32)
@@ -1906,7 +1907,7 @@ athletes.MapGet("/{athleteId:guid}/highlights", async (
             stream?.Id,
             wonMatch ? "Signature Win" : "Tough Battle",
             $"Auto-generated from {match.ResultMethod ?? "match result"} ({match.Score ?? "N/A"}).",
-            stream?.PlaybackUrl ?? $"https://stream.local/highlights/{match.Id:N}.m3u8",
+            NormalizePlaybackUrlForClient(stream?.PlaybackUrl, match.Id, stream?.Id ?? match.Id, samplePlaybackUrls),
             match.ScheduledUtc ?? DateTime.UtcNow.AddMinutes(-8),
             match.CompletedUtc ?? DateTime.UtcNow,
             Math.Min(99, impactScore),
@@ -2312,6 +2313,19 @@ security.MapGet("/mfa/enabled/{userId:guid}", (Guid userId, HttpContext httpCont
 });
 
 var streams = api.MapGroup("/streams").RequireAuthorization("EventOps");
+streams.MapGet("/samples", () =>
+{
+    var samples = samplePlaybackUrls
+        .Select((url, index) => new
+        {
+            Name = $"Sample Playback {index + 1}",
+            Url = url
+        })
+        .ToList();
+
+    return Results.Ok(samples);
+}).AllowAnonymous();
+
 events.MapPost("/{eventId:guid}/streams", async (
     Guid eventId,
     CreateStreamSessionRequest request,
@@ -2341,13 +2355,12 @@ events.MapPost("/{eventId:guid}/streams", async (
         ? "RTMP"
         : request.IngestProtocol.Trim().ToUpperInvariant();
 
-    var generatedPlaybackUrl = $"https://stream.local/{eventId:N}/{Guid.NewGuid():N}.m3u8";
-    var playbackUrl = string.IsNullOrWhiteSpace(request.SourceUrl)
-        ? generatedPlaybackUrl
-        : request.SourceUrl.Trim();
+    var streamId = Guid.NewGuid();
+    var playbackUrl = NormalizePlaybackUrlForClient(request.SourceUrl, eventId, streamId, samplePlaybackUrls);
 
     var stream = new StreamSession
     {
+        Id = streamId,
         TournamentEventId = eventId,
         MatchId = request.MatchId,
         DeviceName = $"{normalizedDeviceName} [{normalizedProtocol}]",
@@ -2380,6 +2393,7 @@ streams.MapPost("/{streamId:guid}/status", async (
 
     await dbContext.SaveChangesAsync(cancellationToken);
 
+    stream.PlaybackUrl = NormalizePlaybackUrlForClient(stream.PlaybackUrl, stream.TournamentEventId, stream.Id, samplePlaybackUrls);
     return Results.Ok(stream);
 });
 
@@ -2390,6 +2404,11 @@ events.MapGet("/{eventId:guid}/streams/active", async (Guid eventId, WrestlingPl
         .Where(x => x.TournamentEventId == eventId && x.Status == StreamStatus.Live)
         .OrderBy(x => x.CreatedUtc)
         .ToListAsync(cancellationToken);
+
+    foreach (var stream in streamsForEvent)
+    {
+        stream.PlaybackUrl = NormalizePlaybackUrlForClient(stream.PlaybackUrl, eventId, stream.Id, samplePlaybackUrls);
+    }
 
     return Results.Ok(streamsForEvent);
 }).AllowAnonymous();
@@ -2627,6 +2646,78 @@ static (int AthleteAScore, int AthleteBScore) ParseScore(string? score)
     return int.TryParse(left, out var aScore) && int.TryParse(right, out var bScore)
         ? (Math.Max(0, aScore), Math.Max(0, bScore))
         : (0, 0);
+}
+
+static List<string> ResolveSamplePlaybackUrls(IConfiguration configuration)
+{
+    var configured = configuration.GetSection("Streams:SamplePlaybackUrls").Get<string[]>();
+    var cleaned = (configured ?? Array.Empty<string>())
+        .Select(x => x?.Trim())
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Select(x => x!)
+        .Where(x =>
+            Uri.TryCreate(x, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    if (cleaned.Count > 0)
+    {
+        return cleaned;
+    }
+
+    return
+    [
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+        "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+    ];
+}
+
+static string NormalizePlaybackUrlForClient(
+    string? playbackUrl,
+    Guid eventId,
+    Guid streamId,
+    IReadOnlyList<string> samplePlaybackUrls)
+{
+    var fallback = SelectSamplePlaybackUrl(eventId, streamId, samplePlaybackUrls);
+    if (string.IsNullOrWhiteSpace(playbackUrl))
+    {
+        return fallback;
+    }
+
+    var trimmed = playbackUrl.Trim();
+    if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+    {
+        return fallback;
+    }
+
+    if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+    {
+        return fallback;
+    }
+
+    var host = uri.Host.Trim();
+    if (host.Equals("stream.local", StringComparison.OrdinalIgnoreCase)
+        || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase))
+    {
+        return fallback;
+    }
+
+    return trimmed;
+}
+
+static string SelectSamplePlaybackUrl(Guid eventId, Guid streamId, IReadOnlyList<string> samplePlaybackUrls)
+{
+    if (samplePlaybackUrls.Count == 0)
+    {
+        return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+    }
+
+    var index = Math.Abs(HashCode.Combine(eventId, streamId)) % samplePlaybackUrls.Count;
+    return samplePlaybackUrls[index];
 }
 
 static HashSet<UserRole> ResolveMfaRequiredRoles(IConfiguration configuration)

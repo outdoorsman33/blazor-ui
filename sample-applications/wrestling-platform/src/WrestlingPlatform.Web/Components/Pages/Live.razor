@@ -85,10 +85,22 @@
                 <label>Playback/Source URL (optional)</label>
                 <input class="input" @bind="SourceUrl" placeholder="https://..." />
             </div>
+            <div class="field">
+                <label>Sample Playback Library</label>
+                <select class="select" @bind="SelectedSampleUrl">
+                    <option value="">Select sample playback...</option>
+                    @foreach (var sample in SamplePlaybackOptions)
+                    {
+                        <option value="@sample.Url">@sample.Name</option>
+                    }
+                </select>
+            </div>
         </div>
         <div class="actions">
             <button class="btn primary" @onclick="CreateStreamAsync" disabled="@IsBusy">Provision Stream</button>
             <button class="btn ghost" @onclick="SetLatestStreamLiveAsync" disabled="@IsBusy">Mark Latest Live</button>
+            <button class="btn secondary" @onclick="ApplySelectedSampleUrl">Use Sample URL</button>
+            <button class="btn secondary" @onclick="ProvisionSampleVideosAsync" disabled="@IsBusy">Add 3 Sample Videos</button>
         </div>
 
         @if (LastProvisionedStream is not null)
@@ -140,6 +152,29 @@
     </div>
 </section>
 
+@if (ActiveStreams.Count > 0)
+{
+    <section class="panel spacer-top">
+        <h2>Live Playback Preview</h2>
+        <p class="helper">Sample URLs are included so tournament pages always have watchable playback links.</p>
+        <div class="panel-grid two spacer-top">
+            @foreach (var stream in ActiveStreams.Take(4))
+            {
+                <article class="list-item">
+                    <div class="item-head">
+                        <span class="item-title">@stream.DeviceName</span>
+                        <span class="item-meta">@stream.Status</span>
+                    </div>
+                    <video controls playsinline preload="metadata" src="@stream.PlaybackUrl" style="width:100%;margin-top:.55rem;border-radius:10px;background:#000;max-height:280px">
+                        Your browser does not support embedded playback.
+                    </video>
+                    <div class="helper spacer-top">@stream.PlaybackUrl</div>
+                </article>
+            }
+        </div>
+    </section>
+}
+
 @code {
     private bool IsBusy;
     private bool StatusSuccess;
@@ -153,9 +188,17 @@
     private string MatchIdText = string.Empty;
     private string Protocol = "RTMP";
     private string SourceUrl = string.Empty;
+    private string SelectedSampleUrl = string.Empty;
 
     private StreamSession? LastProvisionedStream;
     private List<StreamSession> ActiveStreams = [];
+    private static readonly List<SamplePlaybackOption> SamplePlaybackOptions =
+    [
+        new("Sample: Big Buck Bunny", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
+        new("Sample: Elephants Dream", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
+        new("Sample: Sintel", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"),
+        new("Sample: Mux HLS", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
+    ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -317,5 +360,70 @@
         }
     }
 
+    private void ApplySelectedSampleUrl()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedSampleUrl))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Select a sample playback URL first.";
+            return;
+        }
+
+        SourceUrl = SelectedSampleUrl;
+        StatusSuccess = true;
+        StatusMessage = "Sample playback URL applied.";
+    }
+
+    private async Task ProvisionSampleVideosAsync()
+    {
+        if (!Guid.TryParse(SelectedEventIdText, out var eventId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid event id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var createdCount = 0;
+            var liveCount = 0;
+            foreach (var sample in SamplePlaybackOptions.Take(3))
+            {
+                var create = await ApiClient.CreateStreamSessionAsync(
+                    eventId,
+                    new CreateStreamSessionRequest(
+                        MatchId: null,
+                        DeviceName: $"Sample Feed {createdCount + 1}",
+                        IngestProtocol: "HLS",
+                        SourceUrl: sample.Url));
+
+                if (!create.Success || create.Data is null)
+                {
+                    continue;
+                }
+
+                createdCount++;
+                var activate = await ApiClient.UpdateStreamStatusAsync(create.Data.Id, new UpdateStreamStatusRequest(StreamStatus.Live));
+                if (activate.Success)
+                {
+                    liveCount++;
+                }
+
+                LastProvisionedStream = create.Data;
+            }
+
+            await LoadStreamsAsync();
+            StatusSuccess = true;
+            StatusMessage = $"Created {createdCount} sample streams ({liveCount} marked live).";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString("N")[..8];
+
+    private sealed record SamplePlaybackOption(string Name, string Url);
 }

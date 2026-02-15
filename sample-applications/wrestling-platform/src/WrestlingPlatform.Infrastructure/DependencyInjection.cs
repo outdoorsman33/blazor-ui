@@ -622,7 +622,7 @@ public static class DependencyInjection
             quarterFinal1.Id,
             "Mat 1 iPhone 14",
             StreamStatus.Live,
-            "https://stream.local/pinpoint-showcase/mat1.m3u8",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
             matchStartUtc.AddMinutes(2),
             endedUtc: null,
             cancellationToken);
@@ -633,7 +633,7 @@ public static class DependencyInjection
             quarterFinal3.Id,
             "Mat 2 PTZ Cam",
             StreamStatus.Live,
-            "https://stream.local/pinpoint-showcase/mat2.m3u8",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
             matchStartUtc.AddMinutes(46),
             endedUtc: null,
             cancellationToken);
@@ -644,7 +644,7 @@ public static class DependencyInjection
             semiFinal1.Id,
             "Table Cam Backup",
             StreamStatus.Provisioned,
-            "https://stream.local/pinpoint-showcase/table-backup.m3u8",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
             startedUtc: null,
             endedUtc: null,
             cancellationToken);
@@ -1468,22 +1468,31 @@ public static class DependencyInjection
                 continue;
             }
 
-            var fallbackCitySlug = tournamentEvent.City
-                .Trim()
-                .Replace(' ', '-')
-                .ToLowerInvariant();
-
             await EnsureStreamSessionAsync(
                 dbContext,
                 tournamentEvent.Id,
                 firstMatch.Id,
                 $"Mat Cam - {tournamentEvent.City}",
                 StreamStatus.Live,
-                $"https://stream.local/{fallbackCitySlug}/{tournamentEvent.Id:N}.m3u8",
+                ResolveSamplePlaybackUrl(tournamentEvent.Id),
                 tournamentEvent.StartUtc.AddMinutes(15),
                 endedUtc: null,
                 cancellationToken);
         }
+    }
+
+    private static string ResolveSamplePlaybackUrl(Guid seed)
+    {
+        var samples = new[]
+        {
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+        };
+
+        var index = Math.Abs(seed.GetHashCode()) % samples.Length;
+        return samples[index];
     }
 
     private static string HashPassword(string password)
