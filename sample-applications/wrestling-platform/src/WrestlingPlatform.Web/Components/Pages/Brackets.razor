@@ -100,13 +100,20 @@
                 <h2>Pool Style Brackets</h2>
                 <span class="tag">Round Robin Lanes</span>
             </div>
-            @if (Bundle.Pools.Count == 0)
+            <div class="split spacer-top">
+                <span class="helper">Showing @VisiblePools.Count of @Bundle.Pools.Count pools.</span>
+                <label class="check-row">
+                    <input type="checkbox" @bind="HideSmallPools" />
+                    Hide small pools (&lt; @MinimumPoolAthletes athletes)
+                </label>
+            </div>
+            @if (VisiblePools.Count == 0)
             {
                 <p class="helper spacer-top">No pool data available yet.</p>
             }
             else
             {
-                @foreach (var pool in Bundle.Pools)
+                @foreach (var pool in VisiblePools)
                 {
                     <article class="list-item spacer-top">
                         <div class="item-head">
@@ -142,7 +149,11 @@
                                                     }
                                                     else
                                                     {
-                                                        <div class="pool-cell @(cell.IsWin ? "win" : "loss") @(cell.Match.Status == MatchStatus.OnMat ? "live" : string.Empty)">
+                                                        <div class="pool-cell @(cell.IsWin ? "win" : "loss") @(cell.Match.Status == MatchStatus.OnMat ? "live" : string.Empty) @(SelectedMatchId == cell.Match.MatchId ? "selected" : string.Empty)"
+                                                             @onclick="@(() => SelectMatch(cell.Match))"
+                                                             @onkeydown="@((KeyboardEventArgs args) => OnPoolCellKeyDown(args, cell.Match))"
+                                                             tabindex="0"
+                                                             role="button">
                                                             <div class="pool-cell-title">@cell.ResultLabel</div>
                                                             <div class="helper">@cell.OpponentLabel</div>
                                                             <div class="helper">@(cell.Match.Score ?? cell.Match.Status.ToString())</div>
@@ -173,7 +184,7 @@
             <div class="form-grid spacer-top">
                 <div class="field">
                     <label>Division / Weight</label>
-                    <select class="select" @bind="SelectedDivisionKey">
+                    <select class="select" @bind="SelectedDivisionKey" @bind:after="OnDivisionChangedAsync">
                         @foreach (var option in DivisionOptions)
                         {
                             <option value="@option.Key">@option.Label (@option.MatchCount)</option>
@@ -198,6 +209,13 @@
                 <span class="helper">Showing @VisibleMatchCount of @DivisionMatchCount matches in selected division.</span>
                 <button class="btn ghost" @onclick="ResetMatchFilters">Reset Match Filters</button>
             </div>
+            <div class="split spacer-top zoom-row">
+                <span class="helper">Zoom @ZoomPercent%</span>
+                <button class="btn ghost zoom-btn" @onclick="@(() => ChangeZoom(-10))">-</button>
+                <input class="zoom-slider" type="range" min="70" max="170" step="5" @bind="ZoomPercent" />
+                <button class="btn ghost zoom-btn" @onclick="@(() => ChangeZoom(10))">+</button>
+                <button class="btn ghost zoom-btn" @onclick="ResetZoom">Reset</button>
+            </div>
             @if (ActiveLayout.Nodes.Count == 0)
             {
                 <p class="helper spacer-top">No bracket matches available yet.</p>
@@ -205,48 +223,98 @@
             else
             {
                 <div class="bracket-tree-wrap spacer-top">
-                    <div class="bracket-stage" style="@BracketStageStyle">
-                        <svg class="bracket-links" viewBox="@BracketViewBox" preserveAspectRatio="none" aria-hidden="true">
-                            @foreach (var connector in ActiveLayout.Connectors)
+                    <div class="bracket-stage-canvas" style="@BracketCanvasStyle">
+                        <div class="bracket-stage" style="@BracketStageStyle">
+                            <svg class="bracket-links" viewBox="@BracketViewBox" preserveAspectRatio="none" aria-hidden="true">
+                                @foreach (var connector in ActiveLayout.Connectors)
+                                {
+                                    <path class="bracket-link @(connector.IsVisible ? "active" : "muted")" d="@ConnectorPath(connector)" />
+                                }
+                            </svg>
+
+                            @foreach (var round in ActiveLayout.Rounds.Select((value, index) => new { value, index }))
                             {
-                                <path class="bracket-link @(connector.IsVisible ? "active" : "muted")" d="@ConnectorPath(connector)" />
+                                <div class="bracket-round-label" style="@RoundLabelStyle(round.index)">
+                                    Round @round.value
+                                </div>
                             }
-                        </svg>
 
-                        @foreach (var round in ActiveLayout.Rounds.Select((value, index) => new { value, index }))
-                        {
-                            <div class="bracket-round-label" style="@RoundLabelStyle(round.index)">
-                                Round @round.value
-                            </div>
-                        }
-
-                        @foreach (var node in ActiveLayout.Nodes)
-                        {
-                            <article class="bracket-node @MatchStatusClass(node.Match.Status) @(node.IsVisible ? string.Empty : "muted")"
-                                     style="@NodeStyle(node)">
-                                <header class="bracket-node-head">
-                                    <span class="item-title">Match @node.Match.MatchNumber</span>
-                                    <span class="item-meta">@node.Match.Status</span>
-                                </header>
-                                <div class="bracket-node-label">@node.Match.Label</div>
-                                <div class="bracket-athlete @(IsWinner(node.Match, node.Match.AthleteA) ? "winner" : string.Empty)">
-                                    <span>@AthleteLabel(node.Match.AthleteA)</span>
-                                </div>
-                                <div class="bracket-athlete @(IsWinner(node.Match, node.Match.AthleteB) ? "winner" : string.Empty)">
-                                    <span>@AthleteLabel(node.Match.AthleteB)</span>
-                                </div>
-                                <div class="split spacer-top">
-                                    <span class="helper">@(node.Match.Score ?? "Pending")</span>
-                                    <span class="helper">@(node.Match.ResultMethod ?? node.Match.MatNumber ?? "TBD")</span>
-                                </div>
-                                <div class="actions">
-                                    <a class="btn ghost" href="@MatScoringRoute(node.Match.MatchId)">Open Mat Scoring</a>
-                                </div>
-                            </article>
-                        }
+                            @foreach (var node in ActiveLayout.Nodes)
+                            {
+                                <article class="bracket-node @MatchStatusClass(node.Match.Status) @(node.IsVisible ? string.Empty : "muted") @(SelectedMatchId == node.Match.MatchId ? "selected" : string.Empty)"
+                                         style="@NodeStyle(node)"
+                                         @onclick="@(() => SelectMatch(node.Match))"
+                                         @onkeydown="@((KeyboardEventArgs args) => OnNodeKeyDown(args, node.Match))"
+                                         tabindex="0"
+                                         role="button"
+                                         aria-label="@($"Match {node.Match.MatchNumber}")">
+                                    <header class="bracket-node-head">
+                                        <span class="item-title">Match @node.Match.MatchNumber</span>
+                                        <span class="item-meta">@node.Match.Status</span>
+                                    </header>
+                                    <div class="bracket-node-label">@node.Match.Label</div>
+                                    <div class="bracket-athlete @(IsWinner(node.Match, node.Match.AthleteA) ? "winner" : string.Empty)">
+                                        <span>@AthleteLabel(node.Match.AthleteA)</span>
+                                    </div>
+                                    <div class="bracket-athlete @(IsWinner(node.Match, node.Match.AthleteB) ? "winner" : string.Empty)">
+                                        <span>@AthleteLabel(node.Match.AthleteB)</span>
+                                    </div>
+                                    <div class="split spacer-top">
+                                        <span class="helper">@(node.Match.Score ?? "Pending")</span>
+                                        <span class="helper">@(node.Match.ResultMethod ?? node.Match.MatNumber ?? "TBD")</span>
+                                    </div>
+                                    <div class="actions">
+                                        <a class="btn ghost" href="@MatScoringRoute(node.Match.MatchId)">Open Mat Scoring</a>
+                                    </div>
+                                </article>
+                            }
+                        </div>
                     </div>
                 </div>
             }
+        </section>
+    }
+
+    @if (SelectedMatch is not null)
+    {
+        <section class="panel spacer-top">
+            <div class="item-head">
+                <h2>Match Details</h2>
+                <span class="tag">Match @SelectedMatch.MatchNumber</span>
+            </div>
+            <div class="form-grid spacer-top">
+                <div class="field">
+                    <label>Status</label>
+                    <div>@SelectedMatch.Status</div>
+                </div>
+                <div class="field">
+                    <label>Mat</label>
+                    <div>@(SelectedMatch.MatNumber ?? "TBD")</div>
+                </div>
+                <div class="field">
+                    <label>Result</label>
+                    <div>@(SelectedMatch.Score ?? "Pending") @(SelectedMatch.ResultMethod is null ? string.Empty : $"({SelectedMatch.ResultMethod})")</div>
+                </div>
+            </div>
+            <div class="list spacer-top">
+                <div class="list-item">
+                    <strong>Athlete A:</strong> @AthleteLabel(SelectedMatch.AthleteA)
+                </div>
+                <div class="list-item">
+                    <strong>Athlete B:</strong> @AthleteLabel(SelectedMatch.AthleteB)
+                </div>
+                @if (SelectedMatch.Winner is not null)
+                {
+                    <div class="list-item">
+                        <strong>Winner:</strong> @SelectedMatch.Winner.Name
+                    </div>
+                }
+            </div>
+            <div class="actions">
+                <a class="btn primary" href="@MatScoringRoute(SelectedMatch.MatchId)">Open Mat Scoring</a>
+                <button class="btn ghost" @onclick="SelectPreviousMatch" disabled="@(PreviousMatch is null)">Previous Match</button>
+                <button class="btn ghost" @onclick="SelectNextMatch" disabled="@(NextMatch is null)">Next Match</button>
+            </div>
         </section>
     }
 }
@@ -266,6 +334,10 @@
     private string SelectedDivisionKey = string.Empty;
     private string StatusFilter = "All";
     private string SearchText = string.Empty;
+    private Guid? SelectedMatchId;
+    private int ZoomPercent = 100;
+    private bool HideSmallPools = true;
+    private const int MinimumPoolAthletes = 3;
 
     private static readonly string[] StatusOptions =
     [
@@ -295,10 +367,37 @@
 
     private int DivisionMatchCount => DivisionMatches.Count;
     private int VisibleMatchCount => DivisionMatches.Count(IsVisibleByFilters);
+    private BracketVisualMatch? SelectedMatch =>
+        Bundle?.BracketMatches.FirstOrDefault(match => match.MatchId == SelectedMatchId);
+    private List<BracketVisualMatch> NavigationMatches =>
+        DivisionMatches.Where(IsVisibleByFilters).ToList();
+    private BracketVisualMatch? PreviousMatch =>
+        SelectedMatch is null
+            ? null
+            : NavigationMatches
+                .TakeWhile(match => match.MatchId != SelectedMatch.MatchId)
+                .LastOrDefault();
+    private BracketVisualMatch? NextMatch =>
+        SelectedMatch is null
+            ? null
+            : NavigationMatches
+                .SkipWhile(match => match.MatchId != SelectedMatch.MatchId)
+                .Skip(1)
+                .FirstOrDefault();
+    private List<PoolVisualGroup> VisiblePools =>
+        Bundle?.Pools
+            .Where(pool => !HideSmallPools || pool.Standings.Count >= MinimumPoolAthletes)
+            .OrderByDescending(pool => pool.Standings.Count)
+            .ThenBy(pool => pool.Level)
+            .ThenBy(pool => pool.WeightClass)
+            .ToList()
+        ?? [];
 
     private EliminationLayout ActiveLayout => BuildEliminationLayout(DivisionMatches);
     private string BracketViewBox => $"0 0 {ActiveLayout.Width:0.##} {ActiveLayout.Height:0.##}";
-    private string BracketStageStyle => $"width:{ActiveLayout.Width:0.##}px; height:{ActiveLayout.Height:0.##}px;";
+    private string BracketStageStyle => $"width:{ActiveLayout.Width:0.##}px; height:{ActiveLayout.Height:0.##}px; transform:scale({ZoomScale:0.###}); transform-origin:top left;";
+    private string BracketCanvasStyle => $"width:{ActiveLayout.Width * ZoomScale:0.##}px; height:{ActiveLayout.Height * ZoomScale:0.##}px;";
+    private double ZoomScale => ZoomPercent / 100d;
 
     protected override async Task OnInitializedAsync()
     {
@@ -389,9 +488,11 @@
             if (Bundle.BracketMatches.Count > 0)
             {
                 Workflow.MatchId = Bundle.BracketMatches[0].MatchId;
+                SelectedMatchId = Workflow.MatchId;
             }
 
             EnsureDivisionSelection();
+            EnsureSelectedMatch();
 
             StatusSuccess = true;
             StatusMessage = $"Loaded visual bundle for {Bundle.EventName}.";
@@ -444,6 +545,88 @@
     {
         StatusFilter = "All";
         SearchText = string.Empty;
+        EnsureSelectedMatch();
+    }
+
+    private Task OnDivisionChangedAsync()
+    {
+        EnsureSelectedMatch();
+        return Task.CompletedTask;
+    }
+
+    private void EnsureSelectedMatch()
+    {
+        var candidateSet = NavigationMatches;
+        if (candidateSet.Count == 0)
+        {
+            SelectedMatchId = null;
+            return;
+        }
+
+        if (SelectedMatchId is null || candidateSet.All(match => match.MatchId != SelectedMatchId.Value))
+        {
+            SelectedMatchId = candidateSet[0].MatchId;
+            Workflow.MatchId = SelectedMatchId;
+        }
+    }
+
+    private void SelectMatch(BracketVisualMatch? match)
+    {
+        if (match is null)
+        {
+            return;
+        }
+
+        SelectedMatchId = match.MatchId;
+        Workflow.MatchId = match.MatchId;
+    }
+
+    private void SelectPreviousMatch()
+    {
+        if (PreviousMatch is null)
+        {
+            return;
+        }
+
+        SelectMatch(PreviousMatch);
+    }
+
+    private void SelectNextMatch()
+    {
+        if (NextMatch is null)
+        {
+            return;
+        }
+
+        SelectMatch(NextMatch);
+    }
+
+    private void ChangeZoom(int delta)
+    {
+        ZoomPercent = Math.Clamp(ZoomPercent + delta, 70, 170);
+    }
+
+    private void ResetZoom()
+    {
+        ZoomPercent = 100;
+    }
+
+    private void OnNodeKeyDown(KeyboardEventArgs args, BracketVisualMatch match)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(args.Key, " ", StringComparison.Ordinal))
+        {
+            SelectMatch(match);
+        }
+    }
+
+    private void OnPoolCellKeyDown(KeyboardEventArgs args, BracketVisualMatch match)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(args.Key, " ", StringComparison.Ordinal))
+        {
+            SelectMatch(match);
+        }
     }
 
     private void EnsureDivisionSelection()
