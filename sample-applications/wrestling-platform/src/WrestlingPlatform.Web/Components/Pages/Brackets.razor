@@ -52,6 +52,7 @@
         <button class="btn ghost" @onclick="LoadEventsAsync" disabled="@IsBusy">Refresh Events</button>
         <button class="btn primary" @onclick="LoadVisualAsync" disabled="@IsBusy">Load Brackets</button>
         <button class="btn ghost" @onclick="UseWorkflowEvent" disabled="@IsBusy">Use Workflow Event</button>
+        <a class="btn secondary" href="@SelectedBracketsHref">Open via URL</a>
     </div>
     <ul class="list spacer-top">
         @if (Events.Count == 0)
@@ -85,13 +86,20 @@
             <h2>@Bundle.EventName</h2>
             <span class="tag">@Bundle.TournamentFormat</span>
         </div>
-        <p class="helper spacer-top">Brackets released: @(Bundle.BracketsReleased ? "Yes" : "No")</p>
+        <div class="split spacer-top">
+            <span class="tag">Brackets released: @(Bundle.BracketsReleased ? "Yes" : "No")</span>
+            <span class="tag">Matches: @Bundle.BracketMatches.Count</span>
+            <span class="tag">Divisions: @DivisionOptions.Count</span>
+        </div>
     </section>
 
     @if (Bundle.TournamentFormat == TournamentFormat.MadisonPool)
     {
         <section class="panel spacer-top">
-            <h2>Madison Pools</h2>
+            <div class="item-head">
+                <h2>Pool Style Brackets</h2>
+                <span class="tag">Round Robin Lanes</span>
+            </div>
             @if (Bundle.Pools.Count == 0)
             {
                 <p class="helper spacer-top">No pool data available yet.</p>
@@ -100,39 +108,57 @@
             {
                 @foreach (var pool in Bundle.Pools)
                 {
-                    <div class="list-item spacer-top">
+                    <article class="list-item spacer-top">
                         <div class="item-head">
                             <span class="item-title">@pool.PoolName</span>
                             <span class="item-meta">@pool.Style | @pool.WeightClass lbs</span>
                         </div>
-                        <div class="table-wrap spacer-top">
-                            <table class="table">
+                        <div class="table-wrap spacer-top pool-board-wrap">
+                            <table class="table pool-board">
                                 <thead>
                                     <tr>
                                         <th>Athlete</th>
-                                        <th>W</th>
-                                        <th>L</th>
-                                        <th>PF</th>
-                                        <th>PA</th>
+                                        @foreach (var round in PoolRounds(pool))
+                                        {
+                                            <th>RR Rnd @round</th>
+                                        }
+                                        <th>Record</th>
                                         <th>Diff</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var standing in pool.Standings)
+                                    @foreach (var row in BuildPoolRows(pool))
                                     {
                                         <tr>
-                                            <td>@standing.AthleteName</td>
-                                            <td>@standing.Wins</td>
-                                            <td>@standing.Losses</td>
-                                            <td>@standing.PointsFor</td>
-                                            <td>@standing.PointsAgainst</td>
-                                            <td>@standing.Differential</td>
+                                            <td>
+                                                <div class="item-title">@row.AthleteName</div>
+                                            </td>
+                                            @foreach (var cell in row.Cells)
+                                            {
+                                                <td>
+                                                    @if (cell.Match is null)
+                                                    {
+                                                        <div class="pool-cell empty">-</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="pool-cell @(cell.IsWin ? "win" : "loss") @(cell.Match.Status == MatchStatus.OnMat ? "live" : string.Empty)">
+                                                            <div class="pool-cell-title">@cell.ResultLabel</div>
+                                                            <div class="helper">@cell.OpponentLabel</div>
+                                                            <div class="helper">@(cell.Match.Score ?? cell.Match.Status.ToString())</div>
+                                                            <a class="btn ghost pool-cell-btn" href="@MatScoringRoute(cell.Match.MatchId)">Score</a>
+                                                        </div>
+                                                    }
+                                                </td>
+                                            }
+                                            <td>@row.Wins-@row.Losses</td>
+                                            <td>@row.Differential</td>
                                         </tr>
                                     }
                                 </tbody>
                             </table>
                         </div>
-                    </div>
+                    </article>
                 }
             }
         </section>
@@ -140,47 +166,87 @@
     else
     {
         <section class="panel spacer-top">
-            <h2>Interactive Bracket View</h2>
-            <div class="bracket-lane spacer-top">
-                @if (RoundGroups.Count == 0)
-                {
-                    <p class="helper">No bracket matches available yet.</p>
-                }
-                else
-                {
-                    @foreach (var roundGroup in RoundGroups)
-                    {
-                        <div class="bracket-round">
-                            <h3>Round @roundGroup.Key</h3>
-                            @foreach (var match in roundGroup.OrderBy(x => x.MatchNumber))
-                            {
-                                <article class="bracket-card">
-                                    <header class="item-head">
-                                        <strong>Match @match.MatchNumber</strong>
-                                        <span class="item-meta">@match.Status</span>
-                                    </header>
-                                    <div class="split spacer-top">
-                                        <span>@AthleteLabel(match.AthleteA)</span>
-                                        <span class="helper">vs</span>
-                                        <span>@AthleteLabel(match.AthleteB)</span>
-                                    </div>
-                                    @if (match.Winner is not null)
-                                    {
-                                        <div class="helper spacer-top">Winner: <strong>@match.Winner.Name</strong> (@match.Score via @match.ResultMethod)</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="helper spacer-top">Pending result</div>
-                                    }
-                                    <div class="actions">
-                                        <a class="btn ghost" href="@MatScoringRoute(match.MatchId)">Open Mat Scoring</a>
-                                    </div>
-                                </article>
-                            }
-                        </div>
-                    }
-                }
+            <div class="item-head">
+                <h2>Interactive Bracket Tree</h2>
+                <span class="tag">Zoom-Ready Lane View</span>
             </div>
+            <div class="form-grid spacer-top">
+                <div class="field">
+                    <label>Division / Weight</label>
+                    <select class="select" @bind="SelectedDivisionKey">
+                        @foreach (var option in DivisionOptions)
+                        {
+                            <option value="@option.Key">@option.Label (@option.MatchCount)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Status filter</label>
+                    <select class="select" @bind="StatusFilter">
+                        @foreach (var option in StatusOptions)
+                        {
+                            <option value="@option">@option</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Find athlete or match</label>
+                    <input class="input" @bind="SearchText" @bind:event="oninput" placeholder="name, label, mat..." />
+                </div>
+            </div>
+            <div class="split spacer-top">
+                <span class="helper">Showing @VisibleMatchCount of @DivisionMatchCount matches in selected division.</span>
+                <button class="btn ghost" @onclick="ResetMatchFilters">Reset Match Filters</button>
+            </div>
+            @if (ActiveLayout.Nodes.Count == 0)
+            {
+                <p class="helper spacer-top">No bracket matches available yet.</p>
+            }
+            else
+            {
+                <div class="bracket-tree-wrap spacer-top">
+                    <div class="bracket-stage" style="@BracketStageStyle">
+                        <svg class="bracket-links" viewBox="@BracketViewBox" preserveAspectRatio="none" aria-hidden="true">
+                            @foreach (var connector in ActiveLayout.Connectors)
+                            {
+                                <path class="bracket-link @(connector.IsVisible ? "active" : "muted")" d="@ConnectorPath(connector)" />
+                            }
+                        </svg>
+
+                        @foreach (var round in ActiveLayout.Rounds.Select((value, index) => new { value, index }))
+                        {
+                            <div class="bracket-round-label" style="@RoundLabelStyle(round.index)">
+                                Round @round.value
+                            </div>
+                        }
+
+                        @foreach (var node in ActiveLayout.Nodes)
+                        {
+                            <article class="bracket-node @MatchStatusClass(node.Match.Status) @(node.IsVisible ? string.Empty : "muted")"
+                                     style="@NodeStyle(node)">
+                                <header class="bracket-node-head">
+                                    <span class="item-title">Match @node.Match.MatchNumber</span>
+                                    <span class="item-meta">@node.Match.Status</span>
+                                </header>
+                                <div class="bracket-node-label">@node.Match.Label</div>
+                                <div class="bracket-athlete @(IsWinner(node.Match, node.Match.AthleteA) ? "winner" : string.Empty)">
+                                    <span>@AthleteLabel(node.Match.AthleteA)</span>
+                                </div>
+                                <div class="bracket-athlete @(IsWinner(node.Match, node.Match.AthleteB) ? "winner" : string.Empty)">
+                                    <span>@AthleteLabel(node.Match.AthleteB)</span>
+                                </div>
+                                <div class="split spacer-top">
+                                    <span class="helper">@(node.Match.Score ?? "Pending")</span>
+                                    <span class="helper">@(node.Match.ResultMethod ?? node.Match.MatNumber ?? "TBD")</span>
+                                </div>
+                                <div class="actions">
+                                    <a class="btn ghost" href="@MatScoringRoute(node.Match.MatchId)">Open Mat Scoring</a>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                </div>
+            }
         </section>
     }
 }
@@ -197,14 +263,42 @@
     private string SelectedEventIdText = string.Empty;
     private List<TableWorkerEventSummary> Events = [];
     private TournamentBracketVisualBundle? Bundle;
+    private string SelectedDivisionKey = string.Empty;
+    private string StatusFilter = "All";
+    private string SearchText = string.Empty;
 
-    private List<IGrouping<int, BracketVisualMatch>> RoundGroups =>
-        Bundle?.BracketMatches
-            .OrderBy(x => x.Round)
-            .ThenBy(x => x.MatchNumber)
-            .GroupBy(x => x.Round)
-            .ToList()
-        ?? [];
+    private static readonly string[] StatusOptions =
+    [
+        "All",
+        nameof(MatchStatus.Scheduled),
+        nameof(MatchStatus.InTheHole),
+        nameof(MatchStatus.OnMat),
+        nameof(MatchStatus.Completed),
+        nameof(MatchStatus.Forfeit),
+        nameof(MatchStatus.Cancelled)
+    ];
+
+    private string SelectedBracketsHref =>
+        Guid.TryParse(SelectedEventIdText, out var eventId) ? BracketsRoute(eventId) : "/brackets";
+
+    private List<DivisionOption> DivisionOptions => BuildDivisionOptions();
+
+    private List<BracketVisualMatch> DivisionMatches =>
+        Bundle is null
+            ? []
+            : Bundle.BracketMatches
+                .Where(match => string.IsNullOrWhiteSpace(SelectedDivisionKey)
+                    || string.Equals(DivisionKey(match), SelectedDivisionKey, StringComparison.Ordinal))
+                .OrderBy(match => match.Round)
+                .ThenBy(match => match.MatchNumber)
+                .ToList();
+
+    private int DivisionMatchCount => DivisionMatches.Count;
+    private int VisibleMatchCount => DivisionMatches.Count(IsVisibleByFilters);
+
+    private EliminationLayout ActiveLayout => BuildEliminationLayout(DivisionMatches);
+    private string BracketViewBox => $"0 0 {ActiveLayout.Width:0.##} {ActiveLayout.Height:0.##}";
+    private string BracketStageStyle => $"width:{ActiveLayout.Width:0.##}px; height:{ActiveLayout.Height:0.##}px;";
 
     protected override async Task OnInitializedAsync()
     {
@@ -297,6 +391,8 @@
                 Workflow.MatchId = Bundle.BracketMatches[0].MatchId;
             }
 
+            EnsureDivisionSelection();
+
             StatusSuccess = true;
             StatusMessage = $"Loaded visual bundle for {Bundle.EventName}.";
         }
@@ -313,10 +409,407 @@
             return "TBD";
         }
 
-        return $"{athlete.Name} (Seed {athlete.Seed}, Rank {athlete.Rank})";
+        return $"{athlete.Name}  |  Seed {athlete.Seed}  |  Rank {athlete.Rank}";
+    }
+
+    private static bool IsWinner(BracketVisualMatch match, BracketVisualAthlete? athlete) =>
+        athlete is not null
+        && match.Winner is not null
+        && athlete.AthleteId == match.Winner.AthleteId;
+
+    private bool IsVisibleByFilters(BracketVisualMatch match)
+    {
+        var statusPass = string.Equals(StatusFilter, "All", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(match.Status.ToString(), StatusFilter, StringComparison.OrdinalIgnoreCase);
+
+        if (!statusPass)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(SearchText))
+        {
+            return true;
+        }
+
+        var q = SearchText.Trim();
+        return match.Label.Contains(q, StringComparison.OrdinalIgnoreCase)
+               || (match.AthleteA?.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (match.AthleteB?.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (match.Winner?.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (match.MatNumber?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private void ResetMatchFilters()
+    {
+        StatusFilter = "All";
+        SearchText = string.Empty;
+    }
+
+    private void EnsureDivisionSelection()
+    {
+        var options = DivisionOptions;
+        if (options.Count == 0)
+        {
+            SelectedDivisionKey = string.Empty;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(SelectedDivisionKey)
+            || options.All(option => !string.Equals(option.Key, SelectedDivisionKey, StringComparison.Ordinal)))
+        {
+            SelectedDivisionKey = options[0].Key;
+        }
+    }
+
+    private List<DivisionOption> BuildDivisionOptions()
+    {
+        if (Bundle is null || Bundle.BracketMatches.Count == 0)
+        {
+            return [];
+        }
+
+        var keyed = Bundle.BracketMatches
+            .GroupBy(DivisionKey)
+            .Select(group =>
+            {
+                var sample = group.First();
+                var label = DivisionLabel(sample);
+                return new DivisionOption(group.Key, label, group.Count());
+            })
+            .OrderBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return keyed;
+    }
+
+    private static string DivisionKey(BracketVisualMatch match)
+    {
+        if (match.AthleteA is not null)
+        {
+            return $"{match.AthleteA.Level}:{match.AthleteA.WeightClass:0.##}";
+        }
+
+        if (match.AthleteB is not null)
+        {
+            return $"{match.AthleteB.Level}:{match.AthleteB.WeightClass:0.##}";
+        }
+
+        var labelPrefix = LabelPrefix(match.Label);
+        return $"label:{labelPrefix}";
+    }
+
+    private static string DivisionLabel(BracketVisualMatch match)
+    {
+        if (match.AthleteA is not null)
+        {
+            return $"{match.AthleteA.Level} {match.AthleteA.WeightClass:0.##} lbs";
+        }
+
+        if (match.AthleteB is not null)
+        {
+            return $"{match.AthleteB.Level} {match.AthleteB.WeightClass:0.##} lbs";
+        }
+
+        return LabelPrefix(match.Label);
+    }
+
+    private static string LabelPrefix(string label)
+    {
+        var marker = label.IndexOf(" - ", StringComparison.Ordinal);
+        return marker > 0 ? label[..marker].Trim() : label.Trim();
+    }
+
+    private static IReadOnlyList<int> PoolRounds(PoolVisualGroup pool) =>
+        pool.Matches.Select(match => match.Round).Distinct().OrderBy(round => round).ToList();
+
+    private List<PoolRow> BuildPoolRows(PoolVisualGroup pool)
+    {
+        var rounds = PoolRounds(pool);
+        var standingsById = pool.Standings.ToDictionary(standing => standing.AthleteId, standing => standing);
+
+        var athletes = new Dictionary<Guid, string>();
+        foreach (var standing in pool.Standings)
+        {
+            athletes[standing.AthleteId] = standing.AthleteName;
+        }
+
+        foreach (var match in pool.Matches)
+        {
+            if (match.AthleteA is not null)
+            {
+                athletes[match.AthleteA.AthleteId] = match.AthleteA.Name;
+            }
+
+            if (match.AthleteB is not null)
+            {
+                athletes[match.AthleteB.AthleteId] = match.AthleteB.Name;
+            }
+        }
+
+        var rows = new List<PoolRow>(athletes.Count);
+        foreach (var athlete in athletes)
+        {
+            standingsById.TryGetValue(athlete.Key, out var standing);
+            var cells = new List<PoolCell>(rounds.Count);
+
+            foreach (var round in rounds)
+            {
+                var match = pool.Matches.FirstOrDefault(candidate =>
+                    candidate.Round == round
+                    && ((candidate.AthleteA?.AthleteId == athlete.Key) || (candidate.AthleteB?.AthleteId == athlete.Key)));
+
+                if (match is null)
+                {
+                    cells.Add(new PoolCell(round, null, "-", "-", false));
+                    continue;
+                }
+
+                var isAthleteA = match.AthleteA?.AthleteId == athlete.Key;
+                var opponent = isAthleteA ? match.AthleteB : match.AthleteA;
+                var opponentLabel = opponent?.Name ?? "BYE";
+
+                var resultLabel = match.Status switch
+                {
+                    MatchStatus.Completed when match.Winner is null => "Pending",
+                    MatchStatus.Completed when match.Winner.AthleteId == athlete.Key => "W",
+                    MatchStatus.Completed => "L",
+                    MatchStatus.OnMat => "Live",
+                    MatchStatus.InTheHole => "ITH",
+                    _ => match.Status.ToString()
+                };
+
+                var isWin = match.Status == MatchStatus.Completed
+                            && match.Winner is not null
+                            && match.Winner.AthleteId == athlete.Key;
+
+                cells.Add(new PoolCell(round, match, opponentLabel, resultLabel, isWin));
+            }
+
+            rows.Add(new PoolRow(
+                athlete.Key,
+                athlete.Value,
+                standing?.Wins ?? 0,
+                standing?.Losses ?? 0,
+                standing?.Differential ?? 0,
+                cells));
+        }
+
+        return rows
+            .OrderByDescending(row => row.Wins)
+            .ThenByDescending(row => row.Differential)
+            .ThenBy(row => row.AthleteName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string MatchStatusClass(MatchStatus status) => status switch
+    {
+        MatchStatus.OnMat => "live",
+        MatchStatus.InTheHole => "in-hole",
+        MatchStatus.Completed => "complete",
+        MatchStatus.Forfeit => "forfeit",
+        MatchStatus.Cancelled => "cancelled",
+        _ => "scheduled"
+    };
+
+    private string NodeStyle(BracketNode node) => $"left:{node.Left:0.##}px; top:{node.Top:0.##}px;";
+
+    private static string ConnectorPath(BracketConnector connector)
+    {
+        var centerX = (connector.X1 + connector.X2) / 2d;
+        return $"M {connector.X1:0.##} {connector.Y1:0.##} L {centerX:0.##} {connector.Y1:0.##} L {centerX:0.##} {connector.Y2:0.##} L {connector.X2:0.##} {connector.Y2:0.##}";
+    }
+
+    private static (int A, int B) ResolveSourceIndexes(int previousCount, int currentCount, int currentIndex)
+    {
+        if (previousCount <= 0 || currentCount <= 0)
+        {
+            return (0, 0);
+        }
+
+        if (previousCount >= currentCount * 2)
+        {
+            var first = Math.Min(previousCount - 1, currentIndex * 2);
+            var second = Math.Min(previousCount - 1, first + 1);
+            return (first, second);
+        }
+
+        var ratio = (double)previousCount / currentCount;
+        var start = Math.Clamp((int)Math.Floor(currentIndex * ratio), 0, previousCount - 1);
+        var end = Math.Clamp((int)Math.Ceiling((currentIndex + 1) * ratio) - 1, start, previousCount - 1);
+        return (start, end);
+    }
+
+    private static double RoundLeft(int roundIndex) =>
+        EliminationLayout.StagePaddingX + (roundIndex * (EliminationLayout.NodeWidth + EliminationLayout.RoundGap));
+
+    private string RoundLabelStyle(int roundIndex) =>
+        $"left:{RoundLeft(roundIndex):0.##}px; width:{EliminationLayout.NodeWidth:0.##}px;";
+
+    private EliminationLayout BuildEliminationLayout(List<BracketVisualMatch> matches)
+    {
+        if (matches.Count == 0)
+        {
+            return EliminationLayout.Empty;
+        }
+
+        var rounds = matches
+            .Select(match => match.Round)
+            .Distinct()
+            .OrderBy(round => round)
+            .ToList();
+
+        var nodes = new List<BracketNode>(matches.Count);
+        var connectors = new List<BracketConnector>();
+        var nodesByRound = new Dictionary<int, List<BracketNode>>();
+
+        for (var roundIndex = 0; roundIndex < rounds.Count; roundIndex++)
+        {
+            var round = rounds[roundIndex];
+            var roundMatches = matches
+                .Where(match => match.Round == round)
+                .OrderBy(match => match.MatchNumber)
+                .ThenBy(match => match.Label, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var tops = new List<double>(roundMatches.Count);
+            if (roundIndex == 0)
+            {
+                for (var i = 0; i < roundMatches.Count; i++)
+                {
+                    tops.Add(i * (EliminationLayout.NodeHeight + EliminationLayout.RowGap));
+                }
+            }
+            else
+            {
+                var previousRound = rounds[roundIndex - 1];
+                var previousNodes = nodesByRound[previousRound];
+
+                for (var i = 0; i < roundMatches.Count; i++)
+                {
+                    var (srcA, srcB) = ResolveSourceIndexes(previousNodes.Count, roundMatches.Count, i);
+                    var projectedTop = (previousNodes[srcA].Top + previousNodes[srcB].Top) / 2d;
+                    tops.Add(projectedTop);
+                }
+
+                for (var i = 1; i < tops.Count; i++)
+                {
+                    var minimumTop = tops[i - 1] + EliminationLayout.NodeHeight + 14d;
+                    if (tops[i] < minimumTop)
+                    {
+                        tops[i] = minimumTop;
+                    }
+                }
+            }
+
+            var left = RoundLeft(roundIndex);
+            var roundNodes = new List<BracketNode>(roundMatches.Count);
+            for (var i = 0; i < roundMatches.Count; i++)
+            {
+                var match = roundMatches[i];
+                var top = EliminationLayout.StagePaddingY + EliminationLayout.HeaderHeight + tops[i];
+                var visible = IsVisibleByFilters(match);
+
+                var node = new BracketNode(match, round, roundIndex, i, left, top, visible);
+                roundNodes.Add(node);
+                nodes.Add(node);
+            }
+
+            nodesByRound[round] = roundNodes;
+
+            if (roundIndex == 0)
+            {
+                continue;
+            }
+
+            var previousRoundValue = rounds[roundIndex - 1];
+            var previousRoundNodes = nodesByRound[previousRoundValue];
+
+            for (var i = 0; i < roundNodes.Count; i++)
+            {
+                var target = roundNodes[i];
+                var (srcA, srcB) = ResolveSourceIndexes(previousRoundNodes.Count, roundNodes.Count, i);
+                var sources = new[] { previousRoundNodes[srcA], previousRoundNodes[srcB] }
+                    .DistinctBy(source => source.Match.MatchId)
+                    .ToList();
+
+                foreach (var source in sources)
+                {
+                    connectors.Add(new BracketConnector(
+                        source.Left + EliminationLayout.NodeWidth,
+                        source.Top + (EliminationLayout.NodeHeight / 2d),
+                        target.Left,
+                        target.Top + (EliminationLayout.NodeHeight / 2d),
+                        source.IsVisible && target.IsVisible));
+                }
+            }
+        }
+
+        var width = (EliminationLayout.StagePaddingX * 2d)
+                    + (rounds.Count * EliminationLayout.NodeWidth)
+                    + (Math.Max(0, rounds.Count - 1) * EliminationLayout.RoundGap);
+
+        var height = Math.Max(
+            420d,
+            nodes.Max(node => node.Top) + EliminationLayout.NodeHeight + EliminationLayout.StagePaddingBottom);
+
+        return new EliminationLayout(rounds, nodes, connectors, width, height);
     }
 
     private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
 
     private static string MatScoringRoute(Guid matchId) => $"/mat-scoring?matchId={matchId:D}";
+
+    private sealed record DivisionOption(string Key, string Label, int MatchCount);
+
+    private sealed record PoolCell(
+        int Round,
+        BracketVisualMatch? Match,
+        string OpponentLabel,
+        string ResultLabel,
+        bool IsWin);
+
+    private sealed record PoolRow(
+        Guid AthleteId,
+        string AthleteName,
+        int Wins,
+        int Losses,
+        int Differential,
+        List<PoolCell> Cells);
+
+    private sealed record BracketNode(
+        BracketVisualMatch Match,
+        int Round,
+        int RoundIndex,
+        int PositionInRound,
+        double Left,
+        double Top,
+        bool IsVisible);
+
+    private sealed record BracketConnector(
+        double X1,
+        double Y1,
+        double X2,
+        double Y2,
+        bool IsVisible);
+
+    private sealed record EliminationLayout(
+        IReadOnlyList<int> Rounds,
+        IReadOnlyList<BracketNode> Nodes,
+        IReadOnlyList<BracketConnector> Connectors,
+        double Width,
+        double Height)
+    {
+        public const double NodeWidth = 320d;
+        public const double NodeHeight = 148d;
+        public const double RoundGap = 90d;
+        public const double RowGap = 28d;
+        public const double HeaderHeight = 38d;
+        public const double StagePaddingX = 18d;
+        public const double StagePaddingY = 14d;
+        public const double StagePaddingBottom = 26d;
+
+        public static EliminationLayout Empty { get; } =
+            new([], [], [], 480d, 420d);
+    }
 }

@@ -427,3 +427,171 @@ hr.soft {
     background: #fff;
     padding: 0.65rem;
 }
+
+.bracket-tree-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 1px solid #d8d1c0;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #f6f7fb 0%, #f2f4f8 100%);
+    padding: 0.65rem;
+}
+
+.bracket-stage {
+    position: relative;
+}
+
+.bracket-links {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.bracket-link {
+    fill: none;
+    stroke-width: 2.1;
+    vector-effect: non-scaling-stroke;
+}
+
+.bracket-link.active {
+    stroke: #5d6f82;
+}
+
+.bracket-link.muted {
+    stroke: rgba(131, 143, 156, 0.35);
+}
+
+.bracket-round-label {
+    position: absolute;
+    top: 0.45rem;
+    text-align: left;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #68757e;
+    font-weight: 800;
+}
+
+.bracket-node {
+    position: absolute;
+    width: 320px;
+    height: 148px;
+    border: 1px solid #d2cbb8;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 7px 16px rgba(25, 32, 39, 0.08);
+    padding: 0.52rem 0.58rem;
+    transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+}
+
+.bracket-node:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 26px rgba(25, 32, 39, 0.16);
+}
+
+.bracket-node.muted {
+    opacity: 0.42;
+}
+
+.bracket-node.live {
+    border-color: #1e8f5f;
+    box-shadow: 0 8px 22px rgba(24, 147, 93, 0.21);
+}
+
+.bracket-node.in-hole {
+    border-color: #cc9f2f;
+}
+
+.bracket-node.complete {
+    border-color: #5e6d7d;
+}
+
+.bracket-node.forfeit,
+.bracket-node.cancelled {
+    border-color: #b06767;
+}
+
+.bracket-node-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.bracket-node-label {
+    color: #5a6770;
+    font-size: 0.75rem;
+    margin-top: 0.12rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bracket-athlete {
+    margin-top: 0.22rem;
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #1f2a31;
+}
+
+.bracket-athlete.winner {
+    font-weight: 800;
+    color: #102b4a;
+}
+
+.pool-board-wrap {
+    border: 1px solid #d8d1c0;
+    border-radius: 12px;
+    background: #fbfcff;
+    padding: 0.45rem;
+}
+
+.pool-board td {
+    vertical-align: top;
+}
+
+.pool-cell {
+    min-width: 140px;
+    border: 1px solid #d5cfbe;
+    border-radius: 10px;
+    padding: 0.35rem;
+    background: #fff;
+    display: grid;
+    gap: 0.2rem;
+}
+
+.pool-cell.empty {
+    min-width: 72px;
+    justify-content: center;
+    text-align: center;
+    color: #7c8893;
+    background: #f7f8fb;
+}
+
+.pool-cell.win {
+    border-color: #7fcb9f;
+    background: #f0fff4;
+}
+
+.pool-cell.loss {
+    border-color: #e2cbc2;
+    background: #fff7f5;
+}
+
+.pool-cell.live {
+    border-color: #4ba17a;
+    box-shadow: inset 0 0 0 1px rgba(42, 133, 93, 0.22);
+}
+
+.pool-cell-title {
+    font-weight: 700;
+}
+
+.pool-cell-btn {
+    padding: 0.2rem 0.45rem;
+    font-size: 0.78rem;
+}
