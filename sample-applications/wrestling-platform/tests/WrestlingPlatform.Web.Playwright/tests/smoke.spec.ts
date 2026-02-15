@@ -15,7 +15,7 @@ test.describe("PinPoint Arena smoke", () => {
     ];
 
     for (const target of navTargets) {
-      await page.getByRole("link", { name: new RegExp(target.label, "i") }).click();
+      await page.getByRole("link", { name: new RegExp(`^${target.label}$`, "i") }).first().click();
       await expect(page.getByRole("heading", { name: target.heading })).toBeVisible();
     }
   });

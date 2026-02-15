@@ -4,7 +4,8 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5105";
 
 export default defineConfig({
   testDir: "./tests",
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: 1,
   timeout: 60000,
   expect: {
     timeout: 10000

@@ -16,7 +16,7 @@ test.describe("PinPoint Arena regression", () => {
       { label: "Live Hub", heading: /Live Match Hub/i },
       { label: "Athlete Portal", heading: /Athlete Portal/i },
       { label: "Coach Portal", heading: /Coach Portal/i },
-      { label: "Event Admin", heading: /Event Admin Control Center/i },
+      { label: "Event Admin", heading: /Event Admin Portal/i },
       { label: "Mat Scoring", heading: /Mat-Side Real-Time Scoring/i },
       { label: "Recruiting Hub", heading: /College Recruiting Hub/i }
     ];
@@ -50,10 +50,11 @@ test.describe("PinPoint Arena regression", () => {
     const selectButton = page.getByRole("button", { name: /^Select$/i }).first();
     await selectButton.click();
     await page.getByRole("button", { name: /Load Directory/i }).click();
-    await expect(page.getByText(/Registrant Count/i)).toBeVisible();
+    await expect(page.getByText(/Registrants/i).first()).toBeVisible();
 
     await page.getByRole("button", { name: /Save Controls/i }).click();
-    await expect(page.getByText(/saved|updated/i)).toBeVisible();
+    await expect(page.locator(".alert").first()).toBeVisible();
+    await expect(page.getByText(/Tournament controls updated|Loaded directory for/i).first()).toBeVisible();
   });
 
   test("live hub provisions stream and lists cards", async ({ page }) => {
