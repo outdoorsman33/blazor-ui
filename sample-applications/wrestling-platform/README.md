@@ -28,14 +28,15 @@ This folder contains a production-oriented **API + web portal** baseline for a U
 - College recruiting search feed
 - Table worker event/mat queue APIs for concurrent mat operations
 - Visual bracket + Madison pool bundle endpoints
-- Media pipeline scaffolding (video ingest/transcode states + AI highlight queue jobs)
+- Durable media pipeline with retained queue state, video ingest/transcode states, and AI highlight jobs
 
 ## Security and auth
 
 - JWT auth with role policies (`CoachOrAdmin`, `EventOps`)
 - API rate limiting (global API + stricter auth path policy)
-- In-memory security audit trail endpoint for operational review
+- Persistent security audit trail (`jsonl`) with in-memory hot history for fast retrieval
 - TOTP MFA enrollment/verification endpoints
+- MFA enforcement for privileged roles (`SchoolAdmin`, `ClubAdmin`, `EventAdmin`, `SystemAdmin`)
 - Access + refresh token model:
   - `POST /api/auth/login`
   - `POST /api/auth/refresh` (refresh-token rotation)
@@ -67,6 +68,10 @@ Configurable in `src/WrestlingPlatform.Api/appsettings*.json`:
 - Notifications:
   - `ProviderMode = Mock` (default)
   - `ProviderMode = Live` (Twilio SMS + SendGrid email)
+- Media pipeline:
+  - `MediaPipeline:StorageMode = Local` (default)
+  - `MediaPipeline:StorageMode = S3` or `R2` (S3-compatible object storage)
+  - optional OpenAI summarization with `MediaPipeline:AiProvider = OpenAI`
 
 ## Web portal routes
 
@@ -156,10 +161,10 @@ Deploy by creating a Render Blueprint from your GitHub repo, then follow the run
   - defaults to in-memory; configure Redis with `Redis:Configuration`
 - OpenTelemetry instrumentation is enabled when `OTEL_EXPORTER_OTLP_ENDPOINT` is set
 - CI pipeline: `.github/workflows/wrestling-platform-ci.yml`
-  - includes Playwright smoke run against live local-started API + web
+  - includes Playwright regression run against live local-started API + web
 - Render deploy workflow: `.github/workflows/wrestling-platform-render-deploy.yml`
 
-## Playwright E2E smoke
+## Playwright E2E regression
 
 ```powershell
 cd tests/WrestlingPlatform.Web.Playwright

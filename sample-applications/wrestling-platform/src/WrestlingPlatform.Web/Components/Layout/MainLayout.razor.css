@@ -200,6 +200,11 @@ a {
     color: #1e2529;
 }
 
+.mini-input.mfa-input {
+    min-width: 110px;
+    max-width: 140px;
+}
+
 .mini-btn {
     border: 0;
     border-radius: 999px;

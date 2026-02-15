@@ -232,10 +232,11 @@
 
     private static readonly List<ScoringActionDefinition> FallbackActions =
     [
-        new(ScoringActionCode.Takedown, "Takedown", 2, false, "Standard takedown."),
+        new(ScoringActionCode.Takedown, "Takedown", 3, false, "NFHS folkstyle takedown."),
         new(ScoringActionCode.Escape, "Escape", 1, false, "Escape point."),
         new(ScoringActionCode.Reversal, "Reversal", 2, false, "Reversal point."),
         new(ScoringActionCode.NearFall2, "Near Fall (2)", 2, false, "Near-fall points."),
+        new(ScoringActionCode.NearFall4, "Near Fall (4)", 4, false, "Extended near-fall criteria."),
         new(ScoringActionCode.Fall, "Fall", 0, true, "Pin/fall.")
     ];
 

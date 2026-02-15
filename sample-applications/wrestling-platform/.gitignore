@@ -10,9 +10,11 @@
 src/WrestlingPlatform.Api/*.db
 src/WrestlingPlatform.Api/*.db-shm
 src/WrestlingPlatform.Api/*.db-wal
+src/WrestlingPlatform.Api/App_Data/
 
 # Local public demo artifacts
 *.log
+*.dump
 .demo-pids.json
 .local-dev-pids.json
 tools/cloudflared.exe

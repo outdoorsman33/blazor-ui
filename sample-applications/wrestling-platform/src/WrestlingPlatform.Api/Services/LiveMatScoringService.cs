@@ -464,11 +464,12 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             switch (style)
             {
                 case WrestlingStyle.Folkstyle:
-                    actions.Add(new ScoringActionDefinition(ScoringActionCode.Takedown, "Takedown", 2, false, "Control established from neutral."));
+                    actions.Add(new ScoringActionDefinition(ScoringActionCode.Takedown, "Takedown", 3, false, "NFHS folkstyle takedown value."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Escape, "Escape", 1, false, "Defensive wrestler escapes control."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Reversal, "Reversal", 2, false, "Bottom wrestler reverses to top control."));
-                    actions.Add(new ScoringActionDefinition(ScoringActionCode.NearFall2, "Near Fall (2)", 2, false, "Near-fall criteria held for 2 seconds."));
-                    actions.Add(new ScoringActionDefinition(ScoringActionCode.NearFall3, "Near Fall (3)", 3, false, "Near-fall criteria held for 4+ seconds."));
+                    actions.Add(new ScoringActionDefinition(ScoringActionCode.NearFall2, "Near Fall (2)", 2, false, "Near-fall count reached."));
+                    actions.Add(new ScoringActionDefinition(ScoringActionCode.NearFall3, "Near Fall (3)", 3, false, "Near-fall control extended."));
+                    actions.Add(new ScoringActionDefinition(ScoringActionCode.NearFall4, "Near Fall (4)", 4, false, "Near-fall criteria held for 5+ seconds."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Penalty, "Penalty", 1, false, "Penalty point awarded."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Fall, "Fall", 0, true, "Pin/fall ends the match immediately."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.InjuryDefault, "Injury Default", 0, true, "Opponent cannot continue due to injury."));
@@ -476,11 +477,12 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                     break;
                 case WrestlingStyle.Freestyle:
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Takedown, "Takedown", 2, false, "Standard takedown."));
-                    actions.Add(new ScoringActionDefinition(ScoringActionCode.TakedownHighAmplitude, "Takedown (4)", 4, false, "High amplitude takedown."));
+                    actions.Add(new ScoringActionDefinition(ScoringActionCode.TakedownHighAmplitude, "High Amplitude Takedown (4)", 4, false, "High-amplitude takedown."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Exposure, "Exposure", 2, false, "Turns opponent exposing back."));
-                    actions.Add(new ScoringActionDefinition(ScoringActionCode.ThrowHighAmplitude, "Throw (4)", 4, false, "High amplitude throw."));
+                    actions.Add(new ScoringActionDefinition(ScoringActionCode.ThrowHighAmplitude, "Grand Amplitude Throw (5)", 5, false, "Feet-to-danger high-amplitude action."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.PushOut, "Push Out", 1, false, "Opponent forced out of bounds."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Passivity, "Passivity", 1, false, "Passivity point awarded."));
+                    actions.Add(new ScoringActionDefinition(ScoringActionCode.CautionAndOne, "Caution +1", 1, false, "Caution and one point."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.CautionAndTwo, "Caution +2", 2, false, "Caution and two points."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Fall, "Fall", 0, true, "Pin/fall ends the match immediately."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.InjuryDefault, "Injury Default", 0, true, "Opponent cannot continue due to injury."));
@@ -492,6 +494,7 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.ThrowHighAmplitude, "Throw (5)", 5, false, "Grand amplitude throw."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.PushOut, "Push Out", 1, false, "Opponent forced out of bounds."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Passivity, "Passivity", 1, false, "Passivity point awarded."));
+                    actions.Add(new ScoringActionDefinition(ScoringActionCode.CautionAndOne, "Caution +1", 1, false, "Caution and one point."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.CautionAndTwo, "Caution +2", 2, false, "Caution and two points."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.Fall, "Fall", 0, true, "Pin/fall ends the match immediately."));
                     actions.Add(new ScoringActionDefinition(ScoringActionCode.InjuryDefault, "Injury Default", 0, true, "Opponent cannot continue due to injury."));

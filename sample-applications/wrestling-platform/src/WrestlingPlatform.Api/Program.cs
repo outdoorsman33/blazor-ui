@@ -39,6 +39,7 @@ var jwtRefreshTokenDays = int.TryParse(builder.Configuration["Jwt:RefreshTokenDa
 var stripeWebhookToleranceSeconds = int.TryParse(builder.Configuration["Payments:WebhookSignatureToleranceSeconds"], out var configuredToleranceSeconds)
     ? configuredToleranceSeconds
     : 300;
+var mfaRequiredRoles = ResolveMfaRequiredRoles(builder.Configuration);
 
 var signingKeyBytes = Encoding.UTF8.GetBytes(jwtSigningKeyRaw);
 if (signingKeyBytes.Length < 32)
@@ -53,6 +54,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
+builder.Services.Configure<MediaPipelineOptions>(builder.Configuration.GetSection("MediaPipeline"));
+builder.Services.Configure<RequestSecurityPolicyOptions>(builder.Configuration.GetSection("Security:RequestPolicy"));
+builder.Services.AddHttpClient("media-pipeline").SetHandlerLifetime(TimeSpan.FromMinutes(15));
+builder.Services.AddHttpClient("media-ai").SetHandlerLifetime(TimeSpan.FromMinutes(5));
+builder.Services.AddSingleton<IMediaObjectStorage, MediaObjectStorage>();
 builder.Services.AddSingleton<ILiveMatScoringService, LiveMatScoringService>();
 builder.Services.AddSingleton<ITournamentControlService, TournamentControlService>();
 builder.Services.AddSingleton<IMediaPipelineService, MediaPipelineService>();
@@ -167,6 +173,7 @@ builder.Services.AddWrestlingPlatformInfrastructure(builder.Configuration);
 var app = builder.Build();
 
 app.UseExceptionHandler();
+app.UseMiddleware<RequestSecurityPolicyMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
@@ -234,6 +241,7 @@ var auth = api.MapGroup("/auth").RequireRateLimiting("auth-strict");
 auth.MapPost("/login", async (
     LoginRequest request,
     WrestlingPlatformDbContext dbContext,
+    IMfaService mfaService,
     CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
@@ -248,6 +256,23 @@ auth.MapPost("/login", async (
     if (user is null || !user.IsActive || !ApiSecurityHelpers.VerifyPassword(request.Password, user.PasswordHash))
     {
         return Results.Unauthorized();
+    }
+
+    if (mfaRequiredRoles.Contains(user.Role))
+    {
+        if (!mfaService.IsEnabled(user.Id))
+        {
+            return Results.Problem(
+                title: "MFA enrollment required.",
+                detail: "This account role requires MFA enrollment before sign-in.",
+                statusCode: StatusCodes.Status428PreconditionRequired);
+        }
+
+        var verification = mfaService.Verify(new VerifyMfaCodeRequest(user.Id, request.MfaCode ?? string.Empty));
+        if (!verification.Verified)
+        {
+            return Results.Unauthorized();
+        }
     }
 
     var token = await ApiSecurityHelpers.IssueAuthTokenAsync(user, dbContext, jwtSigningKey, jwtIssuer, jwtAudience, jwtAccessTokenMinutes, jwtRefreshTokenDays, cancellationToken);
@@ -1905,7 +1930,21 @@ athletes.MapGet("/{athleteId:guid}/highlights", async (
             AiGenerated: false));
     }
 
-    return Results.Ok(highlights);
+    var generated = mediaPipelineService.GetGeneratedHighlights(athleteId);
+    foreach (var clip in generated)
+    {
+        highlights.Add(clip);
+    }
+
+    var deduped = highlights
+        .GroupBy(x => x.ClipId)
+        .Select(group => group.First())
+        .OrderByDescending(x => x.ImpactScore)
+        .ThenByDescending(x => x.ClipEndUtc)
+        .Take(200)
+        .ToList();
+
+    return Results.Ok(deduped);
 }).AllowAnonymous();
 
 athletes.MapGet("/{athleteId:guid}/nil-profile", async (
@@ -1994,8 +2033,15 @@ media.MapPost("/highlights/queue", (
     QueueAiHighlightsRequest request,
     IMediaPipelineService mediaPipelineService) =>
 {
-    var job = mediaPipelineService.QueueAiHighlights(request);
-    return Results.Accepted($"/api/media/highlights/jobs/{request.AthleteProfileId}", job);
+    try
+    {
+        var job = mediaPipelineService.QueueAiHighlights(request);
+        return Results.Accepted($"/api/media/highlights/jobs/{request.AthleteProfileId}", job);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
 });
 
 media.MapGet("/highlights/jobs/{athleteId:guid}", (Guid athleteId, IMediaPipelineService mediaPipelineService) =>
@@ -2581,6 +2627,40 @@ static (int AthleteAScore, int AthleteBScore) ParseScore(string? score)
     return int.TryParse(left, out var aScore) && int.TryParse(right, out var bScore)
         ? (Math.Max(0, aScore), Math.Max(0, bScore))
         : (0, 0);
+}
+
+static HashSet<UserRole> ResolveMfaRequiredRoles(IConfiguration configuration)
+{
+    var configuredRoles = configuration.GetSection("Security:Mfa:RequiredRoles").Get<string[]>();
+    if (configuredRoles is null || configuredRoles.Length == 0)
+    {
+        return
+        [
+            UserRole.SchoolAdmin,
+            UserRole.ClubAdmin,
+            UserRole.EventAdmin,
+            UserRole.SystemAdmin
+        ];
+    }
+
+    var resolved = new HashSet<UserRole>();
+    foreach (var roleRaw in configuredRoles)
+    {
+        if (Enum.TryParse<UserRole>(roleRaw, ignoreCase: true, out var role))
+        {
+            resolved.Add(role);
+        }
+    }
+
+    return resolved.Count == 0
+        ?
+        [
+            UserRole.SchoolAdmin,
+            UserRole.ClubAdmin,
+            UserRole.EventAdmin,
+            UserRole.SystemAdmin
+        ]
+        : resolved;
 }
 
 

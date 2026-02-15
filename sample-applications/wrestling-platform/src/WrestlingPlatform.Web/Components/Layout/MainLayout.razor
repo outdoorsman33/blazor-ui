@@ -32,6 +32,7 @@
             {
                 <input class="mini-input" @bind="Email" placeholder="email" />
                 <input class="mini-input" @bind="Password" type="password" placeholder="password" />
+                <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
                 <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
                 <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
                 <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
@@ -80,6 +81,7 @@
     private bool Busy;
     private string Email = "";
     private string Password = "";
+    private string MfaCode = "";
     private string? AuthMessage;
     private bool AuthOk;
 
@@ -88,13 +90,14 @@
         Busy = true;
         AuthMessage = null;
 
-        var result = await ApiClient.LoginAsync(new LoginRequest(Email, Password));
+        var result = await ApiClient.LoginAsync(new LoginRequest(Email, Password, MfaCode));
         AuthOk = result.Success;
         AuthMessage = result.Success ? "Signed in." : result.Message;
 
         if (result.Success)
         {
             Password = string.Empty;
+            MfaCode = string.Empty;
         }
 
         Busy = false;

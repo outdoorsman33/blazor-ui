@@ -61,6 +61,34 @@ services:
         sync: false
       - key: Notifications__SendGrid__FromName
         value: PinPoint Arena
+      - key: MediaPipeline__StorageMode
+        value: Local
+      - key: MediaPipeline__WorkingDirectory
+        value: /tmp/media-pipeline
+      - key: MediaPipeline__PublicBaseUrl
+        value: https://media.pinpointarena.local
+      - key: MediaPipeline__RetentionDays
+        value: "120"
+      - key: MediaPipeline__AiProvider
+        value: RuleBased
+      - key: MediaPipeline__OpenAiModel
+        value: gpt-4.1-mini
+      - key: MediaPipeline__S3Bucket
+        sync: false
+      - key: MediaPipeline__S3Region
+        sync: false
+      - key: MediaPipeline__S3ServiceUrl
+        sync: false
+      - key: MediaPipeline__S3AccessKeyId
+        sync: false
+      - key: MediaPipeline__S3SecretAccessKey
+        sync: false
+      - key: MediaPipeline__OpenAiApiKey
+        sync: false
+      - key: Security__Audit__FilePath
+        value: /tmp/security/audit-log.jsonl
+      - key: Security__Mfa__StoreFilePath
+        value: /tmp/security/mfa-store.json
       - key: OTEL_EXPORTER_OTLP_ENDPOINT
         sync: false
 

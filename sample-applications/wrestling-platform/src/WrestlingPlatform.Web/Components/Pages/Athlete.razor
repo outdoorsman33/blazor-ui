@@ -395,17 +395,37 @@
 <div class="panel-grid two spacer-top">
     <section class="panel">
         <h2>6) Media Vault + AI Highlights</h2>
-        <p class="helper">Save event streams to athlete profile and auto-generate highlight clips for recruiting + NIL.</p>
+        <p class="helper">Save stream footage, queue transcode + AI clip extraction, and build recruiting-ready media history.</p>
 
         <div class="form-grid spacer-top">
             <div class="field">
                 <label>Athlete Id</label>
                 <input class="input mono" @bind="MediaAthleteId" />
             </div>
+            <div class="field">
+                <label>Match Id</label>
+                <input class="input mono" @bind="MediaMatchId" />
+            </div>
+            <div class="field">
+                <label>Stream Id (optional)</label>
+                <input class="input mono" @bind="MediaStreamId" />
+            </div>
+            <div class="field">
+                <label>Video Source URL</label>
+                <input class="input" @bind="MediaSourceUrl" placeholder="https://.../mat1.mp4 or .m3u8" />
+            </div>
+            <div class="field check-row">
+                <input id="queuetranscode" type="checkbox" @bind="QueueTranscode" />
+                <label for="queuetranscode">Queue transcode pipeline</label>
+            </div>
         </div>
 
         <div class="actions">
-            <button class="btn secondary" @onclick="LoadHighlightsAsync" disabled="@IsBusy">Load AI Highlights</button>
+            <button class="btn primary" @onclick="CreateVideoAssetAsync" disabled="@IsBusy">Save Video Asset</button>
+            <button class="btn secondary" @onclick="QueueHighlightsAsync" disabled="@IsBusy">Queue AI Highlights</button>
+            <button class="btn ghost" @onclick="LoadVideosAsync" disabled="@IsBusy">Load Video Vault</button>
+            <button class="btn ghost" @onclick="LoadAiJobsAsync" disabled="@IsBusy">Load AI Jobs</button>
+            <button class="btn ghost" @onclick="LoadHighlightsAsync" disabled="@IsBusy">Load AI Highlights</button>
             <button class="btn ghost" @onclick="UseWorkflowAthleteForMedia">Use Workflow Athlete</button>
         </div>
 
@@ -414,6 +434,75 @@
             <div class="alert @(MediaSuccess ? "success" : "error")">@MediaMessage</div>
         }
 
+        <h3 class="spacer-top">Video Vault</h3>
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Video</th>
+                        <th>Match</th>
+                        <th>State</th>
+                        <th>Ready</th>
+                        <th>Playback</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (VideoAssets.Count == 0)
+                    {
+                        <tr><td colspan="5">No media assets loaded.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var video in VideoAssets.Take(20))
+                        {
+                            <tr>
+                                <td class="mono">@video.VideoId.ToString()[..8]</td>
+                                <td class="mono">@video.MatchId.ToString()[..8]</td>
+                                <td>@video.State</td>
+                                <td>@(video.ReadyUtc?.ToLocalTime().ToString("HH:mm:ss") ?? "-")</td>
+                                <td><a href="@video.PlaybackUrl" target="_blank">Open</a></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <h3 class="spacer-top">AI Queue</h3>
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Job</th>
+                        <th>Status</th>
+                        <th>Clips</th>
+                        <th>Queued</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (AiJobs.Count == 0)
+                    {
+                        <tr><td colspan="5">No AI jobs loaded.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var job in AiJobs.Take(12))
+                        {
+                            <tr>
+                                <td class="mono">@job.JobId.ToString()[..8]</td>
+                                <td>@job.Status</td>
+                                <td>@job.ClipsProduced</td>
+                                <td>@job.QueuedUtc.ToLocalTime().ToString("HH:mm:ss")</td>
+                                <td>@job.Details</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <h3 class="spacer-top">Highlight Clips</h3>
         <div class="table-wrap spacer-top">
             <table class="table">
                 <thead>
@@ -523,6 +612,11 @@
             RegistrationEventId = Workflow.EventId.Value.ToString();
             NotifyEventId = Workflow.EventId.Value.ToString();
         }
+
+        if (Workflow.MatchId is not null)
+        {
+            MediaMatchId = Workflow.MatchId.Value.ToString();
+        }
     }
 
     private async Task LoadLatestEventAsync()
@@ -613,6 +707,12 @@
     private List<NotificationMessage> NotificationStatusMessages = [];
 
     private string MediaAthleteId = string.Empty;
+    private string MediaMatchId = string.Empty;
+    private string MediaStreamId = string.Empty;
+    private string MediaSourceUrl = "https://stream.local/pinpoint-showcase/mat1.m3u8";
+    private bool QueueTranscode = true;
+    private List<VideoAssetRecord> VideoAssets = [];
+    private List<AiHighlightJobSnapshot> AiJobs = [];
     private List<AthleteHighlightClip> HighlightClips = [];
     private string? MediaMessage;
     private bool MediaSuccess;
@@ -876,8 +976,101 @@
         }
 
         MediaAthleteId = Workflow.AthleteProfileId.Value.ToString();
+        if (Workflow.MatchId is not null)
+        {
+            MediaMatchId = Workflow.MatchId.Value.ToString();
+        }
         MediaSuccess = true;
         MediaMessage = "Workflow athlete applied for media + NIL.";
+    }
+
+    private async Task CreateVideoAssetAsync()
+    {
+        IsBusy = true;
+        MediaMessage = null;
+
+        if (!Guid.TryParse(MediaAthleteId, out var athleteId) || !Guid.TryParse(MediaMatchId, out var matchId))
+        {
+            MediaSuccess = false;
+            MediaMessage = "Valid athlete id and match id are required.";
+            IsBusy = false;
+            return;
+        }
+
+        Guid? streamId = Guid.TryParse(MediaStreamId, out var parsedStreamId) ? parsedStreamId : null;
+        var result = await ApiClient.CreateVideoAssetAsync(new CreateVideoAssetRequest(
+            athleteId,
+            matchId,
+            streamId,
+            MediaSourceUrl,
+            QueueTranscode));
+
+        MediaSuccess = result.Success;
+        MediaMessage = result.Success
+            ? $"Video asset saved: {result.Data?.VideoId.ToString()[..8]} ({result.Data?.State})"
+            : result.Message;
+
+        if (result.Success)
+        {
+            await LoadVideosAsync();
+            Workflow.MatchId = matchId;
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task QueueHighlightsAsync()
+    {
+        IsBusy = true;
+        MediaMessage = null;
+
+        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        {
+            MediaSuccess = false;
+            MediaMessage = "Valid athlete id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        Guid? eventId = Guid.TryParse(RegistrationEventId, out var parsedEventId) ? parsedEventId : null;
+        var result = await ApiClient.QueueAiHighlightsAsync(new QueueAiHighlightsRequest(athleteId, eventId, MaxMatches: 12));
+        MediaSuccess = result.Success;
+        MediaMessage = result.Success ? "AI highlight job queued." : result.Message;
+
+        if (result.Success)
+        {
+            await LoadAiJobsAsync();
+        }
+
+        IsBusy = false;
+    }
+
+    private async Task LoadVideosAsync()
+    {
+        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        {
+            return;
+        }
+
+        var result = await ApiClient.GetAthleteVideosAsync(athleteId);
+        if (result.Success)
+        {
+            VideoAssets = result.Data ?? [];
+        }
+    }
+
+    private async Task LoadAiJobsAsync()
+    {
+        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        {
+            return;
+        }
+
+        var result = await ApiClient.GetAiHighlightJobsAsync(athleteId);
+        if (result.Success)
+        {
+            AiJobs = result.Data ?? [];
+        }
     }
 
     private async Task LoadHighlightsAsync()
@@ -897,6 +1090,11 @@
         MediaSuccess = result.Success;
         MediaMessage = result.Success ? $"Loaded {result.Data?.Count ?? 0} highlight clips." : result.Message;
         HighlightClips = result.Data ?? [];
+        if (result.Success)
+        {
+            await LoadVideosAsync();
+            await LoadAiJobsAsync();
+        }
 
         IsBusy = false;
     }

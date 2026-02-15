@@ -4,7 +4,7 @@ namespace WrestlingPlatform.Application.Contracts;
 
 public sealed record RegisterUserRequest(string Email, string Password, UserRole Role, string? PhoneNumber);
 
-public sealed record LoginRequest(string Email, string Password);
+public sealed record LoginRequest(string Email, string Password, string? MfaCode = null);
 
 public sealed record RefreshTokenRequest(string RefreshToken);
 
@@ -155,6 +155,7 @@ public enum ScoringActionCode
     Reversal,
     NearFall2,
     NearFall3,
+    NearFall4,
     Exposure,
     PushOut,
     Passivity,
