@@ -335,7 +335,7 @@ public static class DependencyInjection
             75m,
             cancellationToken);
 
-        await EnsureDivisionAsync(
+        var youthPoolDivision = await EnsureDivisionAsync(
             dbContext,
             youthPreviewEvent.Id,
             "Middle School 98",
@@ -435,6 +435,28 @@ public static class DependencyInjection
             athleteProfilesByEmail["owen.hill@pinpointarena.local"].Id,
             secondaryTeam.Id,
             false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            youthPreviewEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            youthPreviewEvent.Id,
+            athleteProfilesByEmail["gabe.soto@pinpointarena.local"].Id,
+            secondaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            youthPreviewEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            youthPreviewEvent.Id,
+            athleteProfilesByEmail["isaac.wells@pinpointarena.local"].Id,
+            null,
+            true,
             RegistrationStatus.Confirmed,
             PaymentStatus.Paid,
             youthPreviewEvent.EntryFeeCents,
@@ -679,6 +701,130 @@ public static class DependencyInjection
             matNumber: "Mat 1",
             status: MatchStatus.Scheduled,
             scheduledUtc: matchStartUtc.AddHours(4),
+            completedUtc: null,
+            cancellationToken);
+
+        var youthPoolBracket = await EnsureBracketAsync(
+            dbContext,
+            youthPreviewEvent.Id,
+            youthPoolDivision.Id,
+            CompetitionLevel.MiddleSchool,
+            98m,
+            BracketGenerationMode.Seeded,
+            cancellationToken);
+
+        var youthPoolAthletes = new[]
+        {
+            athleteProfilesByEmail["gabe.soto@pinpointarena.local"],
+            athleteProfilesByEmail["isaac.wells@pinpointarena.local"],
+            athleteProfilesByEmail["luca.brown@pinpointarena.local"],
+            athleteProfilesByEmail["owen.hill@pinpointarena.local"]
+        };
+
+        for (var seed = 0; seed < youthPoolAthletes.Length; seed++)
+        {
+            await EnsureBracketEntryAsync(
+                dbContext,
+                youthPoolBracket.Id,
+                youthPoolAthletes[seed].Id,
+                seed + 1,
+                cancellationToken);
+        }
+
+        var youthPoolStartUtc = youthPreviewEvent.StartUtc;
+        await EnsureMatchAsync(
+            dbContext,
+            youthPoolBracket.Id,
+            1,
+            1,
+            youthPoolAthletes[0].Id,
+            youthPoolAthletes[1].Id,
+            youthPoolAthletes[0].Id,
+            "8-3",
+            "Decision",
+            "Mat 4",
+            MatchStatus.Completed,
+            youthPoolStartUtc.AddMinutes(0),
+            youthPoolStartUtc.AddMinutes(17),
+            cancellationToken);
+
+        await EnsureMatchAsync(
+            dbContext,
+            youthPoolBracket.Id,
+            1,
+            2,
+            youthPoolAthletes[2].Id,
+            youthPoolAthletes[3].Id,
+            youthPoolAthletes[3].Id,
+            "6-4",
+            "Decision",
+            "Mat 5",
+            MatchStatus.Completed,
+            youthPoolStartUtc.AddMinutes(20),
+            youthPoolStartUtc.AddMinutes(37),
+            cancellationToken);
+
+        await EnsureMatchAsync(
+            dbContext,
+            youthPoolBracket.Id,
+            2,
+            3,
+            youthPoolAthletes[0].Id,
+            youthPoolAthletes[2].Id,
+            youthPoolAthletes[0].Id,
+            "Fall 1:31",
+            "Pin",
+            "Mat 4",
+            MatchStatus.Completed,
+            youthPoolStartUtc.AddMinutes(42),
+            youthPoolStartUtc.AddMinutes(51),
+            cancellationToken);
+
+        await EnsureMatchAsync(
+            dbContext,
+            youthPoolBracket.Id,
+            2,
+            4,
+            youthPoolAthletes[1].Id,
+            youthPoolAthletes[3].Id,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 5",
+            status: MatchStatus.OnMat,
+            scheduledUtc: youthPoolStartUtc.AddMinutes(55),
+            completedUtc: null,
+            cancellationToken);
+
+        await EnsureMatchAsync(
+            dbContext,
+            youthPoolBracket.Id,
+            3,
+            5,
+            youthPoolAthletes[0].Id,
+            youthPoolAthletes[3].Id,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 4",
+            status: MatchStatus.Scheduled,
+            scheduledUtc: youthPoolStartUtc.AddMinutes(85),
+            completedUtc: null,
+            cancellationToken);
+
+        await EnsureMatchAsync(
+            dbContext,
+            youthPoolBracket.Id,
+            3,
+            6,
+            youthPoolAthletes[1].Id,
+            youthPoolAthletes[2].Id,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 5",
+            status: MatchStatus.Scheduled,
+            scheduledUtc: youthPoolStartUtc.AddMinutes(105),
             completedUtc: null,
             cancellationToken);
 

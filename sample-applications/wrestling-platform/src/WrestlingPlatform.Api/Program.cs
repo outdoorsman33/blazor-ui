@@ -2802,7 +2802,45 @@ var webhooks = api.MapGroup("/webhooks");
 webhooks.MapPost("/stripe", HandleStripeWebhookAsync).AllowAnonymous();
 webhooks.MapPost("/stripe/payment-confirmed", HandleStripeWebhookAsync).AllowAnonymous();
 
+await PrimeDemoTournamentControlStateAsync(app.Services);
+
 app.Run();
+
+static async Task PrimeDemoTournamentControlStateAsync(IServiceProvider services)
+{
+    using var scope = services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<WrestlingPlatformDbContext>();
+    var controlService = scope.ServiceProvider.GetRequiredService<ITournamentControlService>();
+
+    var youthPoolEvent = await dbContext.TournamentEvents
+        .AsNoTracking()
+        .Where(evt => evt.Name == "Ohio Youth State Preview")
+        .Select(evt => new { evt.Id })
+        .FirstOrDefaultAsync();
+
+    if (youthPoolEvent is null)
+    {
+        return;
+    }
+
+    var registrantCount = await dbContext.EventRegistrations
+        .CountAsync(registration =>
+            registration.TournamentEventId == youthPoolEvent.Id
+            && registration.Status != RegistrationStatus.Cancelled);
+
+    controlService.Update(
+        youthPoolEvent.Id,
+        registrantCount,
+        new UpdateTournamentControlSettingsRequest(
+            TournamentFormat.MadisonPool,
+            BracketReleaseMode.Immediate,
+            BracketReleaseUtc: null,
+            BracketCreationMode.Seeded,
+            RegistrationCapEnabled: false,
+            RegistrationCap: null));
+
+    controlService.ReleaseBrackets(youthPoolEvent.Id, registrantCount);
+}
 
 static string BuildCacheKey(string prefix, params (string Name, string? Value)[] parts)
 {
