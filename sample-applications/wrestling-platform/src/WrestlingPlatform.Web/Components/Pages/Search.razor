@@ -1,7 +1,5 @@
 @page "/search"
 @inject PlatformApiClient ApiClient
-@inject WorkflowState Workflow
-@inject NavigationManager Navigation
 
 <PageTitle>Search - PinPoint Arena</PageTitle>
 
@@ -74,7 +72,7 @@
                             <td>@item.Title</td>
                             <td>@item.Subtitle</td>
                             <td>@(item.DateUtc?.ToLocalTime().ToString("MMM dd yyyy HH:mm") ?? "-")</td>
-                            <td><button class="btn secondary" @onclick="() => OpenResult(item)">Open</button></td>
+                            <td><a class="btn secondary" href="@SearchResultRoute(item)">Open</a></td>
                         </tr>
                     }
                 </tbody>
@@ -149,36 +147,14 @@
         }
     }
 
-    private void OpenResult(GlobalSearchResultItem item)
+    private static string SearchResultRoute(GlobalSearchResultItem item) => item.Type switch
     {
-        switch (item.Type)
-        {
-            case GlobalSearchEntityType.Athlete:
-                Workflow.AthleteProfileId = item.Id;
-                Navigation.NavigateTo("/athlete");
-                return;
-            case GlobalSearchEntityType.Tournament:
-                Workflow.EventId = item.Id;
-                Navigation.NavigateTo("/brackets");
-                return;
-            case GlobalSearchEntityType.Match:
-                Workflow.MatchId = item.Id;
-                Navigation.NavigateTo($"/mat-scoring?matchId={item.Id}");
-                return;
-            case GlobalSearchEntityType.Team:
-                Workflow.TeamId = item.Id;
-                Navigation.NavigateTo("/coach");
-                return;
-            case GlobalSearchEntityType.Coach:
-                Workflow.CoachProfileId = item.Id;
-                Navigation.NavigateTo("/coach");
-                return;
-            case GlobalSearchEntityType.Stream:
-                Navigation.NavigateTo("/live");
-                return;
-            default:
-                Navigation.NavigateTo(item.Route);
-                return;
-        }
-    }
+        GlobalSearchEntityType.Athlete => "/athlete",
+        GlobalSearchEntityType.Tournament => $"/brackets?eventId={item.Id:D}",
+        GlobalSearchEntityType.Match => $"/mat-scoring?matchId={item.Id:D}",
+        GlobalSearchEntityType.Team => "/coach",
+        GlobalSearchEntityType.Coach => "/coach",
+        GlobalSearchEntityType.Stream => "/live",
+        _ => item.Route
+    };
 }

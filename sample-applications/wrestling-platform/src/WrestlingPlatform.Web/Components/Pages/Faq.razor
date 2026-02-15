@@ -1,5 +1,4 @@
 @page "/faq"
-@inject NavigationManager Navigation
 
 <PageTitle>FAQ - PinPoint Arena</PageTitle>
 
@@ -12,6 +11,6 @@
 
 <section class="panel">
     <div class="actions">
-        <button class="btn primary" @onclick='() => Navigation.NavigateTo("/support")'>Open Support Center</button>
+        <a class="btn primary" href="/support">Open Support Center</a>
     </div>
 </section>
