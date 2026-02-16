@@ -15,17 +15,18 @@ test.describe("PinPoint Arena smoke", () => {
     ];
 
     const drawerToggle = page.getByRole("button", { name: /open navigation menu|menu/i }).first();
+    const isMobileLayout = (page.viewportSize()?.width ?? 1280) <= 900;
 
     for (const target of navTargets) {
-      const link = page.getByRole("link", { name: new RegExp(`^${target.label}$`, "i") }).first();
-      if (!(await link.isVisible().catch(() => false))) {
-        if (await drawerToggle.isVisible().catch(() => false)) {
-          await drawerToggle.click();
-          await expect(link).toBeVisible();
-        }
+      if (isMobileLayout) {
+        await drawerToggle.click();
+        const drawerLink = page.locator("aside.mud-drawer a.mud-nav-link").filter({ hasText: new RegExp(`^${target.label}$`, "i") }).first();
+        await expect(drawerLink).toBeVisible();
+        await drawerLink.click();
+      } else {
+        const link = page.getByRole("link", { name: new RegExp(`^${target.label}$`, "i") }).first();
+        await link.click();
       }
-
-      await link.click();
       await expect(page.getByRole("heading", { name: target.heading })).toBeVisible();
     }
   });
