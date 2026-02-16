@@ -86,6 +86,7 @@
             <MudHidden Breakpoint="Breakpoint.LgAndUp">
                 <div class="mobile-appbar-actions">
                     <a class="mini-btn secondary" href="/search" @onclick="CloseDrawer">Search</a>
+                    <a class="mini-btn secondary" href="/support?faqId=faq-ops-03" @onclick="CloseDrawer">Support</a>
                     @if (!AuthSession.IsAuthenticated)
                     {
                         <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
@@ -130,8 +131,19 @@
                         <MudNavLink Href="/coach" Icon="@Icons.Material.Filled.Groups">Coach Portal</MudNavLink>
                         <MudNavLink Href="/recruiting" Icon="@Icons.Material.Filled.School">Recruiting Hub</MudNavLink>
                         <MudNavLink Href="/admin" Icon="@Icons.Material.Filled.AdminPanelSettings">Event Admin</MudNavLink>
-                        <MudNavLink Href="/support" Icon="@Icons.Material.Filled.SupportAgent">Support</MudNavLink>
+                        <MudNavLink Href="/support?faqId=faq-ops-03" Icon="@Icons.Material.Filled.SupportAgent">Support</MudNavLink>
                     </MudNavMenu>
+
+                    <MudDivider Class="drawer-divider" />
+
+                    <section class="support-quick-links">
+                        <span class="drawer-label">FAQ Articles</span>
+                        <a class="support-article-link" href="/support?faqId=faq-registration-01">Athlete Registration Guide</a>
+                        <a class="support-article-link" href="/support?faqId=faq-brackets-02">Bracket Builder Wizard Guide</a>
+                        <a class="support-article-link" href="/support?faqId=faq-scoring-02">Live Clock + Scoring Guide</a>
+                        <a class="support-article-link" href="/support?faqId=faq-stream-01">Mat-Side Streaming Guide</a>
+                        <a class="support-article-link" href="/support?faqId=faq-ops-03">Full Event Ops Checklist</a>
+                    </section>
                 }
                 else
                 {
@@ -150,7 +162,7 @@
                             <MudNavLink Href="/coach" Icon="@Icons.Material.Filled.Groups" />
                             <MudNavLink Href="/recruiting" Icon="@Icons.Material.Filled.School" />
                             <MudNavLink Href="/admin" Icon="@Icons.Material.Filled.AdminPanelSettings" />
-                            <MudNavLink Href="/support" Icon="@Icons.Material.Filled.SupportAgent" />
+                            <MudNavLink Href="/support?faqId=faq-ops-03" Icon="@Icons.Material.Filled.SupportAgent" />
                         </MudNavMenu>
                     </div>
                 }
@@ -211,10 +223,10 @@
     private DrawerClipMode CurrentDrawerClipMode => CurrentIsMobile ? DrawerClipMode.Never : DrawerClipMode.Always;
     private string DrawerToggleIcon => CurrentIsMobile
         ? (DrawerOpen ? Icons.Material.Filled.Close : Icons.Material.Filled.Menu)
-        : (DrawerOpen ? Icons.Material.Filled.KeyboardDoubleArrowLeft : Icons.Material.Filled.KeyboardDoubleArrowRight);
+        : (DrawerOpen ? Icons.Material.Filled.MenuOpen : Icons.Material.Filled.Menu);
     private string DrawerToggleAriaLabel => CurrentIsMobile
         ? (DrawerOpen ? "Close navigation menu" : "Open navigation menu")
-        : (DrawerOpen ? "Collapse navigation menu" : "Expand navigation menu");
+        : (DrawerOpen ? "Collapse navigation menu" : "Open navigation menu");
     private string FullSearchHref => $"/search?q={Uri.EscapeDataString(SearchText.Trim())}";
 
     protected override void OnInitialized()
