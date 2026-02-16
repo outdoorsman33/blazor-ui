@@ -208,6 +208,7 @@ if (app.Environment.IsDevelopment())
 }
 
 await InitializeDatabaseWithRetryAsync(app.Services, app.Logger, CancellationToken.None);
+await InitializeDemoRuntimeStateAsync(app.Services, app.Logger, samplePlaybackUrls, CancellationToken.None);
 
 app.MapGet("/healthz", async (WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken) =>
 {
@@ -2939,6 +2940,207 @@ static async Task InitializeDatabaseWithRetryAsync(
 
     throw new InvalidOperationException("Database initialization failed after multiple attempts.", lastException);
 }
+
+static async Task InitializeDemoRuntimeStateAsync(
+    IServiceProvider services,
+    ILogger logger,
+    IReadOnlyList<string> samplePlaybackUrls,
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        await using var scope = services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<WrestlingPlatformDbContext>();
+        var controlsService = scope.ServiceProvider.GetRequiredService<ITournamentControlService>();
+        var mediaPipelineService = scope.ServiceProvider.GetRequiredService<IMediaPipelineService>();
+
+        var events = await dbContext.TournamentEvents
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        var eventIds = events.Select(x => x.Id).ToList();
+        var registrantCounts = await dbContext.EventRegistrations.AsNoTracking()
+            .Where(x => eventIds.Contains(x.TournamentEventId) && x.Status != RegistrationStatus.Cancelled)
+            .GroupBy(x => x.TournamentEventId)
+            .Select(group => new { EventId = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(x => x.EventId, x => x.Count, cancellationToken);
+
+        foreach (var tournamentEvent in events)
+        {
+            var registrantCount = registrantCounts.GetValueOrDefault(tournamentEvent.Id);
+            var name = tournamentEvent.Name;
+
+            if (name.Contains("Youth State Preview", StringComparison.OrdinalIgnoreCase))
+            {
+                controlsService.Update(
+                    tournamentEvent.Id,
+                    registrantCount,
+                    new UpdateTournamentControlSettingsRequest(
+                        TournamentFormat.MadisonPool,
+                        BracketReleaseMode.Immediate,
+                        BracketReleaseUtc: null,
+                        BracketCreationMode.Seeded,
+                        RegistrationCapEnabled: true,
+                        RegistrationCap: 128,
+                        ScoringPreset: ScoringPreset.NfhsHighSchool,
+                        StrictScoringEnforcement: true,
+                        OvertimeFormat: OvertimeFormat.FolkstyleStandard,
+                        MaxOvertimePeriods: 3,
+                        EndOnFirstOvertimeScore: false));
+                continue;
+            }
+
+            if (name.Contains("Freestyle", StringComparison.OrdinalIgnoreCase))
+            {
+                controlsService.Update(
+                    tournamentEvent.Id,
+                    registrantCount,
+                    new UpdateTournamentControlSettingsRequest(
+                        TournamentFormat.EliminationBracket,
+                        BracketReleaseMode.Immediate,
+                        BracketReleaseUtc: null,
+                        BracketCreationMode.AiSeeded,
+                        RegistrationCapEnabled: true,
+                        RegistrationCap: 64,
+                        ScoringPreset: ScoringPreset.UwwFreestyle,
+                        StrictScoringEnforcement: true,
+                        OvertimeFormat: OvertimeFormat.FreestyleCriteria,
+                        MaxOvertimePeriods: 0,
+                        EndOnFirstOvertimeScore: false));
+                continue;
+            }
+
+            if (name.Contains("Greco", StringComparison.OrdinalIgnoreCase))
+            {
+                controlsService.Update(
+                    tournamentEvent.Id,
+                    registrantCount,
+                    new UpdateTournamentControlSettingsRequest(
+                        TournamentFormat.EliminationBracket,
+                        BracketReleaseMode.Immediate,
+                        BracketReleaseUtc: null,
+                        BracketCreationMode.Manual,
+                        RegistrationCapEnabled: true,
+                        RegistrationCap: 64,
+                        ScoringPreset: ScoringPreset.UwwGrecoRoman,
+                        StrictScoringEnforcement: true,
+                        OvertimeFormat: OvertimeFormat.GrecoCriteria,
+                        MaxOvertimePeriods: 0,
+                        EndOnFirstOvertimeScore: false));
+            }
+        }
+
+        var bracketEventById = await dbContext.Brackets.AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.TournamentEventId, cancellationToken);
+
+        var completedMatches = await dbContext.Matches.AsNoTracking()
+            .Where(x => x.Status == MatchStatus.Completed || x.Status == MatchStatus.Forfeit)
+            .OrderByDescending(x => x.CompletedUtc)
+            .Take(40)
+            .ToListAsync(cancellationToken);
+
+        if (completedMatches.Count == 0)
+        {
+            return;
+        }
+
+        var matchIds = completedMatches.Select(x => x.Id).ToList();
+        var streamsByMatchId = await dbContext.StreamSessions.AsNoTracking()
+            .Where(x => x.MatchId != null && matchIds.Contains(x.MatchId.Value))
+            .GroupBy(x => x.MatchId!.Value)
+            .ToDictionaryAsync(
+                group => group.Key,
+                group => group.OrderByDescending(x => x.CreatedUtc).First(),
+                cancellationToken);
+
+        var perAthleteSeededCount = new Dictionary<Guid, int>();
+        foreach (var match in completedMatches)
+        {
+            var athleteIdsForMatch = new[] { match.AthleteAId, match.AthleteBId }
+                .Where(x => x is not null)
+                .Select(x => x!.Value)
+                .Distinct()
+                .ToList();
+
+            if (athleteIdsForMatch.Count == 0)
+            {
+                continue;
+            }
+
+            var stream = streamsByMatchId.GetValueOrDefault(match.Id);
+            var streamId = stream?.Id;
+            var eventId = bracketEventById.GetValueOrDefault(match.BracketId, Guid.Empty);
+            if (eventId == Guid.Empty)
+            {
+                continue;
+            }
+
+            var normalizedPlayback = NormalizePlaybackUrlForClient(
+                stream?.PlaybackUrl,
+                eventId,
+                streamId ?? match.Id,
+                samplePlaybackUrls);
+
+            foreach (var athleteId in athleteIdsForMatch)
+            {
+                if (perAthleteSeededCount.GetValueOrDefault(athleteId) >= 4)
+                {
+                    continue;
+                }
+
+                var existing = mediaPipelineService.GetAthleteVideos(athleteId);
+                if (existing.Any(x => x.MatchId == match.Id))
+                {
+                    continue;
+                }
+
+                mediaPipelineService.CreateVideoAsset(new CreateVideoAssetRequest(
+                    athleteId,
+                    match.Id,
+                    streamId,
+                    normalizedPlayback,
+                    QueueTranscode: true));
+
+                perAthleteSeededCount[athleteId] = perAthleteSeededCount.GetValueOrDefault(athleteId) + 1;
+            }
+        }
+
+        var athleteIds = completedMatches
+            .SelectMany(x => new[] { x.AthleteAId, x.AthleteBId })
+            .Where(x => x is not null)
+            .Select(x => x!.Value)
+            .Distinct()
+            .Take(12)
+            .ToList();
+
+        foreach (var athleteId in athleteIds)
+        {
+            if (mediaPipelineService.GetAiJobs(athleteId).Count > 0)
+            {
+                continue;
+            }
+
+            mediaPipelineService.QueueAiHighlights(new QueueAiHighlightsRequest(
+                athleteId,
+                EventId: null,
+                MaxMatches: 10));
+        }
+
+        for (var tick = 0; tick < 30; tick++)
+        {
+            await mediaPipelineService.ProcessTickAsync(cancellationToken);
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Demo runtime state initialization failed. Continuing startup.");
+    }
+}
+
 static async Task AdvanceBracketProgressionAsync(
     WrestlingPlatformDbContext dbContext,
     Guid bracketId,

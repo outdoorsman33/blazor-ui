@@ -125,7 +125,15 @@ public static class DependencyInjection
             new AthleteSeed("gabe.soto@pinpointarena.local", "+16145550012", "Gabe", "Soto", 14, "OH", "Columbus", "Capital Middle School", 8, 98m, CompetitionLevel.MiddleSchool),
             new AthleteSeed("isaac.wells@pinpointarena.local", "+16145550013", "Isaac", "Wells", 13, "PA", "Pittsburgh", "Keystone Middle School", 7, 95m, CompetitionLevel.MiddleSchool),
             new AthleteSeed("cooper.james@pinpointarena.local", "+16145550014", "Cooper", "James", 20, "IA", "Ames", "Heartland University", 12, 157m, CompetitionLevel.College),
-            new AthleteSeed("riley.mitchell@pinpointarena.local", "+16145550015", "Riley", "Mitchell", 21, "OK", "Tulsa", "Tulsa State University", 12, 165m, CompetitionLevel.College)
+            new AthleteSeed("riley.mitchell@pinpointarena.local", "+16145550015", "Riley", "Mitchell", 21, "OK", "Tulsa", "Tulsa State University", 12, 165m, CompetitionLevel.College),
+            new AthleteSeed("mia.garcia@pinpointarena.local", "+16145550016", "Mia", "Garcia", 17, "TX", "Austin", "Lone Star Wrestling", 11, 126m, CompetitionLevel.HighSchool),
+            new AthleteSeed("sophia.patel@pinpointarena.local", "+16145550017", "Sophia", "Patel", 16, "NJ", "Princeton", "Mercer Elite", 10, 132m, CompetitionLevel.HighSchool),
+            new AthleteSeed("nolan.shaw@pinpointarena.local", "+16145550018", "Nolan", "Shaw", 17, "OH", "Akron", "Akron North High", 11, 138m, CompetitionLevel.HighSchool),
+            new AthleteSeed("brady.kim@pinpointarena.local", "+16145550019", "Brady", "Kim", 14, "MI", "Grand Rapids", "West Shore Middle", 8, 106m, CompetitionLevel.MiddleSchool),
+            new AthleteSeed("levi.hayes@pinpointarena.local", "+16145550020", "Levi", "Hayes", 13, "OH", "Cleveland", "Cleveland Central MS", 7, 90m, CompetitionLevel.MiddleSchool),
+            new AthleteSeed("zoe.harris@pinpointarena.local", "+16145550021", "Zoe", "Harris", 10, "OH", "Columbus", "PinPoint Youth Academy", 4, 72m, CompetitionLevel.ElementaryK6),
+            new AthleteSeed("avery.reed@pinpointarena.local", "+16145550022", "Avery", "Reed", 20, "IA", "Cedar Rapids", "Heartland University", 12, 149m, CompetitionLevel.College),
+            new AthleteSeed("dean.walker@pinpointarena.local", "+16145550023", "Dean", "Walker", 22, "PA", "State College", "Keystone University", 12, 174m, CompetitionLevel.College)
         };
 
         var athleteUsersByEmail = new Dictionary<string, UserAccount>(StringComparer.OrdinalIgnoreCase);
@@ -177,6 +185,30 @@ public static class DependencyInjection
             "Lead coach for the local demo circuit.",
             cancellationToken);
 
+        var eventAdminUser = await EnsureUserAsync(
+            dbContext,
+            "demo.eventadmin@pinpointarena.local",
+            UserRole.EventAdmin,
+            "+16145550030",
+            "DemoPass!123",
+            cancellationToken);
+
+        var parentUser = await EnsureUserAsync(
+            dbContext,
+            "demo.parent@pinpointarena.local",
+            UserRole.Parent,
+            "+16145550031",
+            "DemoPass!123",
+            cancellationToken);
+
+        var fanUser = await EnsureUserAsync(
+            dbContext,
+            "demo.fan@pinpointarena.local",
+            UserRole.Fan,
+            "+16145550032",
+            "DemoPass!123",
+            cancellationToken);
+
         var primaryTeam = await EnsureTeamAsync(
             dbContext,
             "PinPoint Wrestling Club",
@@ -201,6 +233,14 @@ public static class DependencyInjection
             "Pittsburgh",
             cancellationToken);
 
+        var heartlandTeam = await EnsureTeamAsync(
+            dbContext,
+            "Heartland University Wrestling",
+            TeamType.School,
+            "IA",
+            "Des Moines",
+            cancellationToken);
+
         await EnsureCoachAssociationAsync(
             dbContext,
             coachProfile.Id,
@@ -223,6 +263,7 @@ public static class DependencyInjection
         }
 
         var todayUtc = DateTime.UtcNow.Date;
+        var nowUtc = DateTime.UtcNow;
         var showcaseEvent = await EnsureEventAsync(
             dbContext,
             "PinPoint Local Showcase",
@@ -321,6 +362,62 @@ public static class DependencyInjection
             true,
             cancellationToken);
 
+        var columbusFreestyleLiveEvent = await EnsureEventAsync(
+            dbContext,
+            "Columbus Freestyle Grand Prix (Live)",
+            OrganizerType.Club,
+            primaryTeam.Id,
+            "OH",
+            "Columbus",
+            "North Hall Matplex",
+            nowUtc.AddHours(-2),
+            nowUtc.AddHours(6),
+            2600,
+            true,
+            cancellationToken);
+
+        var ironCityGrecoOpenEvent = await EnsureEventAsync(
+            dbContext,
+            "Iron City Greco Open",
+            OrganizerType.Club,
+            scoutingTeam.Id,
+            "PA",
+            "Pittsburgh",
+            "Iron City Pavilion",
+            todayUtc.AddDays(18).AddHours(14),
+            todayUtc.AddDays(19).AddHours(2),
+            2400,
+            true,
+            cancellationToken);
+
+        var heartlandFreestyleQualifierEvent = await EnsureEventAsync(
+            dbContext,
+            "Heartland Freestyle Qualifier",
+            OrganizerType.School,
+            heartlandTeam.Id,
+            "IA",
+            "Des Moines",
+            "Heartland Arena Annex",
+            todayUtc.AddDays(56).AddHours(13),
+            todayUtc.AddDays(57).AddHours(1),
+            2100,
+            true,
+            cancellationToken);
+
+        var archiveGrecoDualEvent = await EnsureEventAsync(
+            dbContext,
+            "Great Lakes Greco Duals (Archive)",
+            OrganizerType.Club,
+            scoutingTeam.Id,
+            "MI",
+            "Detroit",
+            "Great Lakes Expo Hall",
+            todayUtc.AddDays(-120).AddHours(15),
+            todayUtc.AddDays(-119).AddHours(2),
+            2300,
+            true,
+            cancellationToken);
+
         var showcaseDivision = await EnsureDivisionAsync(
             dbContext,
             showcaseEvent.Id,
@@ -383,6 +480,38 @@ public static class DependencyInjection
             "Elementary 78",
             CompetitionLevel.ElementaryK6,
             78m,
+            cancellationToken);
+
+        var freestyleHighDivision = await EnsureDivisionAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            "High School 132 Freestyle",
+            CompetitionLevel.HighSchool,
+            132m,
+            cancellationToken);
+
+        var freestyleCollegeDivision = await EnsureDivisionAsync(
+            dbContext,
+            heartlandFreestyleQualifierEvent.Id,
+            "College 157 Freestyle",
+            CompetitionLevel.College,
+            157m,
+            cancellationToken);
+
+        var grecoMiddleDivision = await EnsureDivisionAsync(
+            dbContext,
+            ironCityGrecoOpenEvent.Id,
+            "Middle School 98 Greco",
+            CompetitionLevel.MiddleSchool,
+            98m,
+            cancellationToken);
+
+        var grecoArchiveDivision = await EnsureDivisionAsync(
+            dbContext,
+            archiveGrecoDualEvent.Id,
+            "High School 132 Greco",
+            CompetitionLevel.HighSchool,
+            132m,
             cancellationToken);
 
         var archiveDivision = await EnsureDivisionAsync(
@@ -560,6 +689,160 @@ public static class DependencyInjection
             archiveClassicEvent.EntryFeeCents,
             cancellationToken);
 
+        var freestyleLiveRegistrationA = await EnsureRegistrationAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            athleteProfilesByEmail["demo.athlete@pinpointarena.local"].Id,
+            primaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            columbusFreestyleLiveEvent.EntryFeeCents,
+            cancellationToken);
+
+        var freestyleLiveRegistrationB = await EnsureRegistrationAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            athleteProfilesByEmail["sophia.patel@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            columbusFreestyleLiveEvent.EntryFeeCents,
+            cancellationToken);
+
+        var freestyleLiveRegistrationC = await EnsureRegistrationAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            athleteProfilesByEmail["mia.garcia@pinpointarena.local"].Id,
+            secondaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Pending,
+            0,
+            cancellationToken);
+
+        var freestyleLiveRegistrationWaitlist = await EnsureRegistrationAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            athleteProfilesByEmail["nolan.shaw@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Waitlisted,
+            PaymentStatus.Pending,
+            0,
+            cancellationToken);
+
+        var freestyleLiveRegistrationCancelled = await EnsureRegistrationAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            athleteProfilesByEmail["ayden.foster@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Cancelled,
+            PaymentStatus.Refunded,
+            0,
+            cancellationToken);
+
+        var grecoRegistrationA = await EnsureRegistrationAsync(
+            dbContext,
+            ironCityGrecoOpenEvent.Id,
+            athleteProfilesByEmail["gabe.soto@pinpointarena.local"].Id,
+            scoutingTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            ironCityGrecoOpenEvent.EntryFeeCents,
+            cancellationToken);
+
+        var grecoRegistrationB = await EnsureRegistrationAsync(
+            dbContext,
+            ironCityGrecoOpenEvent.Id,
+            athleteProfilesByEmail["isaac.wells@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            ironCityGrecoOpenEvent.EntryFeeCents,
+            cancellationToken);
+
+        var grecoRegistrationFailed = await EnsureRegistrationAsync(
+            dbContext,
+            ironCityGrecoOpenEvent.Id,
+            athleteProfilesByEmail["levi.hayes@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Pending,
+            PaymentStatus.Failed,
+            0,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            heartlandFreestyleQualifierEvent.Id,
+            athleteProfilesByEmail["cooper.james@pinpointarena.local"].Id,
+            heartlandTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            heartlandFreestyleQualifierEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            heartlandFreestyleQualifierEvent.Id,
+            athleteProfilesByEmail["avery.reed@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            heartlandFreestyleQualifierEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            heartlandFreestyleQualifierEvent.Id,
+            athleteProfilesByEmail["dean.walker@pinpointarena.local"].Id,
+            heartlandTeam.Id,
+            false,
+            RegistrationStatus.Pending,
+            PaymentStatus.Pending,
+            0,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            archiveGrecoDualEvent.Id,
+            athleteProfilesByEmail["noah.miller@pinpointarena.local"].Id,
+            secondaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            archiveGrecoDualEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            archiveGrecoDualEvent.Id,
+            athleteProfilesByEmail["cameron.lee@pinpointarena.local"].Id,
+            scoutingTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Paid,
+            archiveGrecoDualEvent.EntryFeeCents,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            archiveGrecoDualEvent.Id,
+            athleteProfilesByEmail["mia.garcia@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Refunded,
+            0,
+            cancellationToken);
+
         if (freeAgentRegistrations.Count > 0)
         {
             await EnsureFreeAgentInviteAsync(
@@ -581,6 +864,22 @@ public static class DependencyInjection
                 false,
                 cancellationToken);
         }
+
+        await EnsureFreeAgentInviteAsync(
+            dbContext,
+            freestyleLiveRegistrationB.Id,
+            heartlandTeam.Id,
+            "Heartland University staff would like to connect post-event.",
+            true,
+            cancellationToken);
+
+        await EnsureFreeAgentInviteAsync(
+            dbContext,
+            freestyleLiveRegistrationWaitlist.Id,
+            primaryTeam.Id,
+            "Waitlist slot can convert to team slot if accepted.",
+            false,
+            cancellationToken);
 
         var showcaseBracket = await EnsureBracketAsync(
             dbContext,
@@ -953,6 +1252,322 @@ public static class DependencyInjection
             archiveStartUtc.AddMinutes(110),
             cancellationToken);
 
+        var freestyleBracket = await EnsureBracketAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            freestyleHighDivision.Id,
+            CompetitionLevel.HighSchool,
+            132m,
+            BracketGenerationMode.Random,
+            cancellationToken);
+
+        var freestyleAthletes = new[]
+        {
+            athleteProfilesByEmail["demo.athlete@pinpointarena.local"],
+            athleteProfilesByEmail["sophia.patel@pinpointarena.local"],
+            athleteProfilesByEmail["mia.garcia@pinpointarena.local"],
+            athleteProfilesByEmail["nolan.shaw@pinpointarena.local"]
+        };
+
+        for (var seed = 0; seed < freestyleAthletes.Length; seed++)
+        {
+            await EnsureBracketEntryAsync(
+                dbContext,
+                freestyleBracket.Id,
+                freestyleAthletes[seed].Id,
+                seed + 1,
+                cancellationToken);
+        }
+
+        var freestyleStartUtc = columbusFreestyleLiveEvent.StartUtc;
+        var freestyleSemiFinalA = await EnsureMatchAsync(
+            dbContext,
+            freestyleBracket.Id,
+            1,
+            1,
+            freestyleAthletes[0].Id,
+            freestyleAthletes[3].Id,
+            freestyleAthletes[0].Id,
+            "8-2",
+            "Freestyle",
+            "Mat 6",
+            MatchStatus.Completed,
+            freestyleStartUtc.AddMinutes(10),
+            freestyleStartUtc.AddMinutes(20),
+            cancellationToken);
+
+        var freestyleSemiFinalB = await EnsureMatchAsync(
+            dbContext,
+            freestyleBracket.Id,
+            1,
+            2,
+            freestyleAthletes[1].Id,
+            freestyleAthletes[2].Id,
+            freestyleAthletes[1].Id,
+            "Forfeit",
+            "Forfeit",
+            "Mat 6",
+            MatchStatus.Forfeit,
+            freestyleStartUtc.AddMinutes(24),
+            freestyleStartUtc.AddMinutes(26),
+            cancellationToken);
+
+        var freestyleFinal = await EnsureMatchAsync(
+            dbContext,
+            freestyleBracket.Id,
+            2,
+            3,
+            freestyleSemiFinalA.WinnerAthleteId,
+            freestyleSemiFinalB.WinnerAthleteId,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 6",
+            status: MatchStatus.OnMat,
+            scheduledUtc: freestyleStartUtc.AddMinutes(45),
+            completedUtc: null,
+            cancellationToken);
+
+        var grecoBracket = await EnsureBracketAsync(
+            dbContext,
+            ironCityGrecoOpenEvent.Id,
+            grecoMiddleDivision.Id,
+            CompetitionLevel.MiddleSchool,
+            98m,
+            BracketGenerationMode.Manual,
+            cancellationToken);
+
+        var grecoAthletes = new[]
+        {
+            athleteProfilesByEmail["gabe.soto@pinpointarena.local"],
+            athleteProfilesByEmail["isaac.wells@pinpointarena.local"],
+            athleteProfilesByEmail["levi.hayes@pinpointarena.local"],
+            athleteProfilesByEmail["brady.kim@pinpointarena.local"]
+        };
+
+        for (var seed = 0; seed < grecoAthletes.Length; seed++)
+        {
+            await EnsureBracketEntryAsync(
+                dbContext,
+                grecoBracket.Id,
+                grecoAthletes[seed].Id,
+                seed + 1,
+                cancellationToken);
+        }
+
+        var grecoStartUtc = ironCityGrecoOpenEvent.StartUtc;
+        var grecoSemiFinalA = await EnsureMatchAsync(
+            dbContext,
+            grecoBracket.Id,
+            1,
+            1,
+            grecoAthletes[0].Id,
+            grecoAthletes[3].Id,
+            grecoAthletes[0].Id,
+            "10-0",
+            "Greco",
+            "Mat 7",
+            MatchStatus.Completed,
+            grecoStartUtc.AddMinutes(6),
+            grecoStartUtc.AddMinutes(14),
+            cancellationToken);
+
+        var grecoSemiFinalB = await EnsureMatchAsync(
+            dbContext,
+            grecoBracket.Id,
+            1,
+            2,
+            grecoAthletes[1].Id,
+            grecoAthletes[2].Id,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 7",
+            status: MatchStatus.Cancelled,
+            scheduledUtc: grecoStartUtc.AddMinutes(18),
+            completedUtc: grecoStartUtc.AddMinutes(19),
+            cancellationToken);
+
+        await EnsureMatchAsync(
+            dbContext,
+            grecoBracket.Id,
+            2,
+            3,
+            grecoSemiFinalA.WinnerAthleteId,
+            athleteBId: null,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 7",
+            status: MatchStatus.Scheduled,
+            scheduledUtc: grecoStartUtc.AddMinutes(44),
+            completedUtc: null,
+            cancellationToken);
+
+        var archiveGrecoBracket = await EnsureBracketAsync(
+            dbContext,
+            archiveGrecoDualEvent.Id,
+            grecoArchiveDivision.Id,
+            CompetitionLevel.HighSchool,
+            132m,
+            BracketGenerationMode.Seeded,
+            cancellationToken);
+
+        var archiveGrecoAthletes = new[]
+        {
+            athleteProfilesByEmail["cameron.lee@pinpointarena.local"],
+            athleteProfilesByEmail["noah.miller@pinpointarena.local"],
+            athleteProfilesByEmail["mia.garcia@pinpointarena.local"],
+            athleteProfilesByEmail["logan.price@pinpointarena.local"]
+        };
+
+        for (var seed = 0; seed < archiveGrecoAthletes.Length; seed++)
+        {
+            await EnsureBracketEntryAsync(
+                dbContext,
+                archiveGrecoBracket.Id,
+                archiveGrecoAthletes[seed].Id,
+                seed + 1,
+                cancellationToken);
+        }
+
+        var archiveGrecoStartUtc = archiveGrecoDualEvent.StartUtc;
+        var archiveGrecoMatch = await EnsureMatchAsync(
+            dbContext,
+            archiveGrecoBracket.Id,
+            1,
+            1,
+            archiveGrecoAthletes[0].Id,
+            archiveGrecoAthletes[1].Id,
+            archiveGrecoAthletes[0].Id,
+            "9-1",
+            "Greco",
+            "Mat 8",
+            MatchStatus.Completed,
+            archiveGrecoStartUtc.AddMinutes(18),
+            archiveGrecoStartUtc.AddMinutes(28),
+            cancellationToken);
+
+        await EnsureStreamSessionAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            freestyleFinal.Id,
+            "Freestyle Mat Cam",
+            StreamStatus.Live,
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+            freestyleStartUtc.AddMinutes(44),
+            endedUtc: null,
+            cancellationToken);
+
+        await EnsureStreamSessionAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            freestyleSemiFinalA.Id,
+            "Freestyle Table Backup",
+            StreamStatus.Provisioned,
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            startedUtc: null,
+            endedUtc: null,
+            cancellationToken);
+
+        await EnsureStreamSessionAsync(
+            dbContext,
+            ironCityGrecoOpenEvent.Id,
+            grecoSemiFinalA.Id,
+            "Greco Mat Cam",
+            StreamStatus.Provisioned,
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+            startedUtc: null,
+            endedUtc: null,
+            cancellationToken);
+
+        await EnsureStreamSessionAsync(
+            dbContext,
+            archiveGrecoDualEvent.Id,
+            archiveGrecoMatch.Id,
+            "Archive Greco Cam",
+            StreamStatus.Ended,
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+            archiveGrecoStartUtc.AddMinutes(15),
+            archiveGrecoStartUtc.AddMinutes(40),
+            cancellationToken);
+
+        var freestyleCollegeBracket = await EnsureBracketAsync(
+            dbContext,
+            heartlandFreestyleQualifierEvent.Id,
+            freestyleCollegeDivision.Id,
+            CompetitionLevel.College,
+            157m,
+            BracketGenerationMode.Seeded,
+            cancellationToken);
+
+        var freestyleCollegeAthletes = new[]
+        {
+            athleteProfilesByEmail["cooper.james@pinpointarena.local"],
+            athleteProfilesByEmail["avery.reed@pinpointarena.local"],
+            athleteProfilesByEmail["riley.mitchell@pinpointarena.local"],
+            athleteProfilesByEmail["dean.walker@pinpointarena.local"]
+        };
+
+        for (var seed = 0; seed < freestyleCollegeAthletes.Length; seed++)
+        {
+            await EnsureBracketEntryAsync(
+                dbContext,
+                freestyleCollegeBracket.Id,
+                freestyleCollegeAthletes[seed].Id,
+                seed + 1,
+                cancellationToken);
+        }
+
+        var collegeFreestyleStartUtc = heartlandFreestyleQualifierEvent.StartUtc;
+        var collegeFreestyleSemiA = await EnsureMatchAsync(
+            dbContext,
+            freestyleCollegeBracket.Id,
+            1,
+            1,
+            freestyleCollegeAthletes[0].Id,
+            freestyleCollegeAthletes[3].Id,
+            freestyleCollegeAthletes[0].Id,
+            "11-1",
+            "Freestyle",
+            "Mat 10",
+            MatchStatus.Completed,
+            collegeFreestyleStartUtc.AddMinutes(8),
+            collegeFreestyleStartUtc.AddMinutes(18),
+            cancellationToken);
+
+        var collegeFreestyleSemiB = await EnsureMatchAsync(
+            dbContext,
+            freestyleCollegeBracket.Id,
+            1,
+            2,
+            freestyleCollegeAthletes[1].Id,
+            freestyleCollegeAthletes[2].Id,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 10",
+            status: MatchStatus.InTheHole,
+            scheduledUtc: collegeFreestyleStartUtc.AddMinutes(22),
+            completedUtc: null,
+            cancellationToken);
+
+        await EnsureMatchAsync(
+            dbContext,
+            freestyleCollegeBracket.Id,
+            2,
+            3,
+            collegeFreestyleSemiA.WinnerAthleteId,
+            athleteBId: collegeFreestyleSemiB.WinnerAthleteId,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 10",
+            status: MatchStatus.Scheduled,
+            scheduledUtc: collegeFreestyleStartUtc.AddMinutes(55),
+            completedUtc: null,
+            cancellationToken);
+
         await EnsureDemoBracketAndStreamCoverageAsync(dbContext, athleteProfilesByEmail, cancellationToken);
 
         var demoAthleteUser = athleteUsersByEmail["demo.athlete@pinpointarena.local"];
@@ -1022,6 +1637,72 @@ public static class DependencyInjection
             "family+demo@pinpointarena.local",
             "Match result posted: 10-2 Decision.",
             DateTime.UtcNow.AddMinutes(-25),
+            cancellationToken);
+
+        var parentMatSubscription = await EnsureNotificationSubscriptionAsync(
+            dbContext,
+            parentUser.Id,
+            columbusFreestyleLiveEvent.Id,
+            athleteProfilesByEmail["demo.athlete@pinpointarena.local"].Id,
+            NotificationEventType.InTheHole,
+            NotificationChannel.Sms,
+            "+16145550031",
+            cancellationToken);
+
+        var fanResultSubscription = await EnsureNotificationSubscriptionAsync(
+            dbContext,
+            fanUser.Id,
+            columbusFreestyleLiveEvent.Id,
+            athleteProfilesByEmail["sophia.patel@pinpointarena.local"].Id,
+            NotificationEventType.MatchResult,
+            NotificationChannel.Email,
+            "fan.updates@pinpointarena.local",
+            cancellationToken);
+
+        var eventAdminSubscription = await EnsureNotificationSubscriptionAsync(
+            dbContext,
+            eventAdminUser.Id,
+            ironCityGrecoOpenEvent.Id,
+            athleteProfilesByEmail["gabe.soto@pinpointarena.local"].Id,
+            NotificationEventType.MatAssignment,
+            NotificationChannel.Email,
+            "ops.alerts@pinpointarena.local",
+            cancellationToken);
+
+        await EnsureNotificationMessageAsync(
+            dbContext,
+            parentMatSubscription.Id,
+            columbusFreestyleLiveEvent.Id,
+            freestyleFinal.Id,
+            NotificationEventType.InTheHole,
+            NotificationChannel.Sms,
+            "+16145550031",
+            "Eli Turner is in-the-hole on Mat 6 for freestyle finals.",
+            DateTime.UtcNow.AddMinutes(-14),
+            cancellationToken);
+
+        await EnsureNotificationMessageAsync(
+            dbContext,
+            fanResultSubscription.Id,
+            columbusFreestyleLiveEvent.Id,
+            freestyleSemiFinalB.Id,
+            NotificationEventType.MatchResult,
+            NotificationChannel.Email,
+            "fan.updates@pinpointarena.local",
+            "Sophia Patel advances by forfeit in semifinal two.",
+            DateTime.UtcNow.AddMinutes(-11),
+            cancellationToken);
+
+        await EnsureNotificationMessageAsync(
+            dbContext,
+            eventAdminSubscription.Id,
+            ironCityGrecoOpenEvent.Id,
+            grecoSemiFinalA.Id,
+            NotificationEventType.MatAssignment,
+            NotificationChannel.Email,
+            "ops.alerts@pinpointarena.local",
+            "Assign officials to Mat 7 for Greco semifinal coverage.",
+            DateTime.UtcNow.AddMinutes(-8),
             cancellationToken);
 
         var seededAthleteIds = athleteProfilesByEmail.Values.Select(x => x.Id).ToHashSet();
@@ -1120,15 +1801,113 @@ public static class DependencyInjection
             BuildRanking("jayden.clark@pinpointarena.local", "OH", 1542m, 3),
             BuildRanking("logan.price@pinpointarena.local", "OH", 1520m, 4),
             BuildRanking("ethan.brooks@pinpointarena.local", "OH", 1498m, 5),
+            BuildRanking("nolan.shaw@pinpointarena.local", "OH", 1481m, 6),
+            BuildRanking("zoe.harris@pinpointarena.local", "OH", 1278m, 3),
             BuildRanking("cameron.lee@pinpointarena.local", "PA", 1570m, 1),
             BuildRanking("ayden.foster@pinpointarena.local", "PA", 1510m, 2),
+            BuildRanking("mia.garcia@pinpointarena.local", "TX", 1534m, 1),
+            BuildRanking("sophia.patel@pinpointarena.local", "NJ", 1527m, 1),
             BuildRanking("tyler.nguyen@pinpointarena.local", "MI", 1505m, 1),
             BuildRanking("gabe.soto@pinpointarena.local", "OH", 1412m, 1),
             BuildRanking("isaac.wells@pinpointarena.local", "PA", 1398m, 1),
+            BuildRanking("brady.kim@pinpointarena.local", "MI", 1376m, 2),
+            BuildRanking("levi.hayes@pinpointarena.local", "OH", 1365m, 2),
             BuildRanking("luca.brown@pinpointarena.local", "OH", 1320m, 1),
             BuildRanking("owen.hill@pinpointarena.local", "OH", 1294m, 2),
             BuildRanking("cooper.james@pinpointarena.local", "IA", 1706m, 1),
-            BuildRanking("riley.mitchell@pinpointarena.local", "OK", 1682m, 1));
+            BuildRanking("riley.mitchell@pinpointarena.local", "OK", 1682m, 1),
+            BuildRanking("avery.reed@pinpointarena.local", "IA", 1668m, 2),
+            BuildRanking("dean.walker@pinpointarena.local", "PA", 1652m, 2));
+
+        await EnsurePaymentWebhookEventAsync(
+            dbContext,
+            "seed-pmt-success-freestyle-live",
+            "checkout.session.completed",
+            freestyleLiveRegistrationA.Id,
+            "seed_ref_paid_01",
+            columbusFreestyleLiveEvent.EntryFeeCents,
+            "USD",
+            true,
+            WebhookProcessingStatus.Processed,
+            1,
+            null,
+            DateTime.UtcNow.AddMinutes(-36),
+            cancellationToken);
+
+        await EnsurePaymentWebhookEventAsync(
+            dbContext,
+            "seed-pmt-failed-greco",
+            "payment_intent.payment_failed",
+            grecoRegistrationFailed.Id,
+            "seed_ref_failed_02",
+            ironCityGrecoOpenEvent.EntryFeeCents,
+            "USD",
+            false,
+            WebhookProcessingStatus.Failed,
+            3,
+            "Card declined by issuer.",
+            null,
+            cancellationToken);
+
+        await EnsurePaymentWebhookEventAsync(
+            dbContext,
+            "seed-pmt-pending-heartland",
+            "payment_intent.processing",
+            freestyleLiveRegistrationC.Id,
+            "seed_ref_processing_03",
+            heartlandFreestyleQualifierEvent.EntryFeeCents,
+            "USD",
+            false,
+            WebhookProcessingStatus.Ignored,
+            1,
+            "Still processing with provider.",
+            DateTime.UtcNow.AddMinutes(-30),
+            cancellationToken);
+
+        await EnsurePaymentWebhookEventAsync(
+            dbContext,
+            "seed-pmt-refund-live-cancelled",
+            "charge.refunded",
+            freestyleLiveRegistrationCancelled.Id,
+            "seed_ref_refund_04",
+            columbusFreestyleLiveEvent.EntryFeeCents,
+            "USD",
+            true,
+            WebhookProcessingStatus.Processed,
+            1,
+            null,
+            DateTime.UtcNow.AddMinutes(-22),
+            cancellationToken);
+
+        await EnsurePaymentWebhookEventAsync(
+            dbContext,
+            "seed-pmt-greco-captured",
+            "charge.succeeded",
+            grecoRegistrationA.Id,
+            "seed_ref_greco_paid_05",
+            ironCityGrecoOpenEvent.EntryFeeCents,
+            "USD",
+            true,
+            WebhookProcessingStatus.Processed,
+            1,
+            null,
+            DateTime.UtcNow.AddMinutes(-17),
+            cancellationToken);
+
+        await EnsurePaymentWebhookEventAsync(
+            dbContext,
+            "seed-pmt-greco-review",
+            "payment_intent.requires_action",
+            grecoRegistrationB.Id,
+            "seed_ref_greco_review_06",
+            ironCityGrecoOpenEvent.EntryFeeCents,
+            "USD",
+            false,
+            WebhookProcessingStatus.Ignored,
+            1,
+            "3DS challenge required at gateway.",
+            DateTime.UtcNow.AddMinutes(-16),
+            cancellationToken);
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -1680,6 +2459,61 @@ public static class DependencyInjection
         stream.StartedUtc = startedUtc;
         stream.EndedUtc = endedUtc;
         return stream;
+    }
+
+    private static async Task<PaymentWebhookEvent> EnsurePaymentWebhookEventAsync(
+        WrestlingPlatformDbContext dbContext,
+        string providerEventId,
+        string eventType,
+        Guid? registrationId,
+        string? providerReference,
+        int? amountCents,
+        string? currency,
+        bool isPaymentConfirmed,
+        WebhookProcessingStatus processingStatus,
+        int processAttemptCount,
+        string? lastError,
+        DateTime? processedUtc,
+        CancellationToken cancellationToken)
+    {
+        var normalizedProviderEventId = providerEventId.Trim();
+        var row = await dbContext.PaymentWebhookEvents
+            .FirstOrDefaultAsync(
+                x => x.Provider == "Stripe"
+                     && x.ProviderEventId == normalizedProviderEventId,
+                cancellationToken);
+
+        if (row is null)
+        {
+            row = new PaymentWebhookEvent
+            {
+                Provider = "Stripe",
+                ProviderEventId = normalizedProviderEventId
+            };
+
+            dbContext.PaymentWebhookEvents.Add(row);
+        }
+
+        row.EventType = eventType.Trim();
+        row.RegistrationId = registrationId;
+        row.ProviderReference = string.IsNullOrWhiteSpace(providerReference) ? null : providerReference.Trim();
+        row.AmountCents = amountCents;
+        row.Currency = string.IsNullOrWhiteSpace(currency) ? null : currency.Trim().ToUpperInvariant();
+        row.IsPaymentConfirmed = isPaymentConfirmed;
+        row.Payload = $$"""
+                        {
+                          "id": "{{normalizedProviderEventId}}",
+                          "type": "{{row.EventType}}",
+                          "source": "seed-data",
+                          "registrationId": "{{registrationId}}"
+                        }
+                        """;
+        row.ProcessingStatus = processingStatus;
+        row.ProcessAttemptCount = Math.Max(0, processAttemptCount);
+        row.ProcessedUtc = processedUtc;
+        row.LastError = string.IsNullOrWhiteSpace(lastError) ? null : lastError.Trim();
+
+        return row;
     }
 
     private static async Task EnsureDemoBracketAndStreamCoverageAsync(
