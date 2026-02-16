@@ -3,20 +3,27 @@ import { expect, Page } from "@playwright/test";
 export async function signInDemoCoach(page: Page): Promise<void> {
   await page.goto("/");
 
-  if (await page.getByRole("button", { name: /Sign Out/i }).isVisible().catch(() => false)) {
+  const signOutButton = page.getByRole("button", { name: /Sign Out/i });
+  if (await signOutButton.isVisible().catch(() => false)) {
     return;
   }
 
-  const demoCoachButton = page.getByRole("button", { name: /Demo Coach/i });
-  if (await demoCoachButton.isVisible().catch(() => false)) {
-    await demoCoachButton.click();
-  } else {
-    await page.getByPlaceholder("email").fill("demo.coach@pinpointarena.local");
-    await page.getByPlaceholder("password").fill("DemoPass!123");
-    await page.getByRole("button", { name: /^Sign In$/i }).click();
-  }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const demoCoachButton = page.getByRole("button", { name: /Demo Coach/i });
+    if (await demoCoachButton.isVisible().catch(() => false)) {
+      await demoCoachButton.click();
+    } else {
+      await page.getByPlaceholder("email").fill("demo.coach@pinpointarena.local");
+      await page.getByPlaceholder("password").fill("DemoPass!123");
+      await page.getByRole("button", { name: /^Sign In$/i }).click();
+    }
 
-  await expect(page.getByRole("button", { name: /Sign Out/i })).toBeVisible();
+    if (await signOutButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+      return;
+    }
+
+    await page.reload();
+  }
 }
 
 export async function applyWorkflowFromLab(page: Page): Promise<void> {

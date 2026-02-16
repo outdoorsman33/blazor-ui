@@ -407,6 +407,29 @@ hr.soft {
     color: #6f7b84;
 }
 
+.clock-display {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-size: clamp(2rem, 6vw, 3.2rem);
+    letter-spacing: 0.05em;
+    color: #26323c;
+    padding: 0.25rem 0.65rem;
+    border: 1px solid #c8ced8;
+    border-radius: 12px;
+    min-width: 148px;
+    text-align: center;
+    background: #f8fbff;
+}
+
+.clock-display.running {
+    border-color: #2c86d1;
+    box-shadow: 0 0 0 2px rgba(44, 134, 209, 0.12);
+}
+
+.clock-display.paused {
+    border-color: #c9c3b2;
+    background: #fffdf7;
+}
+
 .bracket-lane {
     display: flex;
     gap: 0.9rem;

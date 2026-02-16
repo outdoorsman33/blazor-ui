@@ -200,6 +200,33 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         return await ReadResponseAsync<TournamentControlSettings>(response, cancellationToken);
     }
 
+    public async Task<ApiResult<EventOpsChecklistState>> GetEventOpsChecklistAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/events/{eventId}/ops-checklist", cancellationToken);
+        return await ReadResponseAsync<EventOpsChecklistState>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<EventOpsChecklistState>> UpdateEventOpsChecklistAsync(
+        Guid eventId,
+        UpdateEventOpsChecklistRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PutAsJsonAsync($"/api/events/{eventId}/ops-checklist", request, cancellationToken);
+        return await ReadResponseAsync<EventOpsChecklistState>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<EventOpsArtifactLinks>> GetEventOpsArtifactsAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/events/{eventId}/ops-checklist/artifacts", cancellationToken);
+        return await ReadResponseAsync<EventOpsArtifactLinks>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<EventOpsRecoverySnapshot>>> GetEventOpsRecoveryAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/events/{eventId}/ops-checklist/recovery", cancellationToken);
+        return await ReadResponseAsync<List<EventOpsRecoverySnapshot>>(response, cancellationToken);
+    }
+
     public async Task<ApiResult<TournamentBracketVisualBundle>> GetBracketVisualAsync(Guid eventId, CancellationToken cancellationToken = default)
     {
         var response = await GetAsync($"/api/events/{eventId}/brackets/visual", cancellationToken);
@@ -383,6 +410,15 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         CancellationToken cancellationToken = default)
     {
         var response = await PostAsJsonAsync($"/api/matches/{matchId}/scoreboard/events", request, cancellationToken);
+        return await ReadResponseAsync<MatScoreboardSnapshot>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<MatScoreboardSnapshot>> ControlMatchClockAsync(
+        Guid matchId,
+        ControlMatchClockRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync($"/api/matches/{matchId}/scoreboard/clock", request, cancellationToken);
         return await ReadResponseAsync<MatScoreboardSnapshot>(response, cancellationToken);
     }
 

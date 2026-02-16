@@ -235,12 +235,29 @@ public sealed record MatchScoringRulesSnapshot(
     int TechFallPointGap,
     int RegulationPeriods,
     List<ScoringActionDefinition> Actions,
+    int RegulationPeriodSeconds = 120,
+    int OvertimePeriodSeconds = 60,
     OvertimeFormat OvertimeFormat = OvertimeFormat.FolkstyleStandard,
     int MaxOvertimePeriods = 3,
     bool EndOnFirstOvertimeScore = false,
     bool StrictRuleEnforcement = true);
 
 public sealed record ResetMatScoreboardRequest(string? Reason);
+
+public enum MatchClockCommand
+{
+    Start,
+    Pause,
+    Resume,
+    Seek,
+    AdvancePeriod,
+    ResetToPeriodDefault
+}
+
+public sealed record ControlMatchClockRequest(
+    MatchClockCommand Command,
+    int? ClockSeconds = null,
+    bool ResumeAfterSeek = false);
 
 public sealed record MatScoreEventSnapshot(
     Guid EventId,
@@ -269,7 +286,12 @@ public sealed record MatScoreboardSnapshot(
     Guid? WinnerAthleteId = null,
     Guid? LoserAthleteId = null,
     string? OutcomeReason = null,
-    bool IsFinal = false);
+    bool IsFinal = false,
+    int ClockSecondsRemaining = 0,
+    bool ClockRunning = false,
+    DateTime? ClockLastStartedUtc = null,
+    int RegulationPeriodSeconds = 120,
+    int OvertimePeriodSeconds = 60);
 
 public sealed record TableWorkerEventSummary(
     Guid EventId,
@@ -591,3 +613,75 @@ public sealed record RecruitingAthleteCard(
     int Wins,
     int Losses,
     bool OpenToRecruitment);
+
+public enum EventOpsSeedingStrategy
+{
+    RandomDraw,
+    CoachSeeding,
+    RankingsSeeded,
+    HybridAiCoachReview
+}
+
+public sealed record EventOpsChecklistState(
+    Guid EventId,
+    bool DivisionsLocked,
+    bool FormatAndRulesLocked,
+    bool RegistrationDeadlineSet,
+    DateTime? RegistrationDeadlineUtc,
+    EventOpsSeedingStrategy SeedingStrategy,
+    bool ContingencyPrintReady,
+    bool WeighInsCompleted,
+    bool ScratchListFrozen,
+    bool BracketsGeneratedAfterScratchFreeze,
+    bool HeadTableReady,
+    bool MatTablesReady,
+    bool QrPostedForLiveResults,
+    bool FinalResultsLocked,
+    bool PlacingsExported,
+    bool TeamPointsExported,
+    bool AwardSheetsPrinted,
+    bool FinalBracketsPublished,
+    bool RequireScratchFreezeForBracketGeneration,
+    DateTime UpdatedUtc,
+    string? Notes = null);
+
+public sealed record UpdateEventOpsChecklistRequest(
+    bool? DivisionsLocked = null,
+    bool? FormatAndRulesLocked = null,
+    bool? RegistrationDeadlineSet = null,
+    DateTime? RegistrationDeadlineUtc = null,
+    EventOpsSeedingStrategy? SeedingStrategy = null,
+    bool? ContingencyPrintReady = null,
+    bool? WeighInsCompleted = null,
+    bool? ScratchListFrozen = null,
+    bool? HeadTableReady = null,
+    bool? MatTablesReady = null,
+    bool? QrPostedForLiveResults = null,
+    bool? FinalResultsLocked = null,
+    bool? PlacingsExported = null,
+    bool? TeamPointsExported = null,
+    bool? AwardSheetsPrinted = null,
+    bool? FinalBracketsPublished = null,
+    bool? RequireScratchFreezeForBracketGeneration = null,
+    string? Notes = null);
+
+public sealed record EventOpsArtifactLinks(
+    Guid EventId,
+    string LiveResultsUrl,
+    string MatScheduleUrl,
+    string AwardsSheetUrl,
+    string PlacingsExportUrl,
+    string TeamPointsExportUrl,
+    DateTime GeneratedUtc);
+
+public sealed record EventOpsRecoverySnapshot(
+    Guid MatchId,
+    MatchStatus Status,
+    string? MatNumber,
+    string? Score,
+    int CurrentPeriod,
+    int ClockSecondsRemaining,
+    bool ClockRunning,
+    Guid? WinnerAthleteId,
+    string ResumeScoringUrl,
+    DateTime UpdatedUtc);

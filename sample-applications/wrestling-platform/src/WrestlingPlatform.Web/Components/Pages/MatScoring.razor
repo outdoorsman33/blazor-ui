@@ -54,8 +54,8 @@
             <input class="input" type="number" min="1" max="10" @bind="CurrentPeriod" />
         </div>
         <div class="field">
-            <label>Clock (seconds)</label>
-            <input class="input" type="number" min="0" max="420" @bind="CurrentClockSeconds" />
+            <label>Clock Seek (seconds)</label>
+            <input class="input" type="number" min="0" max="600" @bind="SeekClockSeconds" />
         </div>
         <div class="field">
             <label>Action</label>
@@ -104,12 +104,25 @@
         <button class="btn ghost" @onclick="EndByDecisionAsync" disabled="@IsBusy">End Match</button>
         <button class="btn ghost" @onclick="ResetBoardAsync" disabled="@IsBusy">Reset Board</button>
     </div>
+    <div class="actions spacer-top">
+        <button class="btn primary" @onclick="StartClockAsync" disabled="@IsBusy">Start Clock</button>
+        <button class="btn secondary" @onclick="PauseClockAsync" disabled="@IsBusy">Pause</button>
+        <button class="btn secondary" @onclick="ResumeClockAsync" disabled="@IsBusy">Resume</button>
+        <button class="btn ghost" @onclick="SeekClockAsync" disabled="@IsBusy">Seek</button>
+        <button class="btn ghost" @onclick="AdvancePeriodAsync" disabled="@IsBusy">Advance Period</button>
+        <button class="btn ghost" @onclick="ResetPeriodClockAsync" disabled="@IsBusy">Reset Period Clock</button>
+    </div>
+    <div class="field check-row spacer-top">
+        <input id="resume-after-seek" type="checkbox" @bind="ResumeAfterSeek" />
+        <label for="resume-after-seek">Resume after seek</label>
+    </div>
     <p class="helper spacer-top">
         Hub: @(IsHubConnected ? "connected" : "not connected")
         | Fallback Polling: @(IsPollingActive ? "on" : "off")
         | Auto-End: @(AutoEndEnabled ? "on" : "off")
         | OT: @SelectedOvertimeFormat (@MaxOvertimePeriods)
         | Strict: @(StrictRuleEnforcement ? "on" : "off")
+        | Clock: @EffectiveClockText (@(IsClockRunning ? "running" : "paused"))
         | workflow match: <span class="mono">@Short(Workflow.MatchId)</span>
     </p>
 </section>
@@ -131,6 +144,8 @@
 
     <section class="panel scoreboard-center">
         <h3>Live Board</h3>
+        <div class="clock-display @(IsClockRunning ? "running" : "paused")">@EffectiveClockText</div>
+        <div class="helper">Clock @(IsClockRunning ? "Running" : "Paused") | Period Seconds @(Board?.RegulationPeriodSeconds ?? Rules?.RegulationPeriodSeconds ?? 120)</div>
         <div class="duel-score">
             <span>@(Board?.AthleteAScore ?? 0)</span>
             <span class="duel-sep">-</span>
@@ -231,6 +246,8 @@
 
     private int CurrentPeriod = 1;
     private int? CurrentClockSeconds;
+    private int SeekClockSeconds;
+    private bool ResumeAfterSeek = true;
     private int? ManualPoints;
 
     private WrestlingStyle SelectedStyle = WrestlingStyle.Folkstyle;
@@ -243,6 +260,27 @@
     private int MaxOvertimePeriods = 3;
     private bool EndOnFirstOvertimeScore;
     private bool StrictRuleEnforcement = true;
+
+    private CancellationTokenSource? _clockRenderCts;
+
+    private bool IsClockRunning => Board?.ClockRunning ?? false;
+
+    private int EffectiveClockSeconds
+    {
+        get
+        {
+            var seconds = Board?.ClockSecondsRemaining ?? CurrentClockSeconds ?? 0;
+            if (Board?.ClockRunning == true && Board.ClockLastStartedUtc is not null)
+            {
+                var elapsed = (int)Math.Floor((DateTime.UtcNow - Board.ClockLastStartedUtc.Value).TotalSeconds);
+                seconds = Math.Max(0, seconds - Math.Max(0, elapsed));
+            }
+
+            return Math.Max(0, seconds);
+        }
+    }
+
+    private string EffectiveClockText => TimeSpan.FromSeconds(EffectiveClockSeconds).ToString(@"mm\:ss");
 
     private string CurrentStyleLabel => $"Style: {(Rules?.Style ?? SelectedStyle)}";
 
@@ -269,6 +307,8 @@
 
     protected override void OnInitialized()
     {
+        EnsureClockRenderLoop();
+
         if (QueryMatchId is not null)
         {
             MatchIdText = QueryMatchId.Value.ToString();
@@ -403,6 +443,63 @@
         }
     }
 
+    private Task StartClockAsync() => ClockCommandAsync(MatchClockCommand.Start);
+
+    private Task PauseClockAsync() => ClockCommandAsync(MatchClockCommand.Pause);
+
+    private Task ResumeClockAsync() => ClockCommandAsync(MatchClockCommand.Resume);
+
+    private Task AdvancePeriodAsync() => ClockCommandAsync(MatchClockCommand.AdvancePeriod);
+
+    private Task ResetPeriodClockAsync() => ClockCommandAsync(MatchClockCommand.ResetToPeriodDefault);
+
+    private Task SeekClockAsync() => ClockCommandAsync(MatchClockCommand.Seek, SeekClockSeconds, ResumeAfterSeek);
+
+    private async Task ClockCommandAsync(MatchClockCommand command, int? seconds = null, bool resumeAfterSeek = false)
+    {
+        if (!TryGetMatchId(out var matchId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid match id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.ControlMatchClockAsync(
+                matchId,
+                new ControlMatchClockRequest(command, seconds, resumeAfterSeek));
+
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            Board = result.Data;
+            CurrentPeriod = result.Data.CurrentPeriod;
+            CurrentClockSeconds = result.Data.ClockSecondsRemaining;
+            SeekClockSeconds = result.Data.ClockSecondsRemaining;
+            StatusSuccess = true;
+            StatusMessage = command switch
+            {
+                MatchClockCommand.Start => "Clock started.",
+                MatchClockCommand.Pause => "Clock paused.",
+                MatchClockCommand.Resume => "Clock resumed.",
+                MatchClockCommand.Seek => $"Clock set to {TimeSpan.FromSeconds(Math.Max(0, result.Data.ClockSecondsRemaining)):mm\\:ss}.",
+                MatchClockCommand.AdvancePeriod => $"Advanced to period {result.Data.CurrentPeriod}.",
+                MatchClockCommand.ResetToPeriodDefault => "Period clock reset to default.",
+                _ => "Clock updated."
+            };
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private async Task ScoreActionAsync(ScoreCompetitor competitor, ScoringActionCode actionCode)
     {
         if (!TryGetMatchId(out var matchId))
@@ -424,7 +521,7 @@
                     ManualPoints,
                     actionLabel,
                     CurrentPeriod,
-                    CurrentClockSeconds,
+                    EffectiveClockSeconds,
                     AthleteId: null,
                     ActionCode: actionCode,
                     EndMatch: false));
@@ -438,6 +535,8 @@
 
             Board = result.Data;
             CurrentPeriod = result.Data.CurrentPeriod;
+            CurrentClockSeconds = result.Data.ClockSecondsRemaining;
+            SeekClockSeconds = result.Data.ClockSecondsRemaining;
             StatusSuccess = true;
             StatusMessage = $"{competitor}: {actionLabel}";
         }
@@ -470,7 +569,7 @@
                     0,
                     "Decision",
                     CurrentPeriod,
-                    CurrentClockSeconds,
+                    EffectiveClockSeconds,
                     AthleteId: null,
                     ActionCode: ScoringActionCode.Custom,
                     EndMatch: true));
@@ -483,6 +582,8 @@
             }
 
             Board = result.Data;
+            CurrentClockSeconds = result.Data.ClockSecondsRemaining;
+            SeekClockSeconds = result.Data.ClockSecondsRemaining;
             StatusSuccess = true;
             StatusMessage = "Match finalized by table worker.";
         }
@@ -513,6 +614,8 @@
             }
 
             Board = result.Data;
+            CurrentClockSeconds = result.Data.ClockSecondsRemaining;
+            SeekClockSeconds = result.Data.ClockSecondsRemaining;
             StatusSuccess = true;
             StatusMessage = "Scoreboard reset.";
         }
@@ -554,6 +657,8 @@
 
                 Board = snapshot;
                 CurrentPeriod = snapshot.CurrentPeriod;
+                CurrentClockSeconds = snapshot.ClockSecondsRemaining;
+                SeekClockSeconds = snapshot.ClockSecondsRemaining;
                 StatusSuccess = true;
                 StatusMessage = "Live scoreboard updated.";
                 _ = InvokeAsync(StateHasChanged);
@@ -578,6 +683,8 @@
 
         Board = boardResult.Data;
         CurrentPeriod = boardResult.Data.CurrentPeriod;
+        CurrentClockSeconds = boardResult.Data.ClockSecondsRemaining;
+        SeekClockSeconds = boardResult.Data.ClockSecondsRemaining;
         SelectedStyle = boardResult.Data.Style;
         SelectedLevel = boardResult.Data.Level;
     }
@@ -623,6 +730,23 @@
 
     public async ValueTask DisposeAsync()
     {
+        if (_clockRenderCts is not null)
+        {
+            try
+            {
+                _clockRenderCts.Cancel();
+                _clockRenderCts.Dispose();
+            }
+            catch
+            {
+                // Ignore disposal races.
+            }
+            finally
+            {
+                _clockRenderCts = null;
+            }
+        }
+
         StopPolling();
 
         if (_hubConnection is not null)
@@ -632,6 +756,36 @@
     }
 
     private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString()[..8];
+
+    private void EnsureClockRenderLoop()
+    {
+        if (_clockRenderCts is not null)
+        {
+            return;
+        }
+
+        _clockRenderCts = new CancellationTokenSource();
+        var token = _clockRenderCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    if (Board?.ClockRunning == true)
+                    {
+                        await InvokeAsync(StateHasChanged);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected during dispose.
+            }
+        }, token);
+    }
 
     private void StartPolling(Guid matchId)
     {
@@ -656,6 +810,8 @@
 
                     Board = result.Data;
                     CurrentPeriod = result.Data.CurrentPeriod;
+                    CurrentClockSeconds = result.Data.ClockSecondsRemaining;
+                    SeekClockSeconds = result.Data.ClockSecondsRemaining;
                     await InvokeAsync(StateHasChanged);
                 }
             }

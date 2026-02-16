@@ -65,6 +65,7 @@ builder.Services.AddHttpClient("media-ai").SetHandlerLifetime(TimeSpan.FromMinut
 builder.Services.AddSingleton<IMediaObjectStorage, MediaObjectStorage>();
 builder.Services.AddSingleton<ILiveMatScoringService, LiveMatScoringService>();
 builder.Services.AddSingleton<ITournamentControlService, TournamentControlService>();
+builder.Services.AddSingleton<IEventOpsChecklistService, EventOpsChecklistService>();
 builder.Services.AddSingleton<IMediaPipelineService, MediaPipelineService>();
 builder.Services.AddSingleton<ISecurityAuditTrailService, SecurityAuditTrailService>();
 builder.Services.AddSingleton<IMfaService, MfaService>();
@@ -985,6 +986,121 @@ events.MapPost("/{eventId:guid}/controls/release-brackets", async (
     return Results.Ok(updated);
 }).RequireAuthorization("EventOps");
 
+events.MapGet("/{eventId:guid}/ops-checklist", async (
+    Guid eventId,
+    WrestlingPlatformDbContext dbContext,
+    IEventOpsChecklistService eventOpsChecklistService,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    return Results.Ok(eventOpsChecklistService.GetOrCreate(eventId));
+}).AllowAnonymous();
+
+events.MapPut("/{eventId:guid}/ops-checklist", async (
+    Guid eventId,
+    UpdateEventOpsChecklistRequest request,
+    WrestlingPlatformDbContext dbContext,
+    IEventOpsChecklistService eventOpsChecklistService,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var updated = eventOpsChecklistService.Update(eventId, request);
+    return Results.Ok(updated);
+}).RequireAuthorization("EventOps");
+
+events.MapGet("/{eventId:guid}/ops-checklist/artifacts", async (
+    Guid eventId,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    IEventOpsChecklistService eventOpsChecklistService,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    eventOpsChecklistService.GetOrCreate(eventId);
+    var baseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}";
+    var links = new EventOpsArtifactLinks(
+        eventId,
+        $"{baseUrl}/search?q={Uri.EscapeDataString(eventId.ToString())}",
+        $"{baseUrl}/table-worker?eventId={eventId:D}",
+        $"{baseUrl}/admin?eventId={eventId:D}",
+        $"{baseUrl}/api/events/{eventId:D}/directory",
+        $"{baseUrl}/api/events/{eventId:D}/directory",
+        DateTime.UtcNow);
+
+    return Results.Ok(links);
+}).AllowAnonymous();
+
+events.MapGet("/{eventId:guid}/ops-checklist/recovery", async (
+    Guid eventId,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    ILiveMatScoringService liveMatScoringService,
+    IEventOpsChecklistService eventOpsChecklistService,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    eventOpsChecklistService.GetOrCreate(eventId);
+    var bracketIds = await dbContext.Brackets.AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId)
+        .Select(x => x.Id)
+        .ToListAsync(cancellationToken);
+
+    if (bracketIds.Count == 0)
+    {
+        return Results.Ok(Array.Empty<EventOpsRecoverySnapshot>());
+    }
+
+    var matchesForEvent = await dbContext.Matches.AsNoTracking()
+        .Where(x => bracketIds.Contains(x.BracketId))
+        .OrderByDescending(x => x.Status == MatchStatus.OnMat)
+        .ThenByDescending(x => x.Status == MatchStatus.InTheHole)
+        .ThenBy(x => x.MatNumber)
+        .ThenBy(x => x.Round)
+        .ThenBy(x => x.MatchNumber)
+        .ToListAsync(cancellationToken);
+
+    var baseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}";
+    var recoveryRows = matchesForEvent
+        .Select(match =>
+        {
+            var board = liveMatScoringService.GetOrCreate(match);
+            return new EventOpsRecoverySnapshot(
+                match.Id,
+                match.Status,
+                match.MatNumber,
+                match.Score,
+                board.CurrentPeriod,
+                board.ClockSecondsRemaining,
+                board.ClockRunning,
+                match.WinnerAthleteId,
+                $"{baseUrl}/mat-scoring?matchId={match.Id:D}",
+                board.UpdatedUtc);
+        })
+        .ToList();
+
+    return Results.Ok(recoveryRows);
+}).AllowAnonymous();
+
 events.MapGet("/{eventId:guid}/directory", async (
     Guid eventId,
     WrestlingPlatformDbContext dbContext,
@@ -1528,10 +1644,16 @@ events.MapPost("/{eventId:guid}/brackets/generate", async (
     Guid eventId,
     GenerateBracketRequest request,
     ITournamentControlService tournamentControlService,
+    IEventOpsChecklistService eventOpsChecklistService,
     IBracketService bracketService,
     WrestlingPlatformDbContext dbContext,
     CancellationToken cancellationToken) =>
 {
+    if (!eventOpsChecklistService.CanGenerateBrackets(eventId, out var checklistReason))
+    {
+        return Results.BadRequest(checklistReason);
+    }
+
     var mode = request.Mode == BracketGenerationMode.Manual
         ? tournamentControlService.ResolveGenerationMode(eventId, request.Mode)
         : request.Mode;
@@ -1543,6 +1665,7 @@ events.MapPost("/{eventId:guid}/brackets/generate", async (
     var registrantCount = await dbContext.EventRegistrations
         .CountAsync(x => x.TournamentEventId == eventId && x.Status != RegistrationStatus.Cancelled, cancellationToken);
     tournamentControlService.GetOrCreate(eventId, registrantCount);
+    eventOpsChecklistService.MarkBracketsGenerated(eventId);
 
     return Results.Ok(result);
 }).RequireAuthorization("EventOps");
@@ -2009,6 +2132,68 @@ matches.MapPost("/{matchId:guid}/scoreboard/rules", async (
     {
         return Results.BadRequest(ex.Message);
     }
+}).RequireAuthorization("EventOps");
+
+matches.MapPost("/{matchId:guid}/scoreboard/clock", async (
+    Guid matchId,
+    ControlMatchClockRequest request,
+    WrestlingPlatformDbContext dbContext,
+    ILiveMatScoringService liveMatScoringService,
+    IHubContext<MatchOpsHub> hubContext,
+    CancellationToken cancellationToken) =>
+{
+    var match = await dbContext.Matches.FirstOrDefaultAsync(x => x.Id == matchId, cancellationToken);
+    if (match is null)
+    {
+        return Results.NotFound("Match not found.");
+    }
+
+    var tournamentEventId = await dbContext.Brackets
+        .Where(x => x.Id == match.BracketId)
+        .Select(x => x.TournamentEventId)
+        .FirstOrDefaultAsync(cancellationToken);
+
+    MatScoreboardSnapshot scoreboard;
+    try
+    {
+        scoreboard = liveMatScoringService.ControlClock(match, request);
+    }
+    catch (Exception ex) when (ex is ArgumentOutOfRangeException or InvalidOperationException)
+    {
+        return Results.BadRequest(ex.Message);
+    }
+
+    var shouldSave = false;
+    if (scoreboard.Status == MatchStatus.OnMat && match.Status != MatchStatus.OnMat)
+    {
+        match.Status = MatchStatus.OnMat;
+        shouldSave = true;
+    }
+
+    if (scoreboard.IsFinal && scoreboard.WinnerAthleteId is not null && match.Status != MatchStatus.Completed)
+    {
+        match.WinnerAthleteId = scoreboard.WinnerAthleteId;
+        match.Score = $"{scoreboard.AthleteAScore}-{scoreboard.AthleteBScore}";
+        match.ResultMethod = scoreboard.OutcomeReason ?? "Decision";
+        match.Status = MatchStatus.Completed;
+        match.CompletedUtc = DateTime.UtcNow;
+        shouldSave = true;
+    }
+
+    if (shouldSave)
+    {
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    await hubContext.Clients.Group(MatchOpsHubGroups.ForMatch(matchId))
+        .SendAsync("scoreboardUpdated", scoreboard, cancellationToken);
+    if (tournamentEventId != Guid.Empty)
+    {
+        await hubContext.Clients.Group(MatchOpsHubGroups.ForEvent(tournamentEventId))
+            .SendAsync("scoreboardUpdated", scoreboard, cancellationToken);
+    }
+
+    return Results.Ok(scoreboard);
 }).RequireAuthorization("EventOps");
 
 api.MapGet("/scoring/rules", (
@@ -3606,11 +3791,35 @@ static List<HelpFaqItem> GetHelpFaqItems()
             "Event directors control release mode in Registration controls: Immediate, Scheduled, or Manual release.",
             ["brackets", "release", "director", "manual", "scheduled"]),
         new HelpFaqItem(
+            "faq-brackets-02",
+            "Brackets",
+            "How do I use the Bracket Builder wizard?",
+            "Open Bracket Builder, select your event, choose division/weight, apply controls, then generate and preview before publishing.",
+            ["bracket builder", "wizard", "generate", "division", "weight"]),
+        new HelpFaqItem(
+            "faq-brackets-03",
+            "Brackets",
+            "Can I run Madison pool style brackets?",
+            "Yes. Set tournament format to MadisonPool in controls or Bracket Builder. The Bracket Center will render pool lanes with standings.",
+            ["pool", "madison", "round robin", "standings", "lanes"]),
+        new HelpFaqItem(
             "faq-scoring-01",
             "Mat Scoring",
             "How do table workers score in real time?",
             "Open Table Worker, select event/mat/match, then use Mat Scoring to push scoring actions and live updates to dashboards.",
             ["mat", "scoring", "table worker", "real-time", "signalr"]),
+        new HelpFaqItem(
+            "faq-scoring-02",
+            "Mat Scoring",
+            "How do I run the match clock with pause/resume/seek?",
+            "In Mat Scoring use Start, Pause, Resume, Seek, Advance Period, and Reset Period Clock. The timer syncs in real time and keeps period context.",
+            ["clock", "timer", "pause", "resume", "seek", "period"]),
+        new HelpFaqItem(
+            "faq-scoring-03",
+            "Mat Scoring",
+            "What happens if services go down during a live tournament?",
+            "Use Ops Checklist > Recovery Snapshot to reopen each active match with period/clock context and resume scoring from the exact mat state.",
+            ["recovery", "outage", "resume", "live event", "ops checklist"]),
         new HelpFaqItem(
             "faq-nil-01",
             "NIL",
@@ -3618,11 +3827,35 @@ static List<HelpFaqItem> GetHelpFaqItems()
             "Yes. In Athlete Portal NIL section, update X, Instagram, and Twitter handles and configure NIL availability settings.",
             ["nil", "social", "x", "instagram", "twitter"]),
         new HelpFaqItem(
+            "faq-nil-02",
+            "NIL",
+            "Is NIL functionality legal for college and high school athletes?",
+            "Policy differs by NCAA/school policy and by state high-school association. Use /api/nil/policy and verify local compliance before activating deals.",
+            ["nil policy", "compliance", "college", "high school", "legal"]),
+        new HelpFaqItem(
             "faq-stream-01",
             "Live Streaming",
             "How do I start a live stream from mat-side?",
             "Open Live Hub, choose event, create stream session, set source URL or sample URL, then set stream status to Live.",
             ["stream", "live", "video", "mat cam", "playback"]),
+        new HelpFaqItem(
+            "faq-ops-01",
+            "Event Ops",
+            "When should brackets be generated relative to weigh-ins?",
+            "Best practice: complete weigh-ins, freeze scratch list, then generate bracket numbers. Ops Checklist can enforce this gate automatically.",
+            ["weigh-ins", "scratch", "generate", "ops", "checklist"]),
+        new HelpFaqItem(
+            "faq-ops-02",
+            "Event Ops",
+            "How do I publish final results after event completion?",
+            "In Ops Checklist, lock final results, export placings/team points, print award sheets, and publish final brackets.",
+            ["final results", "placings", "team points", "awards", "publish"]),
+        new HelpFaqItem(
+            "faq-ops-03",
+            "Event Ops",
+            "What is the full live-event operations checklist?",
+            "Before event: lock divisions/weights, format, bout length, scoring rules, and registration deadline; set seeding mode; prepare print contingency. Weigh-ins: run weigh-ins, freeze scratch list, then generate brackets and bout numbers. During: run head table assignments and mat table scorer/timer coverage, and post QR links for live results. After: lock results, export placings/team points, print awards, and publish final brackets.",
+            ["ops checklist", "before event", "weigh-ins", "head table", "qr", "after event"]),
         new HelpFaqItem(
             "faq-search-01",
             "Search",
@@ -3637,12 +3870,18 @@ static List<SupportGuideStep> GetSupportGuideSteps()
     return
     [
         new SupportGuideStep(1, "Sign In", "Use demo credentials or your account to unlock role-based workflows.", "/", "Open Command Center"),
-        new SupportGuideStep(2, "Find Tournaments", "Use the Tournaments page to browse live, upcoming, and past archived events.", "/tournaments", "Open Tournaments"),
-        new SupportGuideStep(3, "Register Athlete", "Submit athlete registration under a team or as free-agent.", "/registration", "Open Registration"),
-        new SupportGuideStep(4, "Run Mat Ops", "Table workers choose event + mat and manage scoring in real time.", "/table-worker", "Open Table Worker"),
-        new SupportGuideStep(5, "Score Matches", "Apply style-specific scoring actions and finalize winner/loser.", "/mat-scoring", "Open Mat Scoring"),
-        new SupportGuideStep(6, "Watch/Stream", "Provision and monitor live streams plus playback archives.", "/live", "Open Live Hub"),
-        new SupportGuideStep(7, "Build Athlete Brand", "Update NIL profile, social links, highlights, and recruiting cards.", "/athlete", "Open Athlete Portal")
+        new SupportGuideStep(2, "Configure Event Rules", "Set age/weight divisions, bout format (RR/DE/Madison), bout length, and scoring policy.", "/ops-checklist", "Open Ops Checklist"),
+        new SupportGuideStep(3, "Set Registration Window", "Publish registration and enforce hard deadline, entry caps, and free-agent options.", "/registration", "Open Registration"),
+        new SupportGuideStep(4, "Choose Seeding + Contingency", "Confirm random vs coach seeding and prep print contingency sheets before start.", "/ops-checklist", "Open Preflight"),
+        new SupportGuideStep(5, "Run Weigh-ins + Scratch", "Complete weigh-ins and freeze scratch list before bracket generation.", "/ops-checklist", "Open Weigh-ins"),
+        new SupportGuideStep(6, "Build Brackets + Bout Numbers", "Use Bracket Builder wizard and generate divisions after scratch freeze.", "/bracket-builder", "Open Bracket Builder"),
+        new SupportGuideStep(7, "Run Head Table + Mat Tables", "Assign mats, manage bout numbers, and maintain scorer/timer coverage on each table.", "/table-worker", "Open Table Worker"),
+        new SupportGuideStep(8, "Score Live Match", "Control period clock (start/pause/resume/seek) and apply scoring actions live.", "/mat-scoring", "Open Mat Scoring"),
+        new SupportGuideStep(9, "Publish Live Links", "Post QR links for live results, mat schedules, and bracket views for families.", "/ops-checklist", "Open Live Links"),
+        new SupportGuideStep(10, "Recover Fast", "Use Recovery Snapshot to resume live matches from saved period/clock context after outages.", "/ops-checklist", "Open Recovery"),
+        new SupportGuideStep(11, "Stream + Archive", "Provision stream sessions, publish live playback, and feed athlete video archives.", "/live", "Open Live Hub"),
+        new SupportGuideStep(12, "Publish Finals", "Lock results, export placings/team points, print awards, and publish final brackets.", "/ops-checklist", "Open Publish Checklist"),
+        new SupportGuideStep(13, "Build Athlete Brand", "Update NIL profile, social links, highlights, and recruiting cards.", "/athlete", "Open Athlete Portal")
     ];
 }
 
@@ -3669,6 +3908,7 @@ static HelpChatResponse BuildHelpChatResponse(string message, string? context)
         suggestions.Add("Open /table-worker");
         suggestions.Add("Open /mat-scoring");
         faqSuggestions.Add("faq-scoring-01");
+        faqSuggestions.Add("faq-scoring-02");
     }
     else if (normalized.Contains("nil", StringComparison.Ordinal)
              || normalized.Contains("instagram", StringComparison.Ordinal)
@@ -3689,6 +3929,20 @@ static HelpChatResponse BuildHelpChatResponse(string message, string? context)
         suggestions.Add("Open /athlete");
         faqSuggestions.Add("faq-stream-01");
     }
+    else if (normalized.Contains("recovery", StringComparison.Ordinal)
+             || normalized.Contains("outage", StringComparison.Ordinal)
+             || normalized.Contains("down", StringComparison.Ordinal)
+             || normalized.Contains("scratch", StringComparison.Ordinal)
+             || normalized.Contains("checklist", StringComparison.Ordinal))
+    {
+        reply = "Use Ops Checklist for preflight gating and outage recovery. Freeze scratch list before bracket generation, then use Recovery Snapshot to resume active mats.";
+        suggestions.Add("Open /ops-checklist");
+        suggestions.Add("Open /bracket-builder");
+        faqSuggestions.Add("faq-scoring-03");
+        faqSuggestions.Add("faq-ops-01");
+        faqSuggestions.Add("faq-ops-02");
+        faqSuggestions.Add("faq-ops-03");
+    }
     else if (normalized.Contains("search", StringComparison.Ordinal)
              || normalized.Contains("find", StringComparison.Ordinal))
     {
@@ -3698,7 +3952,7 @@ static HelpChatResponse BuildHelpChatResponse(string message, string? context)
     }
     else
     {
-        reply = "I can help with registration, brackets, mat scoring, streaming, NIL setup, and recruiting workflows. Ask in plain language and I’ll route you.";
+        reply = "I can help with registration, brackets, mat scoring, streaming, NIL setup, and recruiting workflows. Ask in plain language and I'll route you.";
         suggestions.Add("Open /support");
         suggestions.Add("Open /tournaments");
     }

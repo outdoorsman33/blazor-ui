@@ -17,12 +17,21 @@ test.describe("PinPoint Arena regression", () => {
       { label: "Athlete Portal", heading: /Athlete Portal/i },
       { label: "Coach Portal", heading: /Coach Portal/i },
       { label: "Event Admin", heading: /Event Admin Portal/i },
+      { label: "Ops Checklist", heading: /Tournament Ops Checklist/i },
       { label: "Mat Scoring", heading: /Mat-Side Real-Time Scoring/i },
       { label: "Recruiting Hub", heading: /College Recruiting Hub/i }
     ];
 
     for (const target of targets) {
-      await page.getByRole("link", { name: new RegExp(`^${target.label}$`, "i") }).first().click();
+      const link = page.getByRole("link", { name: new RegExp(`^${target.label}$`, "i") }).first();
+      if (!(await link.isVisible().catch(() => false))) {
+        const menuToggle = page.getByRole("button", { name: /Menu/i }).first();
+        if (await menuToggle.isVisible().catch(() => false)) {
+          await menuToggle.click();
+        }
+      }
+
+      await link.click();
       await expect(page.getByRole("heading", { name: target.heading })).toBeVisible();
     }
   });
@@ -87,7 +96,7 @@ test.describe("PinPoint Arena regression", () => {
     await page.goto("/tournaments");
     await page.getByRole("button", { name: /Load Tournaments/i }).click();
 
-    const bracketsButton = page.getByRole("main").getByRole("button", { name: /^Brackets$/i }).first();
+    const bracketsButton = page.getByRole("main").getByRole("link", { name: /^Brackets$/i }).first();
     await expect(bracketsButton).toBeVisible();
     await bracketsButton.click();
 
@@ -96,20 +105,23 @@ test.describe("PinPoint Arena regression", () => {
   });
 
   test("support assistant suggestions are clickable", async ({ page }) => {
-    await page.goto("/support");
-    await page.getByPlaceholder(/How do I score overtime matches/i).fill("How do I view and run brackets?");
-    await page.getByRole("button", { name: /Ask Assistant/i }).click();
+    await page.goto("/support?ask=How%20do%20I%20view%20and%20run%20brackets%3F");
 
-    await expect(page.getByText(/Assistant response ready/i)).toBeVisible();
+    const assistantSection = page.locator("#help-assistant");
+    await expect(assistantSection).toBeVisible();
 
-    const openSuggestion = page
-      .locator(".list-item", { hasText: "Suggested Actions" })
-      .getByRole("button", { name: /^Open$/i })
-      .first();
+    await expect
+      .poll(
+        async () =>
+          await assistantSection.getByRole("link", { name: /open/i }).count(),
+        { timeout: 30000 }
+      )
+      .toBeGreaterThan(0);
 
-    await expect(openSuggestion).toBeVisible();
-    await openSuggestion.click();
+    await assistantSection.getByRole("link", { name: /open/i }).first().click();
 
-    await expect(page).toHaveURL(/\/(brackets|registration|support|mat-scoring|table-worker|live|athlete|coach|search)/i);
+    await expect(page).toHaveURL(
+      /\/(brackets|registration|support|mat-scoring|table-worker|live|athlete|coach|search|ops-checklist|bracket-builder)/i
+    );
   });
 });

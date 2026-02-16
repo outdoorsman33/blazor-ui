@@ -12,6 +12,8 @@ public interface ILiveMatScoringService
 
     MatchScoringRulesSnapshot Configure(Match match, ConfigureMatchScoringRequest request);
 
+    MatScoreboardSnapshot ControlClock(Match match, ControlMatchClockRequest request);
+
     MatScoreboardSnapshot AddScoreEvent(Match match, AddMatScoreEventRequest request);
 
     MatScoreboardSnapshot Reset(Match match, string? reason);
@@ -31,6 +33,7 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             state.SyncWithMatch(match);
             state.Style = rules.Style;
             state.Level = rules.Level;
+            state.SyncClock(rules);
             return state.ToSnapshot(rules);
         }
     }
@@ -72,6 +75,8 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             techFallGap,
             request.RegulationPeriods,
             WrestlingRuleBook.GetActionCatalog(request.Style),
+            WrestlingRuleBook.GetRegulationPeriodSeconds(request.Style, request.Level),
+            WrestlingRuleBook.GetOvertimePeriodSeconds(request.Style, request.Level),
             normalizedOvertimeFormat,
             maxOvertimePeriods,
             request.EndOnFirstOvertimeScore,
@@ -84,9 +89,109 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
         {
             state.Style = configured.Style;
             state.Level = configured.Level;
+            state.SyncClock(configured);
         }
 
         return configured.ToSnapshot(match.Id);
+    }
+
+    public MatScoreboardSnapshot ControlClock(Match match, ControlMatchClockRequest request)
+    {
+        var state = _scoreboards.GetOrAdd(match.Id, _ => MatchScoreboardState.FromMatch(match));
+        var rules = _rulesByMatch.GetOrAdd(match.Id, _ => MatchScoringConfiguration.CreateDefault());
+
+        lock (state.SyncRoot)
+        {
+            state.SyncWithMatch(match);
+            state.Style = rules.Style;
+            state.Level = rules.Level;
+            state.SyncClock(rules);
+
+            if (state.IsFinal || state.Status == MatchStatus.Completed)
+            {
+                throw new InvalidOperationException("Match is final. Reset before controlling the clock.");
+            }
+
+            var maxPeriods = rules.RegulationPeriods + rules.MaxOvertimePeriods;
+            var nowUtc = DateTime.UtcNow;
+            var periodLengthSeconds = rules.ResolvePeriodLengthSeconds(state.CurrentPeriod);
+
+            switch (request.Command)
+            {
+                case MatchClockCommand.Start:
+                    if (state.ClockSecondsRemaining <= 0)
+                    {
+                        state.ClockSecondsRemaining = periodLengthSeconds;
+                    }
+
+                    state.ClockRunning = true;
+                    state.ClockLastStartedUtc = nowUtc;
+                    if (state.Status == MatchStatus.Scheduled || state.Status == MatchStatus.InTheHole)
+                    {
+                        state.Status = MatchStatus.OnMat;
+                    }
+                    break;
+
+                case MatchClockCommand.Pause:
+                    state.ClockRunning = false;
+                    state.ClockLastStartedUtc = null;
+                    break;
+
+                case MatchClockCommand.Resume:
+                    if (state.ClockSecondsRemaining <= 0)
+                    {
+                        state.ClockSecondsRemaining = periodLengthSeconds;
+                    }
+
+                    state.ClockRunning = true;
+                    state.ClockLastStartedUtc = nowUtc;
+                    if (state.Status == MatchStatus.Scheduled || state.Status == MatchStatus.InTheHole)
+                    {
+                        state.Status = MatchStatus.OnMat;
+                    }
+                    break;
+
+                case MatchClockCommand.Seek:
+                    if (request.ClockSeconds is null)
+                    {
+                        throw new ArgumentOutOfRangeException(nameof(request.ClockSeconds), "Clock seconds are required for seek.");
+                    }
+
+                    if (request.ClockSeconds.Value < 0 || request.ClockSeconds.Value > periodLengthSeconds)
+                    {
+                        throw new ArgumentOutOfRangeException(nameof(request.ClockSeconds), $"Clock seconds must be between 0 and {periodLengthSeconds}.");
+                    }
+
+                    state.ClockSecondsRemaining = request.ClockSeconds.Value;
+                    state.ClockRunning = request.ResumeAfterSeek;
+                    state.ClockLastStartedUtc = request.ResumeAfterSeek ? nowUtc : null;
+                    break;
+
+                case MatchClockCommand.AdvancePeriod:
+                    state.ClockRunning = false;
+                    state.ClockLastStartedUtc = null;
+                    if (state.CurrentPeriod >= maxPeriods)
+                    {
+                        throw new InvalidOperationException("Cannot advance period beyond configured regulation + overtime limits.");
+                    }
+
+                    state.CurrentPeriod++;
+                    state.ClockSecondsRemaining = rules.ResolvePeriodLengthSeconds(state.CurrentPeriod);
+                    break;
+
+                case MatchClockCommand.ResetToPeriodDefault:
+                    state.ClockRunning = false;
+                    state.ClockLastStartedUtc = null;
+                    state.ClockSecondsRemaining = periodLengthSeconds;
+                    break;
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(request.Command), "Unsupported clock command.");
+            }
+
+            state.UpdatedUtc = nowUtc;
+            return state.ToSnapshot(rules);
+        }
     }
 
     public MatScoreboardSnapshot AddScoreEvent(Match match, AddMatScoreEventRequest request)
@@ -109,17 +214,13 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             throw new ArgumentOutOfRangeException(nameof(request.Period), "Overtime is disabled for this match.");
         }
 
-        if (request.MatchClockSeconds is < 0 or > 420)
-        {
-            throw new ArgumentOutOfRangeException(nameof(request.MatchClockSeconds), "Match clock seconds must be between 0 and 420.");
-        }
-
         var state = _scoreboards.GetOrAdd(match.Id, _ => MatchScoreboardState.FromMatch(match));
         lock (state.SyncRoot)
         {
             state.SyncWithMatch(match);
             state.Style = rules.Style;
             state.Level = rules.Level;
+            state.SyncClock(rules);
 
             if (state.IsFinal || state.Status == MatchStatus.Completed)
             {
@@ -156,7 +257,22 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 state.AthleteBScore += points;
             }
 
-            state.CurrentPeriod = Math.Max(state.CurrentPeriod, request.Period);
+            var periodLengthSeconds = rules.ResolvePeriodLengthSeconds(request.Period);
+            if (request.MatchClockSeconds is < 0 || request.MatchClockSeconds > periodLengthSeconds)
+            {
+                throw new ArgumentOutOfRangeException(nameof(request.MatchClockSeconds), $"Match clock seconds must be between 0 and {periodLengthSeconds} for period {request.Period}.");
+            }
+
+            state.CurrentPeriod = request.Period;
+            if (request.MatchClockSeconds is not null)
+            {
+                state.ClockSecondsRemaining = request.MatchClockSeconds.Value;
+                if (state.ClockRunning)
+                {
+                    state.ClockLastStartedUtc = DateTime.UtcNow;
+                }
+            }
+
             state.Status = MatchStatus.OnMat;
             state.UpdatedUtc = DateTime.UtcNow;
 
@@ -171,7 +287,7 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 points,
                 normalizedAction,
                 request.Period,
-                request.MatchClockSeconds,
+                request.MatchClockSeconds ?? state.ClockSecondsRemaining,
                 request.AthleteId,
                 state.AthleteAScore,
                 state.AthleteBScore);
@@ -219,6 +335,7 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
         lock (state.SyncRoot)
         {
             state.SyncWithMatch(match);
+            state.SyncClock(rules);
             state.AthleteAScore = 0;
             state.AthleteBScore = 0;
             state.CurrentPeriod = 1;
@@ -228,6 +345,9 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
             state.LoserAthleteId = null;
             state.OutcomeReason = null;
             state.IsFinal = false;
+            state.ClockRunning = false;
+            state.ClockLastStartedUtc = null;
+            state.ClockSecondsRemaining = rules.ResolvePeriodLengthSeconds(state.CurrentPeriod);
             state.Events.Clear();
 
             if (!string.IsNullOrWhiteSpace(reason))
@@ -255,6 +375,9 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
         state.Status = MatchStatus.Completed;
         state.IsFinal = true;
         state.OutcomeReason = reason;
+        state.ClockRunning = false;
+        state.ClockLastStartedUtc = null;
+        state.ClockSecondsRemaining = 0;
         state.WinnerAthleteId = winner switch
         {
             ScoreCompetitor.AthleteA => match.AthleteAId,
@@ -354,6 +477,12 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
 
         public bool IsFinal { get; set; }
 
+        public int ClockSecondsRemaining { get; set; } = 120;
+
+        public bool ClockRunning { get; set; }
+
+        public DateTime? ClockLastStartedUtc { get; set; }
+
         public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
 
         public List<MatScoreEventSnapshot> Events { get; } = [];
@@ -374,6 +503,9 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 OutcomeReason = match.ResultMethod,
                 IsFinal = match.Status == MatchStatus.Completed,
                 CurrentPeriod = 1,
+                ClockSecondsRemaining = 120,
+                ClockRunning = false,
+                ClockLastStartedUtc = null,
                 UpdatedUtc = DateTime.UtcNow
             };
         }
@@ -390,6 +522,59 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 IsFinal = true;
                 OutcomeReason = match.ResultMethod;
                 LoserAthleteId = ResolveLoser(match);
+                ClockRunning = false;
+                ClockLastStartedUtc = null;
+            }
+        }
+
+        public void SyncClock(MatchScoringConfiguration rules)
+        {
+            var maxPeriods = rules.RegulationPeriods + rules.MaxOvertimePeriods;
+            if (CurrentPeriod < 1)
+            {
+                CurrentPeriod = 1;
+            }
+            else if (CurrentPeriod > maxPeriods)
+            {
+                CurrentPeriod = maxPeriods;
+            }
+
+            if (IsFinal || Status == MatchStatus.Completed)
+            {
+                ClockRunning = false;
+                ClockLastStartedUtc = null;
+                ClockSecondsRemaining = Math.Max(0, ClockSecondsRemaining);
+                return;
+            }
+
+            var periodLength = rules.ResolvePeriodLengthSeconds(CurrentPeriod);
+            if (ClockSecondsRemaining <= 0 || ClockSecondsRemaining > periodLength)
+            {
+                ClockSecondsRemaining = periodLength;
+            }
+
+            if (!ClockRunning || ClockLastStartedUtc is null)
+            {
+                return;
+            }
+
+            var elapsed = (int)Math.Floor((DateTime.UtcNow - ClockLastStartedUtc.Value).TotalSeconds);
+            if (elapsed <= 0)
+            {
+                return;
+            }
+
+            ClockSecondsRemaining = Math.Max(0, ClockSecondsRemaining - elapsed);
+            UpdatedUtc = DateTime.UtcNow;
+
+            if (ClockSecondsRemaining == 0)
+            {
+                ClockRunning = false;
+                ClockLastStartedUtc = null;
+            }
+            else
+            {
+                ClockLastStartedUtc = DateTime.UtcNow;
             }
         }
 
@@ -410,7 +595,12 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 WinnerAthleteId,
                 LoserAthleteId,
                 OutcomeReason,
-                IsFinal);
+                IsFinal,
+                ClockSecondsRemaining,
+                ClockRunning,
+                ClockLastStartedUtc,
+                rules.RegulationPeriodSeconds,
+                rules.OvertimePeriodSeconds);
         }
 
         private static (int AthleteAScore, int AthleteBScore) ParseSeedScore(string? score)
@@ -463,6 +653,8 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
         int TechFallPointGap,
         int RegulationPeriods,
         List<ScoringActionDefinition> Actions,
+        int RegulationPeriodSeconds,
+        int OvertimePeriodSeconds,
         OvertimeFormat OvertimeFormat,
         int MaxOvertimePeriods,
         bool EndOnFirstOvertimeScore,
@@ -478,10 +670,17 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 TechFallPointGap: WrestlingRuleBook.GetDefaultTechFallPointGap(defaultStyle),
                 RegulationPeriods: 3,
                 WrestlingRuleBook.GetActionCatalog(defaultStyle),
+                WrestlingRuleBook.GetRegulationPeriodSeconds(defaultStyle, CompetitionLevel.HighSchool),
+                WrestlingRuleBook.GetOvertimePeriodSeconds(defaultStyle, CompetitionLevel.HighSchool),
                 WrestlingRuleBook.GetDefaultOvertimeFormat(defaultStyle),
                 MaxOvertimePeriods: 3,
                 EndOnFirstOvertimeScore: false,
                 StrictRuleEnforcement: true);
+        }
+
+        public int ResolvePeriodLengthSeconds(int period)
+        {
+            return period > RegulationPeriods ? OvertimePeriodSeconds : RegulationPeriodSeconds;
         }
 
         public MatchScoringRulesSnapshot ToSnapshot(Guid matchId)
@@ -494,6 +693,8 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 TechFallPointGap,
                 RegulationPeriods,
                 Actions.ToList(),
+                RegulationPeriodSeconds,
+                OvertimePeriodSeconds,
                 OvertimeFormat,
                 MaxOvertimePeriods,
                 EndOnFirstOvertimeScore,
@@ -538,6 +739,31 @@ public sealed class LiveMatScoringService : ILiveMatScoringService
                 WrestlingStyle.Freestyle => 10,
                 WrestlingStyle.GrecoRoman => 8,
                 _ => 10
+            };
+        }
+
+        public static int GetRegulationPeriodSeconds(WrestlingStyle style, CompetitionLevel level)
+        {
+            return style switch
+            {
+                WrestlingStyle.Folkstyle when level is CompetitionLevel.ElementaryK6 or CompetitionLevel.MiddleSchool => 90,
+                WrestlingStyle.Folkstyle when level == CompetitionLevel.HighSchool => 120,
+                WrestlingStyle.Folkstyle when level == CompetitionLevel.College => 120,
+                WrestlingStyle.Freestyle => 180,
+                WrestlingStyle.GrecoRoman => 180,
+                _ => 120
+            };
+        }
+
+        public static int GetOvertimePeriodSeconds(WrestlingStyle style, CompetitionLevel level)
+        {
+            return style switch
+            {
+                WrestlingStyle.Folkstyle when level is CompetitionLevel.ElementaryK6 or CompetitionLevel.MiddleSchool => 30,
+                WrestlingStyle.Folkstyle => 60,
+                WrestlingStyle.Freestyle => 30,
+                WrestlingStyle.GrecoRoman => 30,
+                _ => 60
             };
         }
 

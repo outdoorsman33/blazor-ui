@@ -425,6 +425,11 @@
             return "/bracket-builder";
         }
 
+        if (normalized.Contains("ops") || normalized.Contains("checklist") || normalized.Contains("recovery"))
+        {
+            return "/ops-checklist";
+        }
+
         if (normalized.Contains("mat") || normalized.Contains("score"))
         {
             return "/mat-scoring";
@@ -470,6 +475,11 @@
         if (normalized.Contains("bracket"))
         {
             return "/bracket-builder";
+        }
+
+        if (normalized.Contains("ops") || normalized.Contains("checklist") || normalized.Contains("recovery"))
+        {
+            return "/ops-checklist";
         }
 
         if (normalized.Contains("score"))
