@@ -1,4 +1,5 @@
 @using System.Linq
+@using System.Net
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject PlatformApiClient ApiClient
@@ -692,6 +693,7 @@
     }
 
     private const string DefaultSupportArticleId = "faq-ops-03";
+    private const string DemoPassword = "DemoPass!123";
 
     private static readonly IReadOnlyList<PlatformRole> AvailableRoles =
     [
@@ -709,9 +711,19 @@
     private static readonly IReadOnlyList<string> StreamingModes = ["Live stream only", "Live stream & record to device", "Record to device only"];
     private static readonly IReadOnlyList<string> StreamingQualities = ["720p", "1080p", "4K"];
     private static readonly IReadOnlyList<string> StreamingAudiences = ["Parent + Athlete", "Family + Team", "Public"];
+    private static readonly IReadOnlyList<string> FeaturedSupportArticleIds =
+    [
+        "faq-role-access-01",
+        "faq-registration-01",
+        "faq-live-04",
+        "faq-scoring-02",
+        "faq-stream-01",
+        "faq-ops-03"
+    ];
 
     private static readonly IReadOnlyList<SupportArticle> SupportArticles = BuildSupportArticles();
     private static readonly IReadOnlyDictionary<string, SupportArticle> SupportArticlesById = BuildSupportArticleLookup();
+    private static readonly IReadOnlyList<SupportArticle> FeaturedSupportArticlesCache = ResolveFeaturedSupportArticles();
 
     private bool Busy;
     private string Email = "";
@@ -824,15 +836,7 @@
     private string OpsBracketBuilderHref => BuildHref("/bracket-builder", ("eventId", ActiveEventIdText), ("ops", "1"));
     private string CompletedBracketsHref => BuildHref("/brackets", ("eventId", ActiveEventIdText), ("view", "completed"));
 
-    private IReadOnlyList<SupportArticle> FeaturedSupportArticles =>
-    [
-        SupportArticlesById["faq-role-access-01"],
-        SupportArticlesById["faq-registration-01"],
-        SupportArticlesById["faq-live-04"],
-        SupportArticlesById["faq-scoring-02"],
-        SupportArticlesById["faq-stream-01"],
-        SupportArticlesById["faq-ops-03"]
-    ];
+    private IReadOnlyList<SupportArticle> FeaturedSupportArticles => FeaturedSupportArticlesCache;
 
     private SupportArticle? ActiveSupportArticle =>
         string.IsNullOrWhiteSpace(ActiveSupportArticleId)
@@ -910,60 +914,164 @@
 
     private async Task SignInAsync()
     {
-        Busy = true;
         AuthMessage = null;
 
-        var result = await ApiClient.LoginAsync(new LoginRequest(Email, Password, MfaCode));
-        AuthOk = result.Success;
-        AuthMessage = result.Success ? "Signed in." : result.Message;
-
+        var result = await ExecuteSignInAttemptAsync();
         if (result.Success)
         {
-            Password = string.Empty;
-            MfaCode = string.Empty;
-            RolePreview = ParseRole(AuthSession.Role);
-            if (CurrentIsMobile)
-            {
-                DrawerOpen = false;
-            }
+            ApplySuccessfulSignInState("Signed in.");
+            return;
         }
 
-        Busy = false;
+        AuthOk = false;
+        AuthMessage = result.Message;
     }
 
     private async Task SignInAsDemoAthleteAsync()
     {
-        Email = "demo.athlete@pinpointarena.local";
-        Password = "DemoPass!123";
-        await SignInAsync();
+        await SignInAsDemoUserAsync("demo.athlete@pinpointarena.local", UserRole.Athlete, "Demo Athlete", "+16145550002");
     }
 
     private async Task SignInAsDemoCoachAsync()
     {
-        Email = "demo.coach@pinpointarena.local";
-        Password = "DemoPass!123";
-        await SignInAsync();
+        await SignInAsDemoUserAsync("demo.coach@pinpointarena.local", UserRole.Coach, "Demo Coach", "+16145550001");
     }
 
     private async Task SignInAsDemoParentGuardianAsync()
     {
-        Email = "demo.parent@pinpointarena.local";
-        Password = "DemoPass!123";
-        await SignInAsync();
+        await SignInAsDemoUserAsync("demo.parent@pinpointarena.local", UserRole.ParentGuardian, "Demo Parent", "+16145550031");
     }
 
     private async Task SignInAsDemoMatWorkerAsync()
     {
-        Email = "demo.matworker@pinpointarena.local";
-        Password = "DemoPass!123";
-        await SignInAsync();
+        await SignInAsDemoUserAsync("demo.matworker@pinpointarena.local", UserRole.MatWorker, "Demo Mat Worker", "+16145550033");
     }
 
     private async Task SignInAsDemoDirectorAsync()
     {
-        Email = "demo.director@pinpointarena.local";
-        Password = "DemoPass!123";
-        await SignInAsync();
+        await SignInAsDemoUserAsync("demo.director@pinpointarena.local", UserRole.TournamentDirector, "Demo Director", "+16145550030");
+    }
+
+    private async Task SignInAsDemoUserAsync(string email, UserRole role, string label, string? phoneNumber)
+    {
+        Email = email;
+        Password = DemoPassword;
+        MfaCode = string.Empty;
+        AuthMessage = null;
+
+        var loginResult = await ExecuteSignInAttemptAsync();
+        if (loginResult.Success)
+        {
+            ApplySuccessfulSignInState($"Signed in as {label}.");
+            return;
+        }
+
+        var accountReady = await EnsureDemoAccountAsync(email, role, phoneNumber);
+        if (accountReady)
+        {
+            loginResult = await ExecuteSignInAttemptAsync();
+            if (loginResult.Success)
+            {
+                ApplySuccessfulSignInState($"Signed in as {label}.");
+                return;
+            }
+        }
+
+        var reseedCompleted = await TryResetDemoDataAsync();
+        if (reseedCompleted)
+        {
+            loginResult = await ExecuteSignInAttemptAsync();
+            if (loginResult.Success)
+            {
+                ApplySuccessfulSignInState($"Signed in as {label} after demo data reset.");
+                return;
+            }
+        }
+
+        AuthOk = false;
+        AuthMessage = BuildDemoSignInFailureMessage(label, loginResult.Message, accountReady, reseedCompleted);
+    }
+
+    private async Task<ApiResult<AuthTokenResponse>> ExecuteSignInAttemptAsync()
+    {
+        Busy = true;
+        try
+        {
+            return await ApiClient.LoginAsync(new LoginRequest(Email, Password, MfaCode));
+        }
+        catch (Exception ex)
+        {
+            return ApiResult<AuthTokenResponse>.Fail(
+                HttpStatusCode.ServiceUnavailable,
+                $"Unable to complete sign-in right now. {ex.Message}");
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task<bool> EnsureDemoAccountAsync(string email, UserRole role, string? phoneNumber)
+    {
+        try
+        {
+            var registerResult = await ApiClient.RegisterUserAsync(new RegisterUserRequest(email, DemoPassword, role, phoneNumber));
+            return registerResult.Success || registerResult.StatusCode == HttpStatusCode.Conflict;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> TryResetDemoDataAsync()
+    {
+        try
+        {
+            var resetResult = await ApiClient.ResetDemoDataAsync();
+            return resetResult.Success;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string BuildDemoSignInFailureMessage(string label, string? apiMessage, bool accountReady, bool reseedCompleted)
+    {
+        var details = string.IsNullOrWhiteSpace(apiMessage)
+            ? "Login endpoint rejected the credentials."
+            : apiMessage.Trim();
+
+        var actions = new List<string>();
+        if (accountReady)
+        {
+            actions.Add("verified demo account");
+        }
+
+        if (reseedCompleted)
+        {
+            actions.Add("reset demo dataset");
+        }
+
+        var actionMessage = actions.Count == 0
+            ? "Automatic recovery could not be completed."
+            : $"Automatic recovery attempted: {string.Join(", ", actions)}.";
+
+        return $"{label} sign-in failed. {details} {actionMessage}";
+    }
+
+    private void ApplySuccessfulSignInState(string successMessage)
+    {
+        AuthOk = true;
+        AuthMessage = successMessage;
+        Password = string.Empty;
+        MfaCode = string.Empty;
+        RolePreview = ParseRole(AuthSession.Role);
+        if (CurrentIsMobile)
+        {
+            DrawerOpen = false;
+        }
     }
 
     private async Task SignOutAsync()
@@ -982,7 +1090,20 @@
         }
     }
 
-    private void ToggleDrawer() => DrawerOpen = !DrawerOpen;
+    private void ToggleDrawer()
+    {
+        try
+        {
+            SearchOpen = false;
+            DrawerOpen = !DrawerOpen;
+        }
+        catch (Exception ex)
+        {
+            DrawerOpen = false;
+            AuthOk = false;
+            AuthMessage = $"Navigation menu is temporarily unavailable. {ex.Message}";
+        }
+    }
 
     private Task CloseDrawer()
     {
@@ -1628,15 +1749,51 @@
         foreach (var pair in pairs)
         {
             var parts = pair.Split('=', 2);
-            if (!string.Equals(Uri.UnescapeDataString(parts[0]), key, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(SafeUrlDecode(parts[0]), key, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            return parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty;
+            return parts.Length > 1 ? SafeUrlDecode(parts[1]) : string.Empty;
         }
 
         return null;
+    }
+
+    private static string SafeUrlDecode(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return WebUtility.UrlDecode(value) ?? string.Empty;
+        }
+        catch
+        {
+            return value;
+        }
+    }
+
+    private static IReadOnlyList<SupportArticle> ResolveFeaturedSupportArticles()
+    {
+        var featured = new List<SupportArticle>(FeaturedSupportArticleIds.Count);
+        foreach (var articleId in FeaturedSupportArticleIds)
+        {
+            if (SupportArticlesById.TryGetValue(articleId, out var article))
+            {
+                featured.Add(article);
+            }
+        }
+
+        if (featured.Count > 0)
+        {
+            return featured;
+        }
+
+        return SupportArticles.Take(Math.Min(6, SupportArticles.Count)).ToList();
     }
 
     private static IReadOnlyList<SupportArticle> BuildSupportArticles()

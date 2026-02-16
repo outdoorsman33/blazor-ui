@@ -54,6 +54,17 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         return await ReadResponseAsync<UserSummary>(response, cancellationToken);
     }
 
+    public async Task<ApiResult<object>> ResetDemoDataAsync(string? token = null, CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery("/api/demo/reset-data", new Dictionary<string, string?>
+        {
+            ["token"] = token
+        });
+
+        var response = await PostAsJsonAsync<object>(url, new { }, cancellationToken);
+        return await ReadResponseAsync<object>(response, cancellationToken);
+    }
+
     public async Task<ApiResult<AthleteProfile>> CreateAthleteProfileAsync(CreateAthleteProfileRequest request, CancellationToken cancellationToken = default)
     {
         var response = await PostAsJsonAsync("/api/profiles/athletes", request, cancellationToken);
