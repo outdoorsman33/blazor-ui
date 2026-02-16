@@ -4091,6 +4091,8 @@ static async Task InitializeDemoRuntimeStateAsync(
                 group => group.OrderByDescending(x => x.CreatedUtc).First(),
                 cancellationToken);
 
+        const int targetVideosPerAthlete = 6;
+        var completedMatchesByAthleteId = new Dictionary<Guid, List<Match>>();
         var perAthleteSeededCount = new Dictionary<Guid, int>();
         foreach (var match in completedMatches)
         {
@@ -4103,6 +4105,17 @@ static async Task InitializeDemoRuntimeStateAsync(
             if (athleteIdsForMatch.Count == 0)
             {
                 continue;
+            }
+
+            foreach (var athleteId in athleteIdsForMatch)
+            {
+                if (!completedMatchesByAthleteId.TryGetValue(athleteId, out var athleteMatches))
+                {
+                    athleteMatches = [];
+                    completedMatchesByAthleteId[athleteId] = athleteMatches;
+                }
+
+                athleteMatches.Add(match);
             }
 
             var stream = streamsByMatchId.GetValueOrDefault(match.Id);
@@ -4119,15 +4132,27 @@ static async Task InitializeDemoRuntimeStateAsync(
                 streamId ?? match.Id,
                 samplePlaybackUrls);
 
+            if (stream?.IsPersonalStream == true
+                && stream.AthleteProfileId is Guid personalAthleteId
+                && athleteIdsForMatch.Contains(personalAthleteId))
+            {
+                athleteIdsForMatch = [personalAthleteId];
+            }
+
             foreach (var athleteId in athleteIdsForMatch)
             {
-                if (perAthleteSeededCount.GetValueOrDefault(athleteId) >= 4)
+                var existing = mediaPipelineService.GetAthleteVideos(athleteId);
+                if (existing.Count >= targetVideosPerAthlete)
                 {
                     continue;
                 }
 
-                var existing = mediaPipelineService.GetAthleteVideos(athleteId);
-                if (existing.Any(x => x.MatchId == match.Id))
+                if (perAthleteSeededCount.GetValueOrDefault(athleteId) >= targetVideosPerAthlete)
+                {
+                    continue;
+                }
+
+                if (existing.Any(x => x.MatchId == match.Id && x.StreamId == streamId))
                 {
                     continue;
                 }
@@ -4137,18 +4162,65 @@ static async Task InitializeDemoRuntimeStateAsync(
                     match.Id,
                     streamId,
                     normalizedPlayback,
-                    QueueTranscode: true));
+                    QueueTranscode: false));
 
                 perAthleteSeededCount[athleteId] = perAthleteSeededCount.GetValueOrDefault(athleteId) + 1;
             }
         }
 
-        var athleteIds = completedMatches
-            .SelectMany(x => new[] { x.AthleteAId, x.AthleteBId })
-            .Where(x => x is not null)
-            .Select(x => x!.Value)
-            .Distinct()
-            .Take(12)
+        foreach (var (athleteId, athleteMatches) in completedMatchesByAthleteId)
+        {
+            var existingCount = mediaPipelineService.GetAthleteVideos(athleteId).Count;
+            if (existingCount >= targetVideosPerAthlete || athleteMatches.Count == 0)
+            {
+                continue;
+            }
+
+            var orderedAthleteMatches = athleteMatches
+                .OrderByDescending(x => x.CompletedUtc)
+                .ThenBy(x => x.Id)
+                .ToList();
+
+            var supplementIndex = 0;
+            while (existingCount < targetVideosPerAthlete && supplementIndex < targetVideosPerAthlete * 4)
+            {
+                var sourceMatch = orderedAthleteMatches[supplementIndex % orderedAthleteMatches.Count];
+                var eventId = bracketEventById.GetValueOrDefault(sourceMatch.BracketId, Guid.Empty);
+                if (eventId == Guid.Empty)
+                {
+                    supplementIndex++;
+                    continue;
+                }
+
+                var sourceStream = streamsByMatchId.GetValueOrDefault(sourceMatch.Id);
+                var sourceIndex = samplePlaybackUrls.Count == 0
+                    ? 0
+                    : (int)(unchecked((uint)HashCode.Combine(athleteId, supplementIndex)) % (uint)samplePlaybackUrls.Count);
+                var sourceUrl = samplePlaybackUrls.Count == 0
+                    ? "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+                    : samplePlaybackUrls[sourceIndex];
+
+                var normalizedPlayback = NormalizePlaybackUrlForClient(
+                    sourceStream?.PlaybackUrl ?? sourceUrl,
+                    eventId,
+                    sourceStream?.Id ?? sourceMatch.Id,
+                    samplePlaybackUrls);
+
+                mediaPipelineService.CreateVideoAsset(new CreateVideoAssetRequest(
+                    athleteId,
+                    sourceMatch.Id,
+                    sourceStream?.Id,
+                    normalizedPlayback,
+                    QueueTranscode: false));
+
+                existingCount++;
+                supplementIndex++;
+            }
+        }
+
+        var athleteIds = completedMatchesByAthleteId.Keys
+            .Where(athleteId => mediaPipelineService.GetAthleteVideos(athleteId).Count > 0)
+            .Take(16)
             .ToList();
 
         foreach (var athleteId in athleteIds)
@@ -4161,10 +4233,10 @@ static async Task InitializeDemoRuntimeStateAsync(
             mediaPipelineService.QueueAiHighlights(new QueueAiHighlightsRequest(
                 athleteId,
                 EventId: null,
-                MaxMatches: 10));
+                MaxMatches: 12));
         }
 
-        for (var tick = 0; tick < 30; tick++)
+        for (var tick = 0; tick < 40; tick++)
         {
             await mediaPipelineService.ProcessTickAsync(cancellationToken);
         }

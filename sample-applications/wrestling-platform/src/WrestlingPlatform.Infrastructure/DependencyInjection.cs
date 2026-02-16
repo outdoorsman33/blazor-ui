@@ -217,6 +217,56 @@ public static class DependencyInjection
             "DemoPass!123",
             cancellationToken);
 
+        var assistantCoachUser = await EnsureUserAsync(
+            dbContext,
+            "demo.assistantcoach@pinpointarena.local",
+            UserRole.Coach,
+            "+16145550034",
+            "DemoPass!123",
+            cancellationToken);
+
+        var assistantCoachProfile = await EnsureCoachProfileAsync(
+            dbContext,
+            assistantCoachUser.Id,
+            "Taylor",
+            "Parks",
+            "OH",
+            "Dublin",
+            "Assistant coach and mat-side operations support.",
+            cancellationToken);
+
+        var backupDirectorUser = await EnsureUserAsync(
+            dbContext,
+            "demo.director.backup@pinpointarena.local",
+            UserRole.TournamentDirector,
+            "+16145550035",
+            "DemoPass!123",
+            cancellationToken);
+
+        var secondParentUser = await EnsureUserAsync(
+            dbContext,
+            "demo.parent.backup@pinpointarena.local",
+            UserRole.ParentGuardian,
+            "+16145550036",
+            "DemoPass!123",
+            cancellationToken);
+
+        var delegateStreamerUser = await EnsureUserAsync(
+            dbContext,
+            "demo.stream.delegate@pinpointarena.local",
+            UserRole.Fan,
+            "+16145550037",
+            "DemoPass!123",
+            cancellationToken);
+
+        var backupMatWorkerUser = await EnsureUserAsync(
+            dbContext,
+            "demo.matworker.backup@pinpointarena.local",
+            UserRole.MatWorker,
+            "+16145550038",
+            "DemoPass!123",
+            cancellationToken);
+
         var primaryTeam = await EnsureTeamAsync(
             dbContext,
             "PinPoint Wrestling Club",
@@ -266,6 +316,27 @@ public static class DependencyInjection
                 athleteProfile.Id,
                 primaryTeam.Id,
                 "Head Coach",
+                true,
+                cancellationToken);
+        }
+
+        await EnsureCoachAssociationAsync(
+            dbContext,
+            assistantCoachProfile.Id,
+            athleteProfileId: null,
+            teamId: secondaryTeam.Id,
+            roleTitle: "Assistant Coach",
+            isPrimary: true,
+            cancellationToken);
+
+        foreach (var athleteProfile in athleteProfilesByEmail.Values.Where(x => x.Level == CompetitionLevel.MiddleSchool).Take(4))
+        {
+            await EnsureCoachAssociationAsync(
+                dbContext,
+                assistantCoachProfile.Id,
+                athleteProfile.Id,
+                secondaryTeam.Id,
+                "Assistant Coach",
                 true,
                 cancellationToken);
         }
@@ -360,6 +431,21 @@ public static class DependencyInjection
             1500,
             true,
             eventAdminUser.Id,
+            cancellationToken);
+
+        var directorOpsSandboxEvent = await EnsureEventAsync(
+            dbContext,
+            "Director Ops Sandbox",
+            OrganizerType.Independent,
+            Guid.Empty,
+            "OH",
+            "Cleveland",
+            "Lakeside Fieldhouse",
+            todayUtc.AddDays(49).AddHours(14),
+            todayUtc.AddDays(50).AddHours(2),
+            1800,
+            true,
+            backupDirectorUser.Id,
             cancellationToken);
 
         var archiveClassicEvent = await EnsureEventAsync(
@@ -467,12 +553,96 @@ public static class DependencyInjection
             canManageStreams: false,
             cancellationToken);
 
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            showcaseEvent.Id,
+            assistantCoachUser.Id,
+            UserRole.Coach,
+            canScoreMatches: true,
+            canManageMatches: true,
+            canManageStreams: false,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            showcaseEvent.Id,
+            backupMatWorkerUser.Id,
+            UserRole.MatWorker,
+            canScoreMatches: true,
+            canManageMatches: false,
+            canManageStreams: false,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            eventAdminUser.Id,
+            UserRole.TournamentDirector,
+            canScoreMatches: true,
+            canManageMatches: true,
+            canManageStreams: true,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            assistantCoachUser.Id,
+            UserRole.Coach,
+            canScoreMatches: true,
+            canManageMatches: true,
+            canManageStreams: true,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            backupDirectorUser.Id,
+            UserRole.TournamentDirector,
+            canScoreMatches: true,
+            canManageMatches: true,
+            canManageStreams: true,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            matWorkerUser.Id,
+            UserRole.MatWorker,
+            canScoreMatches: true,
+            canManageMatches: false,
+            canManageStreams: false,
+            cancellationToken);
+
         await EnsureAthleteStreamingPermissionAsync(
             dbContext,
             athleteProfilesByEmail["demo.athlete@pinpointarena.local"].Id,
             parentUser.Id,
             matWorkerUser.Id,
             isActive: true,
+            cancellationToken);
+
+        await EnsureAthleteStreamingPermissionAsync(
+            dbContext,
+            athleteProfilesByEmail["demo.athlete@pinpointarena.local"].Id,
+            parentUser.Id,
+            delegateStreamerUser.Id,
+            isActive: true,
+            cancellationToken);
+
+        await EnsureAthleteStreamingPermissionAsync(
+            dbContext,
+            athleteProfilesByEmail["sophia.patel@pinpointarena.local"].Id,
+            secondParentUser.Id,
+            assistantCoachUser.Id,
+            isActive: true,
+            cancellationToken);
+
+        await EnsureAthleteStreamingPermissionAsync(
+            dbContext,
+            athleteProfilesByEmail["sophia.patel@pinpointarena.local"].Id,
+            secondParentUser.Id,
+            fanUser.Id,
+            isActive: false,
             cancellationToken);
 
         var showcaseDivision = await EnsureDivisionAsync(
@@ -537,6 +707,22 @@ public static class DependencyInjection
             "Elementary 78",
             CompetitionLevel.ElementaryK6,
             78m,
+            cancellationToken);
+
+        var directorSandboxHighDivision = await EnsureDivisionAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            "High School 138",
+            CompetitionLevel.HighSchool,
+            138m,
+            cancellationToken);
+
+        var directorSandboxMiddleDivision = await EnsureDivisionAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            "Middle School 106",
+            CompetitionLevel.MiddleSchool,
+            106m,
             cancellationToken);
 
         var freestyleHighDivision = await EnsureDivisionAsync(
@@ -864,6 +1050,72 @@ public static class DependencyInjection
             false,
             RegistrationStatus.Pending,
             PaymentStatus.Pending,
+            0,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            athleteProfilesByEmail["nolan.shaw@pinpointarena.local"].Id,
+            primaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Pending,
+            0,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            athleteProfilesByEmail["mia.garcia@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Pending,
+            0,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            athleteProfilesByEmail["brady.kim@pinpointarena.local"].Id,
+            secondaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Pending,
+            0,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            athleteProfilesByEmail["isaac.wells@pinpointarena.local"].Id,
+            secondaryTeam.Id,
+            false,
+            RegistrationStatus.Confirmed,
+            PaymentStatus.Pending,
+            0,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            athleteProfilesByEmail["zoe.harris@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Waitlisted,
+            PaymentStatus.Pending,
+            0,
+            cancellationToken);
+
+        await EnsureRegistrationAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            athleteProfilesByEmail["levi.hayes@pinpointarena.local"].Id,
+            null,
+            true,
+            RegistrationStatus.Cancelled,
+            PaymentStatus.NotRequired,
             0,
             cancellationToken);
 
@@ -1625,6 +1877,151 @@ public static class DependencyInjection
             completedUtc: null,
             cancellationToken);
 
+        var directorSandboxHighBracket = await EnsureBracketAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            directorSandboxHighDivision.Id,
+            CompetitionLevel.HighSchool,
+            138m,
+            BracketGenerationMode.Seeded,
+            cancellationToken);
+
+        var directorSandboxHighAthletes = new[]
+        {
+            athleteProfilesByEmail["nolan.shaw@pinpointarena.local"],
+            athleteProfilesByEmail["mia.garcia@pinpointarena.local"]
+        };
+
+        for (var seed = 0; seed < directorSandboxHighAthletes.Length; seed++)
+        {
+            await EnsureBracketEntryAsync(
+                dbContext,
+                directorSandboxHighBracket.Id,
+                directorSandboxHighAthletes[seed].Id,
+                seed + 1,
+                cancellationToken);
+        }
+
+        var directorSandboxStartUtc = directorOpsSandboxEvent.StartUtc;
+        var directorSandboxHighMatch = await EnsureMatchAsync(
+            dbContext,
+            directorSandboxHighBracket.Id,
+            1,
+            1,
+            directorSandboxHighAthletes[0].Id,
+            directorSandboxHighAthletes[1].Id,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 11",
+            status: MatchStatus.OnMat,
+            scheduledUtc: directorSandboxStartUtc.AddMinutes(18),
+            completedUtc: null,
+            cancellationToken);
+
+        var directorSandboxMiddleBracket = await EnsureBracketAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            directorSandboxMiddleDivision.Id,
+            CompetitionLevel.MiddleSchool,
+            106m,
+            BracketGenerationMode.Random,
+            cancellationToken);
+
+        var directorSandboxMiddleAthletes = new[]
+        {
+            athleteProfilesByEmail["brady.kim@pinpointarena.local"],
+            athleteProfilesByEmail["isaac.wells@pinpointarena.local"]
+        };
+
+        for (var seed = 0; seed < directorSandboxMiddleAthletes.Length; seed++)
+        {
+            await EnsureBracketEntryAsync(
+                dbContext,
+                directorSandboxMiddleBracket.Id,
+                directorSandboxMiddleAthletes[seed].Id,
+                seed + 1,
+                cancellationToken);
+        }
+
+        await EnsureMatchAsync(
+            dbContext,
+            directorSandboxMiddleBracket.Id,
+            1,
+            1,
+            directorSandboxMiddleAthletes[0].Id,
+            directorSandboxMiddleAthletes[1].Id,
+            winnerAthleteId: null,
+            score: null,
+            resultMethod: null,
+            matNumber: "Mat 12",
+            status: MatchStatus.InTheHole,
+            scheduledUtc: directorSandboxStartUtc.AddMinutes(35),
+            completedUtc: null,
+            cancellationToken);
+
+        await EnsureStreamSessionAsync(
+            dbContext,
+            directorOpsSandboxEvent.Id,
+            directorSandboxHighMatch.Id,
+            "Director Sandbox Mat Cam",
+            StreamStatus.Provisioned,
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+            startedUtc: null,
+            endedUtc: null,
+            cancellationToken);
+
+        await EnsureStreamSessionAsync(
+            dbContext,
+            archiveClassicEvent.Id,
+            archiveFinal.Id,
+            "Eli Family Private Stream",
+            StreamStatus.Ended,
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            archiveStartUtc.AddMinutes(86),
+            archiveStartUtc.AddMinutes(109),
+            cancellationToken,
+            athleteProfileId: athleteProfilesByEmail["demo.athlete@pinpointarena.local"].Id,
+            requestedByUserAccountId: parentUser.Id,
+            delegatedByUserAccountId: null,
+            isPersonalStream: true,
+            saveToAthleteProfile: true,
+            isPrivate: true);
+
+        await EnsureStreamSessionAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            freestyleFinal.Id,
+            "Sophia Parent Stream",
+            StreamStatus.Live,
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+            freestyleStartUtc.AddMinutes(43),
+            endedUtc: null,
+            cancellationToken,
+            athleteProfileId: athleteProfilesByEmail["sophia.patel@pinpointarena.local"].Id,
+            requestedByUserAccountId: secondParentUser.Id,
+            delegatedByUserAccountId: null,
+            isPersonalStream: true,
+            saveToAthleteProfile: true,
+            isPrivate: false);
+
+        await EnsureStreamSessionAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            freestyleSemiFinalA.Id,
+            "Eli Delegate Stream",
+            StreamStatus.Provisioned,
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            startedUtc: null,
+            endedUtc: null,
+            cancellationToken,
+            athleteProfileId: athleteProfilesByEmail["demo.athlete@pinpointarena.local"].Id,
+            requestedByUserAccountId: delegateStreamerUser.Id,
+            delegatedByUserAccountId: parentUser.Id,
+            isPersonalStream: true,
+            saveToAthleteProfile: false,
+            isPrivate: true);
+
         await EnsureDemoBracketAndStreamCoverageAsync(dbContext, athleteProfilesByEmail, cancellationToken);
 
         var demoAthleteUser = athleteUsersByEmail["demo.athlete@pinpointarena.local"];
@@ -1726,6 +2123,26 @@ public static class DependencyInjection
             "ops.alerts@pinpointarena.local",
             cancellationToken);
 
+        var backupParentSubscription = await EnsureNotificationSubscriptionAsync(
+            dbContext,
+            secondParentUser.Id,
+            columbusFreestyleLiveEvent.Id,
+            athleteProfilesByEmail["sophia.patel@pinpointarena.local"].Id,
+            NotificationEventType.MatAssignment,
+            NotificationChannel.Sms,
+            "+16145550036",
+            cancellationToken);
+
+        var delegateSubscription = await EnsureNotificationSubscriptionAsync(
+            dbContext,
+            delegateStreamerUser.Id,
+            columbusFreestyleLiveEvent.Id,
+            athleteProfilesByEmail["demo.athlete@pinpointarena.local"].Id,
+            NotificationEventType.MatchResult,
+            NotificationChannel.Email,
+            "delegate.alerts@pinpointarena.local",
+            cancellationToken);
+
         await EnsureNotificationMessageAsync(
             dbContext,
             parentMatSubscription.Id,
@@ -1760,6 +2177,30 @@ public static class DependencyInjection
             "ops.alerts@pinpointarena.local",
             "Assign officials to Mat 7 for Greco semifinal coverage.",
             DateTime.UtcNow.AddMinutes(-8),
+            cancellationToken);
+
+        await EnsureNotificationMessageAsync(
+            dbContext,
+            backupParentSubscription.Id,
+            columbusFreestyleLiveEvent.Id,
+            freestyleFinal.Id,
+            NotificationEventType.MatAssignment,
+            NotificationChannel.Sms,
+            "+16145550036",
+            "Sophia Patel assigned to Mat 6 for finals coverage.",
+            DateTime.UtcNow.AddMinutes(-6),
+            cancellationToken);
+
+        await EnsureNotificationMessageAsync(
+            dbContext,
+            delegateSubscription.Id,
+            columbusFreestyleLiveEvent.Id,
+            freestyleSemiFinalA.Id,
+            NotificationEventType.MatchResult,
+            NotificationChannel.Email,
+            "delegate.alerts@pinpointarena.local",
+            "Eli Turner advances in semifinal A by 8-2 decision.",
+            DateTime.UtcNow.AddMinutes(-4),
             cancellationToken);
 
         var seededAthleteIds = athleteProfilesByEmail.Values.Select(x => x.Id).ToHashSet();
@@ -2560,7 +3001,13 @@ public static class DependencyInjection
         string playbackUrl,
         DateTime? startedUtc,
         DateTime? endedUtc,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? athleteProfileId = null,
+        Guid? requestedByUserAccountId = null,
+        Guid? delegatedByUserAccountId = null,
+        bool isPersonalStream = false,
+        bool saveToAthleteProfile = false,
+        bool isPrivate = false)
     {
         var normalizedDeviceName = deviceName.Trim();
         var stream = await dbContext.StreamSessions
@@ -2581,6 +3028,12 @@ public static class DependencyInjection
         }
 
         stream.MatchId = matchId;
+        stream.AthleteProfileId = athleteProfileId;
+        stream.RequestedByUserAccountId = requestedByUserAccountId;
+        stream.DelegatedByUserAccountId = delegatedByUserAccountId;
+        stream.IsPersonalStream = isPersonalStream;
+        stream.SaveToAthleteProfile = saveToAthleteProfile;
+        stream.IsPrivate = isPrivate;
         stream.Status = status;
         stream.PlaybackUrl = playbackUrl.Trim();
         stream.StartedUtc = startedUtc;
