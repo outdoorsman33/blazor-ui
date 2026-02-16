@@ -67,7 +67,7 @@ a {
     animation-delay: 1.4s;
 }
 
-.topbar {
+::deep .topbar {
     background: rgba(255, 255, 255, 0.88);
     border: 1px solid rgba(213, 208, 195, 0.85);
     box-shadow: var(--shadow);
@@ -79,17 +79,23 @@ a {
     backdrop-filter: blur(6px);
 }
 
-.mud-layout-shell {
+::deep .topbar .mud-toolbar-appbar {
+    min-height: 74px;
+    display: flex;
+    align-items: center;
+}
+
+::deep .mud-layout-shell {
     background: transparent;
 }
 
-.drawer-toggle {
+::deep .drawer-toggle {
     border: 1px solid #d5cfbf;
     border-radius: 999px;
     color: #2d3a42;
 }
 
-.drawer-toggle:hover {
+::deep .drawer-toggle:hover {
     background: #f6f1e8;
 }
 
@@ -218,7 +224,7 @@ a {
     display: block;
 }
 
-.main-drawer {
+::deep .main-drawer {
     width: min(86vw, 320px);
 }
 
@@ -247,14 +253,14 @@ a {
     gap: 0.2rem;
 }
 
-.drawer-nav ::deep .mud-nav-link {
+::deep .drawer-nav .mud-nav-link {
     border-radius: 12px;
     margin: 0;
     font-weight: 600;
     color: #2d3b45;
 }
 
-.drawer-nav ::deep .mud-nav-link.active {
+::deep .drawer-nav .mud-nav-link.active {
     background: #e9f2fb;
     color: #15557f;
 }
@@ -446,14 +452,18 @@ a {
     color: #3c4a53;
 }
 
-.mud-layout-shell ::deep .mud-main-content {
+::deep .mud-layout-shell .mud-main-content {
     padding-top: 0.6rem;
 }
 
 @media (max-width: 980px) {
-    .topbar {
+    ::deep .topbar {
         border-radius: 16px;
         padding: 0.55rem 0.65rem;
+    }
+
+    ::deep .topbar .mud-toolbar-appbar {
+        min-height: 64px;
     }
 
     .brand-link {
@@ -470,7 +480,7 @@ a {
 }
 
 @media (max-width: 720px) {
-    .main-drawer {
+    ::deep .main-drawer {
         width: min(92vw, 320px);
     }
 
@@ -516,6 +526,10 @@ a {
 
     .workflow-chip {
         font-size: 0.72rem;
+    }
+
+    ::deep .topbar .mud-toolbar-appbar {
+        min-height: 56px;
     }
 }
 

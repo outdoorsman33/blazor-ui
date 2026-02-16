@@ -12,13 +12,15 @@
     <MudBreakpointProvider OnBreakpointChanged="OnBreakpointChanged" />
 
     <MudLayout Class="mud-layout-shell">
-        <MudAppBar Dense="true" Elevation="2" Class="topbar mud-topbar" @onclick:stopPropagation="true">
-            <MudIconButton Icon="@Icons.Material.Filled.Menu"
-                           Color="Color.Inherit"
-                           Edge="Edge.Start"
-                           Class="drawer-toggle"
-                           aria-label="Open navigation menu"
-                           OnClick="ToggleDrawer" />
+        <MudAppBar Elevation="2" Class="topbar mud-topbar" @onclick:stopPropagation="true">
+            <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                               Color="Color.Inherit"
+                               Edge="Edge.Start"
+                               Class="drawer-toggle"
+                               aria-label="Open navigation menu"
+                               OnClick="ToggleDrawer" />
+            </MudHidden>
 
             <div class="brand-block">
                 <span class="brand-badge">USA Wrestling Platform</span>
