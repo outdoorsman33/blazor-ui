@@ -38,8 +38,9 @@ a {
 }
 
 .app-shell {
-    width: min(1240px, calc(100% - 2.4rem));
-    margin: 1.2rem auto 2rem;
+    width: calc(100% - 1.2rem);
+    max-width: 1560px;
+    margin: 0.8rem auto 1.4rem;
     position: relative;
 }
 
@@ -71,8 +72,8 @@ a {
     background: rgba(255, 255, 255, 0.88);
     border: 1px solid rgba(213, 208, 195, 0.85);
     box-shadow: var(--shadow);
-    border-radius: var(--radius-xl);
-    padding: 0.65rem 0.9rem;
+    border-radius: 16px;
+    padding: 0.55rem 0.75rem;
     display: flex;
     gap: 0.75rem;
     align-items: center;
@@ -128,7 +129,8 @@ a {
     font-size: 0.72rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--ink-muted);
+    color: #5c6670;
+    font-weight: 700;
 }
 
 .brand-link {
@@ -239,14 +241,15 @@ a {
 ::deep .main-drawer {
     width: min(86vw, 320px);
     z-index: 1400;
+    border-right: 1px solid rgba(213, 208, 195, 0.85);
 }
 
 .drawer-content {
     height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
-    padding: 0.95rem;
+    gap: 0.65rem;
+    padding: 0.8rem;
     background: linear-gradient(180deg, #fffefb 0%, #f8f2e7 100%);
     overflow-y: auto;
 }
@@ -288,15 +291,15 @@ a {
 .drawer-mini-nav {
     width: 100%;
     display: grid;
-    gap: 0.35rem;
+    gap: 0.25rem;
 }
 
 ::deep .drawer-mini-nav .mud-nav-link {
     margin: 0 auto;
-    width: 44px;
-    height: 44px;
-    min-height: 44px;
-    border-radius: 12px;
+    width: 42px;
+    height: 42px;
+    min-height: 42px;
+    border-radius: 10px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -518,7 +521,7 @@ a {
     }
 
     .app-shell {
-        width: min(1240px, calc(100% - 1rem));
+        width: calc(100% - 0.8rem);
     }
 
     .surface {
@@ -561,8 +564,8 @@ a {
 
 @media (max-width: 520px) {
     .app-shell {
-        width: calc(100% - 0.55rem);
-        margin-top: 0.45rem;
+        width: calc(100% - 0.5rem);
+        margin-top: 0.35rem;
     }
 
     .surface {

@@ -103,6 +103,7 @@
                    Breakpoint="Breakpoint.Md"
                    Elevation="2"
                    ClipMode="@CurrentDrawerClipMode"
+                   Width="280px"
                    MiniWidth="78px"
                    OverlayAutoClose="true"
                    Class="main-drawer"
@@ -131,66 +132,6 @@
                         <MudNavLink Href="/admin" Icon="@Icons.Material.Filled.AdminPanelSettings">Event Admin</MudNavLink>
                         <MudNavLink Href="/support" Icon="@Icons.Material.Filled.SupportAgent">Support</MudNavLink>
                     </MudNavMenu>
-
-                    <MudDivider Class="drawer-divider" />
-
-                    <section class="drawer-tools">
-                        <label class="drawer-label">Quick Search</label>
-                        <div class="global-search-shell drawer-search-shell">
-                            <input class="global-search-input"
-                                   value="@SearchText"
-                                   @oninput="OnSearchInputAsync"
-                                   @onkeydown="OnSearchKeyDown"
-                                   placeholder="athlete, event, team..."
-                                   aria-label="Drawer Search" />
-                            <a class="global-search-btn drawer-search-btn" href="@FullSearchHref" @onclick="OnSearchLinkClick">Search</a>
-
-                            @if (SearchOpen)
-                            {
-                                <div class="search-dropdown">
-                                    @if (!string.IsNullOrWhiteSpace(SearchStatus))
-                                    {
-                                        <div class="search-hint">@SearchStatus</div>
-                                    }
-                                    else if (SearchResults.Count == 0)
-                                    {
-                                        <div class="search-hint">No matches found.</div>
-                                    }
-                                    else
-                                    {
-                                        @foreach (var result in SearchResults)
-                                        {
-                                            <a class="search-item" href="@SearchResultHref(result)" @onclick="@(() => OnSearchResultClick(result))">
-                                                <span class="search-title">@result.Title</span>
-                                                <span class="search-meta">@result.Subtitle</span>
-                                            </a>
-                                        }
-                                        <a class="search-more" href="@FullSearchHref" @onclick="OnSearchLinkClick">Open full search page</a>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    </section>
-
-                    <MudDivider Class="drawer-divider" />
-
-                    <section class="drawer-auth">
-                        <label class="drawer-label">Account</label>
-                        @if (!AuthSession.IsAuthenticated)
-                        {
-                            <input class="mini-input" @bind="Email" placeholder="email" />
-                            <input class="mini-input" @bind="Password" type="password" placeholder="password" />
-                            <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
-                            <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
-                            <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
-                            <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
-                        }
-                        else
-                        {
-                            <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
-                            <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
-                        }
-                    </section>
                 }
                 else
                 {
