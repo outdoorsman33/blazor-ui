@@ -95,6 +95,7 @@ public static class DependencyInjection
         var dbContext = scope.ServiceProvider.GetRequiredService<WrestlingPlatformDbContext>();
 
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await ApplySchemaCompatibilityAsync(dbContext, cancellationToken);
         await SeedDemoDataAsync(dbContext, cancellationToken);
     }
 
@@ -104,8 +105,67 @@ public static class DependencyInjection
         var dbContext = scope.ServiceProvider.GetRequiredService<WrestlingPlatformDbContext>();
 
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await ApplySchemaCompatibilityAsync(dbContext, cancellationToken);
         await ClearAllDataAsync(dbContext, cancellationToken);
         await SeedDemoDataAsync(dbContext, cancellationToken);
+    }
+
+    private static async Task ApplySchemaCompatibilityAsync(WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsNpgsql())
+        {
+            return;
+        }
+
+        var statements = new[]
+        {
+            @"ALTER TABLE ""TournamentEvents"" ADD COLUMN IF NOT EXISTS ""CreatedByUserAccountId"" uuid NULL;",
+            @"ALTER TABLE ""Matches"" ADD COLUMN IF NOT EXISTS ""BoutNumber"" integer NULL;",
+            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""AthleteProfileId"" uuid NULL;",
+            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""RequestedByUserAccountId"" uuid NULL;",
+            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""DelegatedByUserAccountId"" uuid NULL;",
+            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""IsPersonalStream"" boolean NOT NULL DEFAULT FALSE;",
+            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""SaveToAthleteProfile"" boolean NOT NULL DEFAULT FALSE;",
+            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""IsPrivate"" boolean NOT NULL DEFAULT FALSE;",
+            """
+            CREATE TABLE IF NOT EXISTS "TournamentStaffAssignments"
+            (
+                "Id" uuid NOT NULL,
+                "CreatedUtc" timestamp with time zone NOT NULL,
+                "TournamentEventId" uuid NOT NULL,
+                "UserAccountId" uuid NOT NULL,
+                "Role" integer NOT NULL,
+                "CanScoreMatches" boolean NOT NULL,
+                "CanManageMatches" boolean NOT NULL,
+                "CanManageStreams" boolean NOT NULL,
+                CONSTRAINT "PK_TournamentStaffAssignments" PRIMARY KEY ("Id")
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "AthleteStreamingPermissions"
+            (
+                "Id" uuid NOT NULL,
+                "CreatedUtc" timestamp with time zone NOT NULL,
+                "AthleteProfileId" uuid NOT NULL,
+                "ParentGuardianUserAccountId" uuid NOT NULL,
+                "DelegateUserAccountId" uuid NOT NULL,
+                "IsActive" boolean NOT NULL,
+                CONSTRAINT "PK_AthleteStreamingPermissions" PRIMARY KEY ("Id")
+            );
+            """,
+            @"CREATE INDEX IF NOT EXISTS ""IX_TournamentEvents_CreatedByUserAccountId"" ON ""TournamentEvents"" (""CreatedByUserAccountId"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_Matches_BracketId_BoutNumber"" ON ""Matches"" (""BracketId"", ""BoutNumber"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""Status"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_AthleteProfileId_IsPersonalStream_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""AthleteProfileId"", ""IsPersonalStream"", ""Status"");",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_UserAccountId"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""UserAccountId"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_CanScoreMatches"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""CanScoreMatches"");",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteStreamingPermissions_AthleteProfileId_DelegateUserAccountId"" ON ""AthleteStreamingPermissions"" (""AthleteProfileId"", ""DelegateUserAccountId"");"
+        };
+
+        foreach (var statement in statements)
+        {
+            await dbContext.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+        }
     }
 
     private static async Task SeedDemoDataAsync(WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken)
