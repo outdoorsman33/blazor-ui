@@ -85,7 +85,25 @@ public sealed record CreateStreamSessionRequest(
     Guid? MatchId,
     string DeviceName,
     string IngestProtocol = "RTMP",
-    string? SourceUrl = null);
+    string? SourceUrl = null,
+    Guid? AthleteProfileId = null,
+    bool IsPersonalStream = false,
+    bool SaveToAthleteProfile = false,
+    bool IsPrivate = false,
+    Guid? DelegatedByUserAccountId = null);
+
+public sealed record AssignTournamentStaffRequest(
+    Guid UserAccountId,
+    UserRole Role,
+    bool CanScoreMatches = true,
+    bool CanManageMatches = false,
+    bool CanManageStreams = false);
+
+public sealed record SetAthleteStreamingPermissionRequest(
+    Guid AthleteProfileId,
+    Guid DelegateUserAccountId,
+    Guid? ParentGuardianUserAccountId = null,
+    bool IsActive = true);
 
 public sealed record ConfirmRegistrationPaymentRequest(Guid RegistrationId, string ProviderReference);
 
@@ -308,6 +326,7 @@ public sealed record TableWorkerMatchSummary(
     Guid MatchId,
     int Round,
     int MatchNumber,
+    int? BoutNumber,
     MatchStatus Status,
     Guid? AthleteAId,
     Guid? AthleteBId,
@@ -368,6 +387,7 @@ public sealed record BracketVisualMatch(
     Guid MatchId,
     int Round,
     int MatchNumber,
+    int? BoutNumber,
     string Label,
     MatchStatus Status,
     BracketVisualAthlete? AthleteA,

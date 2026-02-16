@@ -99,12 +99,16 @@ public sealed class OwnershipIntegrationTests(WrestlingPlatformApiFactory factor
 
         var coach = await TestApiHelpers.RegisterUserAsync(client, $"coach-{Guid.NewGuid():N}@example.com", password, UserRole.Coach);
         var athlete = await TestApiHelpers.RegisterUserAsync(client, $"athlete-{Guid.NewGuid():N}@example.com", password, UserRole.Athlete);
+        var director = await TestApiHelpers.RegisterUserAsync(client, $"director-{Guid.NewGuid():N}@example.com", password, UserRole.TournamentDirector);
 
         var coachLogin = await TestApiHelpers.LoginAsync(client, coach.Email, password);
         TestApiHelpers.SetBearerToken(client, coachLogin.AccessToken);
-        var coachProfile = await CreateCoachProfileAsync(client, coach.Id, "CoachTeamOwner");
+        _ = await CreateCoachProfileAsync(client, coach.Id, "CoachTeamOwner");
         var team = await CreateTeamAsync(client, "Central Club", "OH", "Dublin");
-        var tournamentEvent = await CreateEventAsync(client, coachProfile.Id, "Central Open", 0);
+
+        var directorLogin = await TestApiHelpers.LoginAsync(client, director.Email, password);
+        TestApiHelpers.SetBearerToken(client, directorLogin.AccessToken);
+        var tournamentEvent = await CreateEventAsync(client, "Central Open", 0);
 
         var athleteLogin = await TestApiHelpers.LoginAsync(client, athlete.Email, password);
         TestApiHelpers.SetBearerToken(client, athleteLogin.AccessToken);
@@ -134,12 +138,16 @@ public sealed class OwnershipIntegrationTests(WrestlingPlatformApiFactory factor
 
         var coach = await TestApiHelpers.RegisterUserAsync(client, $"coach-ok-{Guid.NewGuid():N}@example.com", password, UserRole.Coach);
         var athlete = await TestApiHelpers.RegisterUserAsync(client, $"athlete-ok-{Guid.NewGuid():N}@example.com", password, UserRole.Athlete);
+        var director = await TestApiHelpers.RegisterUserAsync(client, $"director-ok-{Guid.NewGuid():N}@example.com", password, UserRole.TournamentDirector);
 
         var coachLogin = await TestApiHelpers.LoginAsync(client, coach.Email, password);
         TestApiHelpers.SetBearerToken(client, coachLogin.AccessToken);
         var coachProfile = await CreateCoachProfileAsync(client, coach.Id, "CoachOwner");
         var team = await CreateTeamAsync(client, "Northwest Club", "OH", "Toledo");
-        var tournamentEvent = await CreateEventAsync(client, coachProfile.Id, "Northwest Invite", 0);
+
+        var directorLogin = await TestApiHelpers.LoginAsync(client, director.Email, password);
+        TestApiHelpers.SetBearerToken(client, directorLogin.AccessToken);
+        var tournamentEvent = await CreateEventAsync(client, "Northwest Invite", 0);
 
         var athleteLogin = await TestApiHelpers.LoginAsync(client, athlete.Email, password);
         TestApiHelpers.SetBearerToken(client, athleteLogin.AccessToken);
@@ -213,7 +221,7 @@ public sealed class OwnershipIntegrationTests(WrestlingPlatformApiFactory factor
         return await TestApiHelpers.ReadJsonAsync<Team>(response);
     }
 
-    private static async Task<TournamentEvent> CreateEventAsync(HttpClient client, Guid coachProfileId, string name, int entryFeeCents)
+    private static async Task<TournamentEvent> CreateEventAsync(HttpClient client, string name, int entryFeeCents)
     {
         var startUtc = DateTime.UtcNow.Date.AddDays(10);
         var endUtc = startUtc.AddDays(1);
@@ -222,8 +230,8 @@ public sealed class OwnershipIntegrationTests(WrestlingPlatformApiFactory factor
             "/api/events",
             TestApiHelpers.JsonContent(new CreateTournamentEventRequest(
                 name,
-                OrganizerType.Coach,
-                coachProfileId,
+                OrganizerType.Independent,
+                Guid.Empty,
                 "OH",
                 "Columbus",
                 "Metro Sports Center",

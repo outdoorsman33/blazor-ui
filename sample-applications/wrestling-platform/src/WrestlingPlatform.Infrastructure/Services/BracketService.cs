@@ -110,6 +110,7 @@ public sealed class BracketService(WrestlingPlatformDbContext dbContext) : IBrac
                     BracketId = bracketId,
                     Round = round,
                     MatchNumber = matchNumber,
+                    BoutNumber = matchNumber,
                     AthleteAId = athleteA,
                     AthleteBId = athleteB,
                     Status = MatchStatus.Scheduled

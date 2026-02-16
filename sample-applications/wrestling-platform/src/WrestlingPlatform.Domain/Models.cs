@@ -9,7 +9,10 @@ public enum UserRole
     SchoolAdmin,
     ClubAdmin,
     EventAdmin,
-    SystemAdmin
+    SystemAdmin,
+    ParentGuardian,
+    MatWorker,
+    TournamentDirector
 }
 
 public enum CompetitionLevel
@@ -196,6 +199,7 @@ public sealed class TournamentEvent : Entity
     public string Name { get; set; } = string.Empty;
     public OrganizerType OrganizerType { get; set; }
     public Guid OrganizerId { get; set; }
+    public Guid? CreatedByUserAccountId { get; set; }
     public string State { get; set; } = string.Empty;
     public string City { get; set; } = string.Empty;
     public string Venue { get; set; } = string.Empty;
@@ -255,6 +259,7 @@ public sealed class Match : Entity
     public Guid BracketId { get; set; }
     public int Round { get; set; }
     public int MatchNumber { get; set; }
+    public int? BoutNumber { get; set; }
     public Guid? AthleteAId { get; set; }
     public Guid? AthleteBId { get; set; }
     public Guid? WinnerAthleteId { get; set; }
@@ -316,12 +321,36 @@ public sealed class StreamSession : Entity
 {
     public Guid TournamentEventId { get; set; }
     public Guid? MatchId { get; set; }
+    public Guid? AthleteProfileId { get; set; }
+    public Guid? RequestedByUserAccountId { get; set; }
+    public Guid? DelegatedByUserAccountId { get; set; }
+    public bool IsPersonalStream { get; set; }
+    public bool SaveToAthleteProfile { get; set; }
+    public bool IsPrivate { get; set; }
     public string DeviceName { get; set; } = string.Empty;
     public string IngestKey { get; set; } = string.Empty;
     public string PlaybackUrl { get; set; } = string.Empty;
     public StreamStatus Status { get; set; } = StreamStatus.Provisioned;
     public DateTime? StartedUtc { get; set; }
     public DateTime? EndedUtc { get; set; }
+}
+
+public sealed class TournamentStaffAssignment : Entity
+{
+    public Guid TournamentEventId { get; set; }
+    public Guid UserAccountId { get; set; }
+    public UserRole Role { get; set; } = UserRole.MatWorker;
+    public bool CanScoreMatches { get; set; } = true;
+    public bool CanManageMatches { get; set; }
+    public bool CanManageStreams { get; set; }
+}
+
+public sealed class AthleteStreamingPermission : Entity
+{
+    public Guid AthleteProfileId { get; set; }
+    public Guid ParentGuardianUserAccountId { get; set; }
+    public Guid DelegateUserAccountId { get; set; }
+    public bool IsActive { get; set; } = true;
 }
 
 public sealed class PaymentWebhookEvent : Entity

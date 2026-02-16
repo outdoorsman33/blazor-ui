@@ -53,11 +53,11 @@ public sealed class WebhookIntegrationTests(WrestlingPlatformApiFactory factory)
         using var client = factory.CreateClient();
         const string password = "Passw0rd!234";
 
-        var coachEmail = $"coach-{Guid.NewGuid():N}@example.com";
-        await TestApiHelpers.RegisterUserAsync(client, coachEmail, password, UserRole.Coach);
+        var directorEmail = $"director-{Guid.NewGuid():N}@example.com";
+        await TestApiHelpers.RegisterUserAsync(client, directorEmail, password, UserRole.TournamentDirector);
 
-        var coachLogin = await TestApiHelpers.LoginAsync(client, coachEmail, password);
-        TestApiHelpers.SetBearerToken(client, coachLogin.AccessToken);
+        var directorLogin = await TestApiHelpers.LoginAsync(client, directorEmail, password);
+        TestApiHelpers.SetBearerToken(client, directorLogin.AccessToken);
 
         var eventId = $"evt_retry_{Guid.NewGuid():N}";
         var providerReference = $"cs_{Guid.NewGuid():N}";

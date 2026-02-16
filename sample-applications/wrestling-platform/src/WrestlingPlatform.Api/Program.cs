@@ -160,15 +160,23 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("CoachOrAdmin", policy => policy.RequireRole(
         UserRole.Coach.ToString(),
+        UserRole.TournamentDirector.ToString(),
         UserRole.ClubAdmin.ToString(),
         UserRole.SchoolAdmin.ToString(),
         UserRole.EventAdmin.ToString(),
         UserRole.SystemAdmin.ToString()));
 
     options.AddPolicy("EventOps", policy => policy.RequireRole(
-        UserRole.Coach.ToString(),
+        UserRole.TournamentDirector.ToString(),
+        UserRole.EventAdmin.ToString(),
         UserRole.ClubAdmin.ToString(),
         UserRole.SchoolAdmin.ToString(),
+        UserRole.SystemAdmin.ToString()));
+
+    options.AddPolicy("MatScoring", policy => policy.RequireRole(
+        UserRole.MatWorker.ToString(),
+        UserRole.Coach.ToString(),
+        UserRole.TournamentDirector.ToString(),
         UserRole.EventAdmin.ToString(),
         UserRole.SystemAdmin.ToString()));
 });
@@ -263,7 +271,7 @@ demo.MapPost("/reset-data", async (HttpRequest request, IServiceProvider service
         Status = "demo-data-reset",
         Utc = DateTime.UtcNow
     });
-}).AllowAnonymous();
+});
 
 var auth = api.MapGroup("/auth").RequireRateLimiting("auth-strict");
 
@@ -373,10 +381,10 @@ users.MapPost("/register", async (
         return Results.BadRequest("Email and password are required.");
     }
 
-
-    if (!ApiSecurityHelpers.IsPublicRegistrationRole(request.Role))
+    var requestedRole = ApiSecurityHelpers.NormalizeRole(request.Role);
+    if (!ApiSecurityHelpers.IsPublicRegistrationRole(requestedRole))
     {
-        return Results.BadRequest("Self-registration is limited to Athlete, Coach, Parent, and Fan roles.");
+        return Results.BadRequest("Self-registration is limited to Athlete, Parent/Guardian, Coach, Fan, Mat Worker, and Tournament Director roles.");
     }
     var normalizedEmail = request.Email.Trim().ToLowerInvariant();
     var exists = await dbContext.UserAccounts.AnyAsync(x => x.Email == normalizedEmail, cancellationToken);
@@ -389,7 +397,7 @@ users.MapPost("/register", async (
     {
         Email = normalizedEmail,
         PasswordHash = ApiSecurityHelpers.HashPassword(request.Password),
-        Role = request.Role,
+        Role = requestedRole,
         PhoneNumber = request.PhoneNumber
     };
 
@@ -574,6 +582,19 @@ coaches.MapPost("/{coachProfileId:guid}/associations", async (
 var events = api.MapGroup("/events").RequireAuthorization();
 events.MapPost("", async (CreateTournamentEventRequest request, HttpContext httpContext, WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken) =>
 {
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var isDirector = ApiSecurityHelpers.IsTournamentDirectorPrincipal(httpContext.User);
+    var isAdmin = ApiSecurityHelpers.IsAdminPrincipal(httpContext.User);
+    if (!isDirector && !isAdmin)
+    {
+        return Results.Forbid();
+    }
+
     if (request.EndUtc < request.StartUtc)
     {
         return Results.BadRequest("End date must be after start date.");
@@ -606,6 +627,7 @@ events.MapPost("", async (CreateTournamentEventRequest request, HttpContext http
         Name = request.Name.Trim(),
         OrganizerType = request.OrganizerType,
         OrganizerId = request.OrganizerId,
+        CreatedByUserAccountId = currentUserId.Value,
         State = request.State.Trim().ToUpperInvariant(),
         City = request.City.Trim(),
         Venue = request.Venue.Trim(),
@@ -624,6 +646,7 @@ events.MapPost("", async (CreateTournamentEventRequest request, HttpContext http
 events.MapPost("/{eventId:guid}/divisions", async (
     Guid eventId,
     CreateTournamentDivisionRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     CancellationToken cancellationToken) =>
 {
@@ -631,6 +654,12 @@ events.MapPost("/{eventId:guid}/divisions", async (
     if (!eventExists)
     {
         return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
     }
 
     var division = new TournamentDivision
@@ -943,6 +972,7 @@ events.MapGet("/{eventId:guid}/controls", async (
 events.MapPut("/{eventId:guid}/controls", async (
     Guid eventId,
     UpdateTournamentControlSettingsRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     ITournamentControlService tournamentControlService,
     CancellationToken cancellationToken) =>
@@ -951,6 +981,12 @@ events.MapPut("/{eventId:guid}/controls", async (
     if (!eventExists)
     {
         return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
     }
 
     var registrantCount = await dbContext.EventRegistrations
@@ -969,6 +1005,7 @@ events.MapPut("/{eventId:guid}/controls", async (
 
 events.MapPost("/{eventId:guid}/controls/release-brackets", async (
     Guid eventId,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     ITournamentControlService tournamentControlService,
     CancellationToken cancellationToken) =>
@@ -979,15 +1016,23 @@ events.MapPost("/{eventId:guid}/controls/release-brackets", async (
         return Results.NotFound("Event not found.");
     }
 
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
     var registrantCount = await dbContext.EventRegistrations
         .CountAsync(x => x.TournamentEventId == eventId && x.Status != RegistrationStatus.Cancelled, cancellationToken);
 
+    await AssignBoutNumbersAsync(eventId, dbContext, cancellationToken);
     var updated = tournamentControlService.ReleaseBrackets(eventId, registrantCount);
     return Results.Ok(updated);
 }).RequireAuthorization("EventOps");
 
 events.MapGet("/{eventId:guid}/ops-checklist", async (
     Guid eventId,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     IEventOpsChecklistService eventOpsChecklistService,
     CancellationToken cancellationToken) =>
@@ -998,12 +1043,19 @@ events.MapGet("/{eventId:guid}/ops-checklist", async (
         return Results.NotFound("Event not found.");
     }
 
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
     return Results.Ok(eventOpsChecklistService.GetOrCreate(eventId));
-}).AllowAnonymous();
+}).RequireAuthorization("EventOps");
 
 events.MapPut("/{eventId:guid}/ops-checklist", async (
     Guid eventId,
     UpdateEventOpsChecklistRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     IEventOpsChecklistService eventOpsChecklistService,
     CancellationToken cancellationToken) =>
@@ -1012,6 +1064,12 @@ events.MapPut("/{eventId:guid}/ops-checklist", async (
     if (!eventExists)
     {
         return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
     }
 
     var updated = eventOpsChecklistService.Update(eventId, request);
@@ -1031,6 +1089,12 @@ events.MapGet("/{eventId:guid}/ops-checklist/artifacts", async (
         return Results.NotFound("Event not found.");
     }
 
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
     eventOpsChecklistService.GetOrCreate(eventId);
     var baseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}";
     var links = new EventOpsArtifactLinks(
@@ -1043,7 +1107,7 @@ events.MapGet("/{eventId:guid}/ops-checklist/artifacts", async (
         DateTime.UtcNow);
 
     return Results.Ok(links);
-}).AllowAnonymous();
+}).RequireAuthorization("EventOps");
 
 events.MapGet("/{eventId:guid}/ops-checklist/recovery", async (
     Guid eventId,
@@ -1057,6 +1121,12 @@ events.MapGet("/{eventId:guid}/ops-checklist/recovery", async (
     if (!eventExists)
     {
         return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
     }
 
     eventOpsChecklistService.GetOrCreate(eventId);
@@ -1099,7 +1169,7 @@ events.MapGet("/{eventId:guid}/ops-checklist/recovery", async (
         .ToList();
 
     return Results.Ok(recoveryRows);
-}).AllowAnonymous();
+}).RequireAuthorization("EventOps");
 
 events.MapGet("/{eventId:guid}/directory", async (
     Guid eventId,
@@ -1230,6 +1300,7 @@ events.MapGet("/{eventId:guid}/mats", async (
                     match.Id,
                     match.Round,
                     match.MatchNumber,
+                    match.BoutNumber,
                     match.Status,
                     match.AthleteAId,
                     match.AthleteBId,
@@ -1257,6 +1328,353 @@ events.MapGet("/{eventId:guid}/mats", async (
         mats));
 }).AllowAnonymous();
 
+events.MapPost("/{eventId:guid}/ops/staff-assignments", async (
+    Guid eventId,
+    AssignTournamentStaffRequest request,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
+    var userExists = await dbContext.UserAccounts.AnyAsync(x => x.Id == request.UserAccountId, cancellationToken);
+    if (!userExists)
+    {
+        return Results.BadRequest("User not found.");
+    }
+
+    var normalizedRole = ApiSecurityHelpers.NormalizeRole(request.Role);
+    if (normalizedRole is not (UserRole.MatWorker or UserRole.Coach or UserRole.TournamentDirector))
+    {
+        return Results.BadRequest("Staff assignment role must be MatWorker, Coach, or TournamentDirector.");
+    }
+
+    var assignment = await dbContext.TournamentStaffAssignments
+        .FirstOrDefaultAsync(
+            x => x.TournamentEventId == eventId
+                 && x.UserAccountId == request.UserAccountId,
+            cancellationToken);
+
+    if (assignment is null)
+    {
+        assignment = new TournamentStaffAssignment
+        {
+            TournamentEventId = eventId,
+            UserAccountId = request.UserAccountId
+        };
+
+        dbContext.TournamentStaffAssignments.Add(assignment);
+    }
+
+    assignment.Role = normalizedRole;
+    assignment.CanScoreMatches = request.CanScoreMatches;
+    assignment.CanManageMatches = request.CanManageMatches;
+    assignment.CanManageStreams = request.CanManageStreams;
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+    return Results.Ok(assignment);
+}).RequireAuthorization("EventOps");
+
+events.MapGet("/{eventId:guid}/ops/staff-assignments", async (
+    Guid eventId,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
+    var assignments = await dbContext.TournamentStaffAssignments
+        .AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId)
+        .OrderByDescending(x => x.CanScoreMatches)
+        .ThenBy(x => x.Role)
+        .ThenBy(x => x.UserAccountId)
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(assignments);
+}).RequireAuthorization("EventOps");
+
+events.MapGet("/{eventId:guid}/ops/leaderboard", async (
+    Guid eventId,
+    [FromQuery] CompetitionLevel? level,
+    [FromQuery] decimal? weightClass,
+    [FromQuery] string? sortBy,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
+    var registrations = await dbContext.EventRegistrations.AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId && x.Status != RegistrationStatus.Cancelled)
+        .ToListAsync(cancellationToken);
+
+    var athleteIds = registrations.Select(x => x.AthleteProfileId).Distinct().ToList();
+    if (athleteIds.Count == 0)
+    {
+        return Results.Ok(Array.Empty<object>());
+    }
+
+    var athletes = await dbContext.AthleteProfiles.AsNoTracking()
+        .Where(x => athleteIds.Contains(x.Id))
+        .ToListAsync(cancellationToken);
+
+    var latestStats = await dbContext.AthleteStatsSnapshots.AsNoTracking()
+        .Where(x => athleteIds.Contains(x.AthleteProfileId))
+        .GroupBy(x => x.AthleteProfileId)
+        .Select(group => group.OrderByDescending(x => x.SnapshotUtc).First())
+        .ToListAsync(cancellationToken);
+    var statsByAthleteId = latestStats.ToDictionary(x => x.AthleteProfileId);
+
+    var rows = athletes
+        .Where(x => level is null || x.Level == level.Value)
+        .Where(x => weightClass is null || x.WeightClass == weightClass.Value)
+        .Select(athlete =>
+        {
+            var stats = statsByAthleteId.GetValueOrDefault(athlete.Id);
+            return new
+            {
+                AthleteId = athlete.Id,
+                Name = $"{athlete.FirstName} {athlete.LastName}",
+                athlete.Level,
+                athlete.WeightClass,
+                Wins = stats?.Wins ?? 0,
+                Losses = stats?.Losses ?? 0,
+                Pins = stats?.Pins ?? 0,
+                TechFalls = stats?.TechFalls ?? 0,
+                MajorDecisions = stats?.MajorDecisions ?? 0
+            };
+        })
+        .ToList();
+
+    var ordered = (sortBy ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "techfalls" => rows.OrderByDescending(x => x.TechFalls).ThenByDescending(x => x.Wins).ThenBy(x => x.Name),
+        "majordecisions" => rows.OrderByDescending(x => x.MajorDecisions).ThenByDescending(x => x.Wins).ThenBy(x => x.Name),
+        "wins" => rows.OrderByDescending(x => x.Wins).ThenByDescending(x => x.Pins).ThenBy(x => x.Name),
+        _ => rows.OrderByDescending(x => x.Pins).ThenByDescending(x => x.TechFalls).ThenByDescending(x => x.Wins).ThenBy(x => x.Name)
+    };
+
+    return Results.Ok(ordered.ToList());
+}).RequireAuthorization("EventOps");
+
+events.MapGet("/{eventId:guid}/ops/live-bouts", async (
+    Guid eventId,
+    [FromQuery] CompetitionLevel? level,
+    [FromQuery] decimal? weightClass,
+    [FromQuery] string? mat,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
+    var brackets = await dbContext.Brackets.AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId)
+        .ToListAsync(cancellationToken);
+    var bracketIds = brackets.Select(x => x.Id).ToHashSet();
+
+    var matches = await dbContext.Matches.AsNoTracking()
+        .Where(x => bracketIds.Contains(x.BracketId))
+        .Where(x =>
+            x.Status == MatchStatus.OnMat
+            || x.Status == MatchStatus.InTheHole
+            || x.Status == MatchStatus.Scheduled)
+        .ToListAsync(cancellationToken);
+
+    var bracketById = brackets.ToDictionary(x => x.Id);
+    matches = matches
+        .Where(x => level is null || bracketById.GetValueOrDefault(x.BracketId)?.Level == level.Value)
+        .Where(x => weightClass is null || bracketById.GetValueOrDefault(x.BracketId)?.WeightClass == weightClass.Value)
+        .Where(x => string.IsNullOrWhiteSpace(mat) || string.Equals((x.MatNumber ?? "Unassigned").Trim(), mat.Trim(), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    var athleteIds = matches
+        .SelectMany(x => new[] { x.AthleteAId, x.AthleteBId })
+        .Where(x => x is not null)
+        .Select(x => x!.Value)
+        .Distinct()
+        .ToList();
+    var athletesById = await dbContext.AthleteProfiles.AsNoTracking()
+        .Where(x => athleteIds.Contains(x.Id))
+        .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+    var rows = matches
+        .OrderByDescending(x => x.Status == MatchStatus.OnMat)
+        .ThenByDescending(x => x.Status == MatchStatus.InTheHole)
+        .ThenBy(x => string.IsNullOrWhiteSpace(x.MatNumber))
+        .ThenBy(x => x.MatNumber)
+        .ThenBy(x => x.BoutNumber ?? x.MatchNumber)
+        .Select(match =>
+        {
+            var bracket = bracketById.GetValueOrDefault(match.BracketId);
+            return new
+            {
+                match.Id,
+                BoutNumber = match.BoutNumber ?? match.MatchNumber,
+                match.Round,
+                match.Status,
+                MatNumber = string.IsNullOrWhiteSpace(match.MatNumber) ? "Unassigned" : match.MatNumber,
+                DivisionLevel = bracket?.Level,
+                DivisionWeight = bracket?.WeightClass,
+                AthleteA = BuildAthleteLabel(match.AthleteAId, athletesById),
+                AthleteB = BuildAthleteLabel(match.AthleteBId, athletesById),
+                match.Score,
+                match.ResultMethod
+            };
+        })
+        .ToList();
+
+    return Results.Ok(rows);
+}).RequireAuthorization("EventOps");
+
+events.MapGet("/{eventId:guid}/ops/brackets/completed", async (
+    Guid eventId,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
+    var brackets = await dbContext.Brackets.AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId)
+        .OrderBy(x => x.Level)
+        .ThenBy(x => x.WeightClass)
+        .ToListAsync(cancellationToken);
+    var bracketIds = brackets.Select(x => x.Id).ToHashSet();
+
+    var completedMatches = await dbContext.Matches.AsNoTracking()
+        .Where(x => bracketIds.Contains(x.BracketId))
+        .Where(x => x.Status == MatchStatus.Completed)
+        .OrderBy(x => x.Round)
+        .ThenBy(x => x.BoutNumber ?? x.MatchNumber)
+        .ToListAsync(cancellationToken);
+
+    var rows = brackets.Select(bracket =>
+    {
+        var matchesForBracket = completedMatches.Where(x => x.BracketId == bracket.Id).ToList();
+        return new
+        {
+            BracketId = bracket.Id,
+            bracket.Level,
+            bracket.WeightClass,
+            CompletedBoutCount = matchesForBracket.Count,
+            Matches = matchesForBracket.Select(match => new
+            {
+                match.Id,
+                BoutNumber = match.BoutNumber ?? match.MatchNumber,
+                match.Round,
+                match.Score,
+                match.ResultMethod
+            }).ToList()
+        };
+    }).Where(x => x.CompletedBoutCount > 0).ToList();
+
+    return Results.Ok(rows);
+}).RequireAuthorization("EventOps");
+
+events.MapDelete("/{eventId:guid}", async (
+    Guid eventId,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var tournamentEvent = await dbContext.TournamentEvents.FirstOrDefaultAsync(x => x.Id == eventId, cancellationToken);
+    if (tournamentEvent is null)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
+    var paidRegistrationExists = await dbContext.EventRegistrations.AnyAsync(
+        x => x.TournamentEventId == eventId
+             && x.Status != RegistrationStatus.Cancelled
+             && x.PaymentStatus == PaymentStatus.Paid,
+        cancellationToken);
+
+    if (paidRegistrationExists)
+    {
+        return Results.Conflict("Event cannot be cancelled because paid registrations exist.");
+    }
+
+    var registrations = await dbContext.EventRegistrations
+        .Where(x => x.TournamentEventId == eventId && x.Status != RegistrationStatus.Cancelled)
+        .ToListAsync(cancellationToken);
+    foreach (var registration in registrations)
+    {
+        registration.Status = RegistrationStatus.Cancelled;
+    }
+
+    tournamentEvent.IsPublished = false;
+    if (tournamentEvent.EndUtc > DateTime.UtcNow)
+    {
+        tournamentEvent.EndUtc = DateTime.UtcNow;
+    }
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+    return Results.Ok(new
+    {
+        EventId = eventId,
+        Cancelled = true,
+        CancelledRegistrations = registrations.Count
+    });
+}).RequireAuthorization("EventOps");
+
 events.MapGet("/{eventId:guid}/brackets/visual", async (
     Guid eventId,
     HttpContext httpContext,
@@ -1277,9 +1695,14 @@ events.MapGet("/{eventId:guid}/brackets/visual", async (
     var controls = tournamentControlService.GetOrCreate(eventId, registrantCount);
     var released = tournamentControlService.AreBracketsReleased(eventId, DateTime.UtcNow);
 
-    if (!released && !ApiSecurityHelpers.IsEventOperatorPrincipal(httpContext.User))
+    if (!released)
     {
-        return Results.Forbid();
+        var canViewUnreleased = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken)
+                                || await ApiSecurityHelpers.CanScoreEventAsync(dbContext, httpContext.User, eventId, cancellationToken);
+        if (!canViewUnreleased)
+        {
+            return Results.Forbid();
+        }
     }
 
     var bracketRows = await dbContext.Brackets.AsNoTracking()
@@ -1349,6 +1772,7 @@ events.MapGet("/{eventId:guid}/brackets/visual", async (
             match.Id,
             match.Round,
             match.MatchNumber,
+            match.BoutNumber,
             $"{bracket.Level} {bracket.WeightClass:0.##} - Round {match.Round}",
             match.Status,
             athleteA,
@@ -1451,6 +1875,82 @@ events.MapGet("/{eventId:guid}/brackets/visual", async (
         pools);
 
     return Results.Ok(bundle);
+}).AllowAnonymous();
+
+events.MapGet("/{eventId:guid}/live-hub", async (
+    Guid eventId,
+    [FromQuery] CompetitionLevel? level,
+    [FromQuery] decimal? weightClass,
+    [FromQuery] string? mat,
+    [FromQuery] string? sortBy,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var tournamentEvent = await dbContext.TournamentEvents.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.Id == eventId, cancellationToken);
+    if (tournamentEvent is null)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var brackets = await dbContext.Brackets.AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId)
+        .ToListAsync(cancellationToken);
+    var bracketIds = brackets.Select(x => x.Id).ToHashSet();
+    var bracketById = brackets.ToDictionary(x => x.Id);
+
+    var matches = await dbContext.Matches.AsNoTracking()
+        .Where(x => bracketIds.Contains(x.BracketId))
+        .ToListAsync(cancellationToken);
+
+    matches = matches
+        .Where(x => level is null || bracketById.GetValueOrDefault(x.BracketId)?.Level == level.Value)
+        .Where(x => weightClass is null || bracketById.GetValueOrDefault(x.BracketId)?.WeightClass == weightClass.Value)
+        .Where(x => string.IsNullOrWhiteSpace(mat) || string.Equals((x.MatNumber ?? "Unassigned").Trim(), mat.Trim(), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    var ordered = (sortBy ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "status" => matches.OrderByDescending(x => x.Status == MatchStatus.OnMat)
+            .ThenByDescending(x => x.Status == MatchStatus.InTheHole)
+            .ThenBy(x => x.BoutNumber ?? x.MatchNumber)
+            .ToList(),
+        "round" => matches.OrderBy(x => x.Round).ThenBy(x => x.BoutNumber ?? x.MatchNumber).ToList(),
+        _ => matches.OrderBy(x => x.BoutNumber ?? x.MatchNumber).ThenBy(x => x.Round).ToList()
+    };
+
+    var mats = ordered
+        .GroupBy(x => string.IsNullOrWhiteSpace(x.MatNumber) ? "Unassigned" : x.MatNumber!.Trim())
+        .OrderBy(x => x.Key == "Unassigned" ? 1 : 0)
+        .ThenBy(x => x.Key)
+        .Select(group => new
+        {
+            Mat = group.Key,
+            OnMat = group.Count(x => x.Status == MatchStatus.OnMat),
+            InTheHole = group.Count(x => x.Status == MatchStatus.InTheHole),
+            Scheduled = group.Count(x => x.Status == MatchStatus.Scheduled),
+            Bouts = group.Select(x => new
+            {
+                x.Id,
+                BoutNumber = x.BoutNumber ?? x.MatchNumber,
+                x.Round,
+                x.Status,
+                x.Score,
+                x.ResultMethod
+            }).ToList()
+        })
+        .ToList();
+
+    return Results.Ok(new
+    {
+        Event = new { tournamentEvent.Id, tournamentEvent.Name, tournamentEvent.StartUtc, tournamentEvent.EndUtc },
+        Filters = new { level, weightClass, Mat = mat, SortBy = sortBy },
+        AvailableLevels = brackets.Select(x => x.Level).Distinct().OrderBy(x => x).ToList(),
+        AvailableWeights = brackets.Select(x => x.WeightClass).Distinct().OrderBy(x => x).ToList(),
+        Mats = mats,
+        TotalBouts = ordered.Count,
+        OnMat = ordered.Count(x => x.Status == MatchStatus.OnMat)
+    });
 }).AllowAnonymous();
 
 events.MapPost("/{eventId:guid}/registrations", async (
@@ -1643,12 +2143,25 @@ registrations.MapPost("/{registrationId:guid}/payments/confirm", async (
 events.MapPost("/{eventId:guid}/brackets/generate", async (
     Guid eventId,
     GenerateBracketRequest request,
+    HttpContext httpContext,
     ITournamentControlService tournamentControlService,
     IEventOpsChecklistService eventOpsChecklistService,
     IBracketService bracketService,
     WrestlingPlatformDbContext dbContext,
     CancellationToken cancellationToken) =>
 {
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManageOps)
+    {
+        return Results.Forbid();
+    }
+
     if (!eventOpsChecklistService.CanGenerateBrackets(eventId, out var checklistReason))
     {
         return Results.BadRequest(checklistReason);
@@ -1666,6 +2179,7 @@ events.MapPost("/{eventId:guid}/brackets/generate", async (
         .CountAsync(x => x.TournamentEventId == eventId && x.Status != RegistrationStatus.Cancelled, cancellationToken);
     tournamentControlService.GetOrCreate(eventId, registrantCount);
     eventOpsChecklistService.MarkBracketsGenerated(eventId);
+    await AssignBoutNumbersAsync(eventId, dbContext, cancellationToken);
 
     return Results.Ok(result);
 }).RequireAuthorization("EventOps");
@@ -1696,10 +2210,14 @@ events.MapGet("/{eventId:guid}/brackets", async (
         .CountAsync(x => x.TournamentEventId == eventId && x.Status != RegistrationStatus.Cancelled, cancellationToken);
 
     var controls = tournamentControlService.GetOrCreate(eventId, registrantCount);
-    if (!tournamentControlService.AreBracketsReleased(eventId, DateTime.UtcNow)
-        && !ApiSecurityHelpers.IsEventOperatorPrincipal(httpContext.User))
+    if (!tournamentControlService.AreBracketsReleased(eventId, DateTime.UtcNow))
     {
-        return Results.Ok(Array.Empty<object>());
+        var canViewUnreleased = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken)
+                                || await ApiSecurityHelpers.CanScoreEventAsync(dbContext, httpContext.User, eventId, cancellationToken);
+        if (!canViewUnreleased)
+        {
+            return Results.Ok(Array.Empty<object>());
+        }
     }
 
     var bracketIds = bracketRows.Select(x => x.Id).ToList();
@@ -1857,7 +2375,7 @@ api.MapGet("/search/global", async (
     results.AddRange(matchRows.Select(match => new GlobalSearchResultItem(
         GlobalSearchEntityType.Match,
         match.Id,
-        $"Match {match.MatchNumber} - Round {match.Round}",
+        $"Bout {(match.BoutNumber ?? match.MatchNumber)} - Round {match.Round}",
         $"{match.Status} | Mat {(string.IsNullOrWhiteSpace(match.MatNumber) ? "Unassigned" : match.MatNumber)} | Score {match.Score ?? "N/A"}",
         "/mat-scoring",
         match.CompletedUtc ?? match.ScheduledUtc,
@@ -1931,12 +2449,13 @@ api.MapGet("/table-worker/events", async (
     }
 
     return Results.Ok(output);
-}).AllowAnonymous();
+}).RequireAuthorization("MatScoring");
 
-var matches = api.MapGroup("/matches").RequireAuthorization("EventOps");
+var matches = api.MapGroup("/matches").RequireAuthorization();
 matches.MapPost("/{matchId:guid}/assign-mat", async (
     Guid matchId,
     AssignMatRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     INotificationDispatcher notificationDispatcher,
     IHubContext<MatchOpsHub> hubContext,
@@ -1952,6 +2471,19 @@ matches.MapPost("/{matchId:guid}/assign-mat", async (
         .Where(x => x.Id == match.BracketId)
         .Select(x => x.TournamentEventId)
         .FirstOrDefaultAsync(cancellationToken);
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, tournamentEventId, cancellationToken);
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    var canManageMatchOps = currentUserId is not null && await dbContext.TournamentStaffAssignments.AsNoTracking()
+        .AnyAsync(
+            x => x.TournamentEventId == tournamentEventId
+                 && x.UserAccountId == currentUserId.Value
+                 && (x.CanManageMatches || x.CanScoreMatches),
+            cancellationToken);
+    if (!canManageOps && !canManageMatchOps)
+    {
+        return Results.Forbid();
+    }
 
     match.MatNumber = request.MatNumber.Trim();
     match.ScheduledUtc = request.ScheduledUtc;
@@ -2001,6 +2533,7 @@ matches.MapPost("/{matchId:guid}/assign-mat", async (
 matches.MapPost("/{matchId:guid}/result", async (
     Guid matchId,
     RecordMatchResultRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     IRankingService rankingService,
     INotificationDispatcher notificationDispatcher,
@@ -2023,6 +2556,19 @@ matches.MapPost("/{matchId:guid}/result", async (
         .Select(x => x.TournamentEventId)
         .FirstOrDefaultAsync(cancellationToken);
 
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, tournamentEventId, cancellationToken);
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    var canManageMatchOps = currentUserId is not null && await dbContext.TournamentStaffAssignments.AsNoTracking()
+        .AnyAsync(
+            x => x.TournamentEventId == tournamentEventId
+                 && x.UserAccountId == currentUserId.Value
+                 && (x.CanManageMatches || x.CanScoreMatches),
+            cancellationToken);
+    if (!canManageOps && !canManageMatchOps)
+    {
+        return Results.Forbid();
+    }
+
     match.WinnerAthleteId = request.WinnerAthleteId;
     match.Score = request.Score.Trim();
     match.ResultMethod = request.ResultMethod.Trim();
@@ -2039,7 +2585,7 @@ matches.MapPost("/{matchId:guid}/result", async (
     await AdvanceBracketProgressionAsync(dbContext, match.BracketId, cancellationToken);
     await dbContext.SaveChangesAsync(cancellationToken);
 
-    var outcomeMessage = $"Match {match.MatchNumber} final: {request.Score} via {request.ResultMethod}.";
+    var outcomeMessage = $"Bout {(match.BoutNumber ?? match.MatchNumber)} final: {request.Score} via {request.ResultMethod}.";
     foreach (var athleteId in new[] { match.AthleteAId, match.AthleteBId }.Where(x => x is not null).Select(x => x!.Value))
     {
         await notificationDispatcher.DispatchAsync(
@@ -2113,6 +2659,7 @@ matches.MapGet("/{matchId:guid}/scoreboard/rules", async (
 matches.MapPost("/{matchId:guid}/scoreboard/rules", async (
     Guid matchId,
     ConfigureMatchScoringRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     ILiveMatScoringService liveMatScoringService,
     CancellationToken cancellationToken) =>
@@ -2121,6 +2668,12 @@ matches.MapPost("/{matchId:guid}/scoreboard/rules", async (
     if (match is null)
     {
         return Results.NotFound("Match not found.");
+    }
+
+    var canScoreMatch = await ApiSecurityHelpers.CanScoreMatchAsync(dbContext, httpContext.User, matchId, cancellationToken);
+    if (!canScoreMatch)
+    {
+        return Results.Forbid();
     }
 
     try
@@ -2132,11 +2685,12 @@ matches.MapPost("/{matchId:guid}/scoreboard/rules", async (
     {
         return Results.BadRequest(ex.Message);
     }
-}).RequireAuthorization("EventOps");
+}).RequireAuthorization("MatScoring");
 
 matches.MapPost("/{matchId:guid}/scoreboard/clock", async (
     Guid matchId,
     ControlMatchClockRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     ILiveMatScoringService liveMatScoringService,
     IHubContext<MatchOpsHub> hubContext,
@@ -2146,6 +2700,12 @@ matches.MapPost("/{matchId:guid}/scoreboard/clock", async (
     if (match is null)
     {
         return Results.NotFound("Match not found.");
+    }
+
+    var canScoreMatch = await ApiSecurityHelpers.CanScoreMatchAsync(dbContext, httpContext.User, matchId, cancellationToken);
+    if (!canScoreMatch)
+    {
+        return Results.Forbid();
     }
 
     var tournamentEventId = await dbContext.Brackets
@@ -2194,7 +2754,7 @@ matches.MapPost("/{matchId:guid}/scoreboard/clock", async (
     }
 
     return Results.Ok(scoreboard);
-}).RequireAuthorization("EventOps");
+}).RequireAuthorization("MatScoring");
 
 api.MapGet("/scoring/rules", (
     [FromQuery] WrestlingStyle? style,
@@ -2226,6 +2786,7 @@ api.MapGet("/scoring/rules", (
 matches.MapPost("/{matchId:guid}/scoreboard/events", async (
     Guid matchId,
     AddMatScoreEventRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     ITournamentControlService tournamentControlService,
     ILiveMatScoringService liveMatScoringService,
@@ -2238,6 +2799,12 @@ matches.MapPost("/{matchId:guid}/scoreboard/events", async (
     if (match is null)
     {
         return Results.NotFound("Match not found.");
+    }
+
+    var canScoreMatch = await ApiSecurityHelpers.CanScoreMatchAsync(dbContext, httpContext.User, matchId, cancellationToken);
+    if (!canScoreMatch)
+    {
+        return Results.Forbid();
     }
 
     var bracket = await dbContext.Brackets.AsNoTracking().FirstOrDefaultAsync(x => x.Id == match.BracketId, cancellationToken);
@@ -2282,7 +2849,7 @@ matches.MapPost("/{matchId:guid}/scoreboard/events", async (
         await AdvanceBracketProgressionAsync(dbContext, match.BracketId, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var outcomeMessage = $"Match {match.MatchNumber} final: {match.Score} via {match.ResultMethod}.";
+        var outcomeMessage = $"Bout {(match.BoutNumber ?? match.MatchNumber)} final: {match.Score} via {match.ResultMethod}.";
         foreach (var athleteId in new[] { match.AthleteAId, match.AthleteBId }.Where(x => x is not null).Select(x => x!.Value))
         {
             await notificationDispatcher.DispatchAsync(
@@ -2321,11 +2888,12 @@ matches.MapPost("/{matchId:guid}/scoreboard/events", async (
     }
 
     return Results.Ok(scoreboard);
-}).RequireAuthorization("EventOps");
+}).RequireAuthorization("MatScoring");
 
 matches.MapPost("/{matchId:guid}/scoreboard/reset", async (
     Guid matchId,
     ResetMatScoreboardRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     ILiveMatScoringService liveMatScoringService,
     IHubContext<MatchOpsHub> hubContext,
@@ -2335,6 +2903,12 @@ matches.MapPost("/{matchId:guid}/scoreboard/reset", async (
     if (match is null)
     {
         return Results.NotFound("Match not found.");
+    }
+
+    var canScoreMatch = await ApiSecurityHelpers.CanScoreMatchAsync(dbContext, httpContext.User, matchId, cancellationToken);
+    if (!canScoreMatch)
+    {
+        return Results.Forbid();
     }
 
     var tournamentEventId = await dbContext.Brackets
@@ -2359,7 +2933,7 @@ matches.MapPost("/{matchId:guid}/scoreboard/reset", async (
     }
 
     return Results.Ok(scoreboard);
-}).RequireAuthorization("EventOps");
+}).RequireAuthorization("MatScoring");
 
 var athletes = api.MapGroup("/athletes").RequireAuthorization();
 athletes.MapGet("/{athleteId:guid}/stats/history", async (Guid athleteId, HttpContext httpContext, WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken) =>
@@ -2744,6 +3318,40 @@ notifications.MapPost("/subscriptions", async (
         return Results.BadRequest("User not found.");
     }
 
+    if (request.TournamentEventId is not null)
+    {
+        var eventExists = await dbContext.TournamentEvents.AsNoTracking()
+            .AnyAsync(x => x.Id == request.TournamentEventId.Value, cancellationToken);
+        if (!eventExists)
+        {
+            return Results.BadRequest("Tournament event not found.");
+        }
+    }
+
+    if (request.AthleteProfileId is not null)
+    {
+        var athleteExists = await dbContext.AthleteProfiles.AsNoTracking()
+            .AnyAsync(x => x.Id == request.AthleteProfileId.Value, cancellationToken);
+        if (!athleteExists)
+        {
+            return Results.BadRequest("Athlete profile not found.");
+        }
+    }
+
+    if (request.TournamentEventId is not null && request.AthleteProfileId is not null)
+    {
+        var athleteRegisteredForEvent = await dbContext.EventRegistrations.AsNoTracking()
+            .AnyAsync(
+                x => x.TournamentEventId == request.TournamentEventId.Value
+                     && x.AthleteProfileId == request.AthleteProfileId.Value
+                     && x.Status != RegistrationStatus.Cancelled,
+                cancellationToken);
+        if (!athleteRegisteredForEvent)
+        {
+            return Results.BadRequest("Athlete is not currently registered in that tournament.");
+        }
+    }
+
     var subscription = new NotificationSubscription
     {
         UserAccountId = request.UserAccountId,
@@ -2856,7 +3464,7 @@ security.MapGet("/mfa/enabled/{userId:guid}", (Guid userId, HttpContext httpCont
     });
 });
 
-var streams = api.MapGroup("/streams").RequireAuthorization("EventOps");
+var streams = api.MapGroup("/streams").RequireAuthorization();
 streams.MapGet("/samples", () =>
 {
     var samples = samplePlaybackUrls
@@ -2870,9 +3478,10 @@ streams.MapGet("/samples", () =>
     return Results.Ok(samples);
 }).AllowAnonymous();
 
-events.MapPost("/{eventId:guid}/streams", async (
+events.MapPut("/{eventId:guid}/streaming/permissions", async (
     Guid eventId,
-    CreateStreamSessionRequest request,
+    SetAthleteStreamingPermissionRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
     CancellationToken cancellationToken) =>
 {
@@ -2880,6 +3489,187 @@ events.MapPost("/{eventId:guid}/streams", async (
     if (!eventExists)
     {
         return Results.NotFound("Event not found.");
+    }
+
+    var athleteInEvent = await dbContext.EventRegistrations.AsNoTracking()
+        .AnyAsync(
+            x => x.TournamentEventId == eventId
+                 && x.AthleteProfileId == request.AthleteProfileId
+                 && x.Status != RegistrationStatus.Cancelled,
+            cancellationToken);
+    if (!athleteInEvent)
+    {
+        return Results.BadRequest("Athlete must be registered for the selected tournament.");
+    }
+
+    var canManage = await ApiSecurityHelpers.CanManageStreamingDelegationAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManage)
+    {
+        return Results.Forbid();
+    }
+
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var isParentGuardian = ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.ParentGuardian, UserRole.Parent);
+    if (isParentGuardian
+        && request.ParentGuardianUserAccountId is not null
+        && request.ParentGuardianUserAccountId.Value != currentUserId.Value)
+    {
+        return Results.Forbid();
+    }
+
+    var parentUserId = request.ParentGuardianUserAccountId ?? currentUserId.Value;
+    var parentExists = await dbContext.UserAccounts.AnyAsync(x => x.Id == parentUserId, cancellationToken);
+    if (!parentExists)
+    {
+        return Results.BadRequest("Parent/guardian user was not found.");
+    }
+
+    var delegateExists = await dbContext.UserAccounts.AnyAsync(x => x.Id == request.DelegateUserAccountId, cancellationToken);
+    if (!delegateExists)
+    {
+        return Results.BadRequest("Delegate user was not found.");
+    }
+
+    var permission = await dbContext.AthleteStreamingPermissions
+        .FirstOrDefaultAsync(
+            x => x.AthleteProfileId == request.AthleteProfileId
+                 && x.DelegateUserAccountId == request.DelegateUserAccountId,
+            cancellationToken);
+
+    if (permission is null)
+    {
+        permission = new AthleteStreamingPermission
+        {
+            AthleteProfileId = request.AthleteProfileId,
+            ParentGuardianUserAccountId = parentUserId,
+            DelegateUserAccountId = request.DelegateUserAccountId,
+            IsActive = request.IsActive
+        };
+
+        dbContext.AthleteStreamingPermissions.Add(permission);
+    }
+    else
+    {
+        permission.ParentGuardianUserAccountId = parentUserId;
+        permission.IsActive = request.IsActive;
+    }
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+    return Results.Ok(permission);
+}).RequireAuthorization();
+
+events.MapGet("/{eventId:guid}/streaming/permissions/{athleteId:guid}", async (
+    Guid eventId,
+    Guid athleteId,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var canManage = await ApiSecurityHelpers.CanManageStreamingDelegationAsync(dbContext, httpContext.User, eventId, cancellationToken);
+    if (!canManage)
+    {
+        return Results.Forbid();
+    }
+
+    var permissions = await dbContext.AthleteStreamingPermissions.AsNoTracking()
+        .Where(x => x.AthleteProfileId == athleteId && x.IsActive)
+        .OrderBy(x => x.ParentGuardianUserAccountId)
+        .ThenBy(x => x.DelegateUserAccountId)
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(permissions);
+}).RequireAuthorization();
+
+events.MapPost("/{eventId:guid}/streams", async (
+    Guid eventId,
+    CreateStreamSessionRequest request,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var eventExists = await dbContext.TournamentEvents.AnyAsync(x => x.Id == eventId, cancellationToken);
+    if (!eventExists)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (request.IsPersonalStream)
+    {
+        if (request.AthleteProfileId is null)
+        {
+            return Results.BadRequest("AthleteProfileId is required for personal streaming.");
+        }
+
+        var athleteInEvent = await dbContext.EventRegistrations.AsNoTracking()
+            .AnyAsync(
+                x => x.TournamentEventId == eventId
+                     && x.AthleteProfileId == request.AthleteProfileId.Value
+                     && x.Status != RegistrationStatus.Cancelled,
+                cancellationToken);
+        if (!athleteInEvent)
+        {
+            return Results.BadRequest("Athlete must be registered for this tournament.");
+        }
+
+        var isParentGuardian = ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.ParentGuardian, UserRole.Parent);
+        if (!isParentGuardian)
+        {
+            var delegated = await dbContext.AthleteStreamingPermissions.AsNoTracking()
+                .AnyAsync(
+                    x => x.AthleteProfileId == request.AthleteProfileId.Value
+                         && x.DelegateUserAccountId == currentUserId.Value
+                         && x.IsActive
+                         && (request.DelegatedByUserAccountId == null || x.ParentGuardianUserAccountId == request.DelegatedByUserAccountId.Value),
+                    cancellationToken);
+            if (!delegated)
+            {
+                return Results.Forbid();
+            }
+        }
+
+        var hasActivePersonalStream = await dbContext.StreamSessions.AsNoTracking()
+            .AnyAsync(
+                x => x.TournamentEventId == eventId
+                     && x.AthleteProfileId == request.AthleteProfileId.Value
+                     && x.IsPersonalStream
+                     && x.Status == StreamStatus.Live,
+                cancellationToken);
+        if (hasActivePersonalStream)
+        {
+            return Results.Conflict("Only one personal stream can be live for this athlete at a time.");
+        }
+    }
+    else
+    {
+        var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, eventId, cancellationToken);
+        var canManageStreams = await dbContext.TournamentStaffAssignments.AsNoTracking()
+            .AnyAsync(
+                x => x.TournamentEventId == eventId
+                     && x.UserAccountId == currentUserId.Value
+                     && x.CanManageStreams,
+                cancellationToken);
+
+        if (!canManageOps && !canManageStreams)
+        {
+            return Results.Forbid();
+        }
     }
 
     if (request.MatchId is not null)
@@ -2907,6 +3697,12 @@ events.MapPost("/{eventId:guid}/streams", async (
         Id = streamId,
         TournamentEventId = eventId,
         MatchId = request.MatchId,
+        AthleteProfileId = request.AthleteProfileId,
+        RequestedByUserAccountId = currentUserId,
+        DelegatedByUserAccountId = request.DelegatedByUserAccountId,
+        IsPersonalStream = request.IsPersonalStream,
+        SaveToAthleteProfile = request.SaveToAthleteProfile,
+        IsPrivate = request.IsPrivate,
         DeviceName = $"{normalizedDeviceName} [{normalizedProtocol}]",
         IngestKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).Replace("/", "_").Replace("+", "-"),
         PlaybackUrl = playbackUrl,
@@ -2917,12 +3713,14 @@ events.MapPost("/{eventId:guid}/streams", async (
     await dbContext.SaveChangesAsync(cancellationToken);
 
     return Results.Created($"/api/streams/{stream.Id}", stream);
-}).RequireAuthorization("EventOps");
+}).RequireAuthorization();
 
 streams.MapPost("/{streamId:guid}/status", async (
     Guid streamId,
     UpdateStreamStatusRequest request,
+    HttpContext httpContext,
     WrestlingPlatformDbContext dbContext,
+    IMediaPipelineService mediaPipelineService,
     CancellationToken cancellationToken) =>
 {
     var stream = await dbContext.StreamSessions.FirstOrDefaultAsync(x => x.Id == streamId, cancellationToken);
@@ -2931,11 +3729,56 @@ streams.MapPost("/{streamId:guid}/status", async (
         return Results.NotFound("Stream not found.");
     }
 
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var canManageOps = await ApiSecurityHelpers.CanManageTournamentOpsAsync(dbContext, httpContext.User, stream.TournamentEventId, cancellationToken);
+    if (stream.IsPersonalStream)
+    {
+        var canControlPersonalStream = canManageOps
+                                       || stream.RequestedByUserAccountId == currentUserId.Value
+                                       || stream.DelegatedByUserAccountId == currentUserId.Value;
+        if (!canControlPersonalStream)
+        {
+            return Results.Forbid();
+        }
+    }
+    else
+    {
+        var canManageStreams = await dbContext.TournamentStaffAssignments.AsNoTracking()
+            .AnyAsync(
+                x => x.TournamentEventId == stream.TournamentEventId
+                     && x.UserAccountId == currentUserId.Value
+                     && x.CanManageStreams,
+                cancellationToken);
+        if (!canManageOps && !canManageStreams)
+        {
+            return Results.Forbid();
+        }
+    }
+
     stream.Status = request.Status;
     stream.StartedUtc = request.Status == StreamStatus.Live ? DateTime.UtcNow : stream.StartedUtc;
     stream.EndedUtc = request.Status == StreamStatus.Ended ? DateTime.UtcNow : stream.EndedUtc;
 
     await dbContext.SaveChangesAsync(cancellationToken);
+
+    if (request.Status == StreamStatus.Ended
+        && stream.IsPersonalStream
+        && stream.SaveToAthleteProfile
+        && stream.AthleteProfileId is not null
+        && stream.MatchId is not null)
+    {
+        mediaPipelineService.CreateVideoAsset(new CreateVideoAssetRequest(
+            stream.AthleteProfileId.Value,
+            stream.MatchId.Value,
+            stream.Id,
+            stream.PlaybackUrl,
+            QueueTranscode: true));
+    }
 
     stream.PlaybackUrl = NormalizePlaybackUrlForClient(stream.PlaybackUrl, stream.TournamentEventId, stream.Id, samplePlaybackUrls);
     return Results.Ok(stream);
@@ -3050,6 +3893,7 @@ static async Task PrimeDemoTournamentControlStateAsync(IServiceProvider services
             RegistrationCap: null));
 
     controlService.ReleaseBrackets(youthPoolEvent.Id, registrantCount);
+    await AssignBoutNumbersAsync(youthPoolEvent.Id, dbContext, CancellationToken.None);
 }
 
 static string BuildCacheKey(string prefix, params (string Name, string? Value)[] parts)
@@ -3219,6 +4063,11 @@ static async Task InitializeDemoRuntimeStateAsync(
             }
         }
 
+        foreach (var tournamentEvent in events)
+        {
+            await AssignBoutNumbersAsync(tournamentEvent.Id, dbContext, cancellationToken);
+        }
+
         var bracketEventById = await dbContext.Brackets.AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => x.TournamentEventId, cancellationToken);
 
@@ -3338,6 +4187,58 @@ static async Task AdvanceBracketProgressionAsync(
         .ToListAsync(cancellationToken);
 
     BracketProgressionEngine.Resolve(bracketMatches);
+}
+
+static async Task AssignBoutNumbersAsync(
+    Guid eventId,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken)
+{
+    var bracketRows = await dbContext.Brackets
+        .AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId)
+        .Select(x => new { x.Id, x.Level, x.WeightClass })
+        .ToListAsync(cancellationToken);
+
+    if (bracketRows.Count == 0)
+    {
+        return;
+    }
+
+    var bracketIds = bracketRows.Select(x => x.Id).ToHashSet();
+    var bracketById = bracketRows.ToDictionary(x => x.Id);
+
+    var matches = await dbContext.Matches
+        .Where(x => bracketIds.Contains(x.BracketId))
+        .ToListAsync(cancellationToken);
+
+    var ordered = matches
+        .OrderBy(x => bracketById[x.BracketId].Level)
+        .ThenBy(x => bracketById[x.BracketId].WeightClass)
+        .ThenBy(x => x.Round)
+        .ThenBy(x => x.MatchNumber)
+        .ThenBy(x => x.Id)
+        .ToList();
+
+    var nextBoutNumber = 1;
+    var hasChanges = false;
+    foreach (var match in ordered)
+    {
+        if (match.BoutNumber == nextBoutNumber)
+        {
+            nextBoutNumber++;
+            continue;
+        }
+
+        match.BoutNumber = nextBoutNumber;
+        hasChanges = true;
+        nextBoutNumber++;
+    }
+
+    if (hasChanges)
+    {
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
 }
 
 static ConfigureMatchScoringRequest BuildScoringRequestFromPreset(Bracket bracket, TournamentControlSettings controls)
@@ -3785,6 +4686,12 @@ static List<HelpFaqItem> GetHelpFaqItems()
             "Open Tournaments, choose the event, then open Register for Event. Enter athlete ID, choose team or free-agent, and submit registration.",
             ["registration", "athlete", "event", "entry", "free-agent"]),
         new HelpFaqItem(
+            "faq-role-access-01",
+            "Role Access",
+            "What are the platform roles and how is access enforced?",
+            "Roles are Athlete, Parent/Guardian, Coach, Fan, Mat Worker, and Tournament Director. Sign-in is required; tournament ops are limited to the creating director, while mat scoring is restricted to event-assigned scoring users.",
+            ["roles", "access", "permissions", "tournament director", "mat worker"]),
+        new HelpFaqItem(
             "faq-brackets-01",
             "Brackets",
             "How are brackets released?",
@@ -3836,8 +4743,14 @@ static List<HelpFaqItem> GetHelpFaqItems()
             "faq-stream-01",
             "Live Streaming",
             "How do I start a live stream from mat-side?",
-            "Open Live Hub, choose event, create stream session, set source URL or sample URL, then set stream status to Live.",
+            "Open Live Hub, choose event, create stream session, set source URL or sample URL, then set stream status to Live. Personal streams require parent/guardian role or active delegated permission.",
             ["stream", "live", "video", "mat cam", "playback"]),
+        new HelpFaqItem(
+            "faq-stream-02",
+            "Live Streaming",
+            "How does personal streaming permission work?",
+            "Only parent/guardian accounts (or users delegated by them) can start personal athlete streams. The system enforces one active personal stream per athlete at a time and supports private archive visibility.",
+            ["personal stream", "parent", "guardian", "delegate", "private"]),
         new HelpFaqItem(
             "faq-ops-01",
             "Event Ops",
@@ -3856,6 +4769,18 @@ static List<HelpFaqItem> GetHelpFaqItems()
             "What is the full live-event operations checklist?",
             "Before event: lock divisions/weights, format, scoring preset, OT policy, and registration deadline; set seeding mode and print contingency sheets. Weigh-ins: run weigh-ins, freeze scratch list, then generate brackets and bout numbers. During: run head table assignments and mat table scorer/timer coverage, and post QR/live links for results. After: lock finals, export placings/team points, print awards, and publish final brackets.",
             ["event workflow", "before event", "weigh-ins", "head table", "qr", "after event"]),
+        new HelpFaqItem(
+            "faq-ops-04",
+            "Event Ops",
+            "When can a tournament director cancel an event?",
+            "A director can cancel only when there are no paid registrations. If any paid entries exist, cancellation is blocked and the event must be resolved through refund/compliance workflow first.",
+            ["cancel", "paid registrations", "director", "refund"]),
+        new HelpFaqItem(
+            "faq-live-01",
+            "Live Matches",
+            "How do I filter live tournament bouts on one page?",
+            "Open the tournament live hub and filter by age group, weight class, and mat. You can sort by bout number, status, or round while viewing all active mats and brackets in one workflow.",
+            ["live", "filters", "age group", "weight class", "mat", "bout"]),
         new HelpFaqItem(
             "faq-search-01",
             "Search",
@@ -3900,6 +4825,15 @@ static HelpChatResponse BuildHelpChatResponse(string message, string? context)
         suggestions.Add("Open /tournaments");
         faqSuggestions.Add("faq-registration-01");
     }
+    else if (normalized.Contains("role", StringComparison.Ordinal)
+             || normalized.Contains("permission", StringComparison.Ordinal)
+             || normalized.Contains("access", StringComparison.Ordinal))
+    {
+        reply = "Sign in first, then verify your active role. Tournament Director owns event ops, Mat Worker/assigned staff handle scoring, and Parent/Guardian controls personal streaming permissions.";
+        suggestions.Add("Open /support");
+        suggestions.Add("Open /tournaments");
+        faqSuggestions.Add("faq-role-access-01");
+    }
     else if (normalized.Contains("score", StringComparison.Ordinal)
              || normalized.Contains("mat", StringComparison.Ordinal)
              || normalized.Contains("overtime", StringComparison.Ordinal))
@@ -3928,6 +4862,7 @@ static HelpChatResponse BuildHelpChatResponse(string message, string? context)
         suggestions.Add("Open /live");
         suggestions.Add("Open /athlete");
         faqSuggestions.Add("faq-stream-01");
+        faqSuggestions.Add("faq-stream-02");
     }
     else if (normalized.Contains("recovery", StringComparison.Ordinal)
              || normalized.Contains("outage", StringComparison.Ordinal)
@@ -3942,6 +4877,7 @@ static HelpChatResponse BuildHelpChatResponse(string message, string? context)
         faqSuggestions.Add("faq-ops-01");
         faqSuggestions.Add("faq-ops-02");
         faqSuggestions.Add("faq-ops-03");
+        faqSuggestions.Add("faq-ops-04");
     }
     else if (normalized.Contains("search", StringComparison.Ordinal)
              || normalized.Contains("find", StringComparison.Ordinal))
@@ -3982,9 +4918,16 @@ static HashSet<UserRole> ResolveMfaRequiredRoles(IConfiguration configuration)
     var resolved = new HashSet<UserRole>();
     foreach (var roleRaw in configuredRoles)
     {
-        if (Enum.TryParse<UserRole>(roleRaw, ignoreCase: true, out var role))
+        if (Enum.TryParse<UserRole>(roleRaw, ignoreCase: true, out var configuredRole))
         {
-            resolved.Add(role);
+            resolved.Add(configuredRole);
+            continue;
+        }
+
+        var normalizedRole = ApiSecurityHelpers.ParseRole(roleRaw);
+        if (normalizedRole is not null)
+        {
+            resolved.Add(normalizedRole.Value);
         }
     }
 

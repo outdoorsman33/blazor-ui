@@ -23,6 +23,8 @@ public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatfor
     public DbSet<NotificationSubscription> NotificationSubscriptions => Set<NotificationSubscription>();
     public DbSet<NotificationMessage> NotificationMessages => Set<NotificationMessage>();
     public DbSet<StreamSession> StreamSessions => Set<StreamSession>();
+    public DbSet<TournamentStaffAssignment> TournamentStaffAssignments => Set<TournamentStaffAssignment>();
+    public DbSet<AthleteStreamingPermission> AthleteStreamingPermissions => Set<AthleteStreamingPermission>();
     public DbSet<PaymentWebhookEvent> PaymentWebhookEvents => Set<PaymentWebhookEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -33,9 +35,16 @@ public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatfor
         modelBuilder.Entity<AthleteProfile>().HasIndex(x => x.UserAccountId).IsUnique();
         modelBuilder.Entity<CoachProfile>().HasIndex(x => x.UserAccountId).IsUnique();
         modelBuilder.Entity<TournamentEvent>().HasIndex(x => new { x.State, x.City, x.StartUtc });
+        modelBuilder.Entity<TournamentEvent>().HasIndex(x => x.CreatedByUserAccountId);
         modelBuilder.Entity<EventRegistration>().HasIndex(x => new { x.TournamentEventId, x.AthleteProfileId }).IsUnique();
+        modelBuilder.Entity<Match>().HasIndex(x => new { x.BracketId, x.BoutNumber });
         modelBuilder.Entity<AthleteRanking>().HasIndex(x => new { x.Level, x.State, x.Rank });
         modelBuilder.Entity<NotificationSubscription>().HasIndex(x => new { x.UserAccountId, x.EventType, x.Channel });
+        modelBuilder.Entity<StreamSession>().HasIndex(x => new { x.TournamentEventId, x.Status });
+        modelBuilder.Entity<StreamSession>().HasIndex(x => new { x.TournamentEventId, x.AthleteProfileId, x.IsPersonalStream, x.Status });
+        modelBuilder.Entity<TournamentStaffAssignment>().HasIndex(x => new { x.TournamentEventId, x.UserAccountId }).IsUnique();
+        modelBuilder.Entity<TournamentStaffAssignment>().HasIndex(x => new { x.TournamentEventId, x.CanScoreMatches });
+        modelBuilder.Entity<AthleteStreamingPermission>().HasIndex(x => new { x.AthleteProfileId, x.DelegateUserAccountId }).IsUnique();
         modelBuilder.Entity<PaymentWebhookEvent>().HasIndex(x => new { x.Provider, x.ProviderEventId }).IsUnique();
         modelBuilder.Entity<PaymentWebhookEvent>().HasIndex(x => new { x.ProcessingStatus, x.CreatedUtc });
     }

@@ -187,8 +187,8 @@ public static class DependencyInjection
 
         var eventAdminUser = await EnsureUserAsync(
             dbContext,
-            "demo.eventadmin@pinpointarena.local",
-            UserRole.EventAdmin,
+            "demo.director@pinpointarena.local",
+            UserRole.TournamentDirector,
             "+16145550030",
             "DemoPass!123",
             cancellationToken);
@@ -196,7 +196,7 @@ public static class DependencyInjection
         var parentUser = await EnsureUserAsync(
             dbContext,
             "demo.parent@pinpointarena.local",
-            UserRole.Parent,
+            UserRole.ParentGuardian,
             "+16145550031",
             "DemoPass!123",
             cancellationToken);
@@ -206,6 +206,14 @@ public static class DependencyInjection
             "demo.fan@pinpointarena.local",
             UserRole.Fan,
             "+16145550032",
+            "DemoPass!123",
+            cancellationToken);
+
+        var matWorkerUser = await EnsureUserAsync(
+            dbContext,
+            "demo.matworker@pinpointarena.local",
+            UserRole.MatWorker,
+            "+16145550033",
             "DemoPass!123",
             cancellationToken);
 
@@ -276,6 +284,7 @@ public static class DependencyInjection
             todayUtc.AddDays(8).AddHours(2),
             3500,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var youthPreviewEvent = await EnsureEventAsync(
@@ -290,6 +299,7 @@ public static class DependencyInjection
             todayUtc.AddDays(15).AddHours(2),
             2200,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var middleOpenEvent = await EnsureEventAsync(
@@ -304,6 +314,7 @@ public static class DependencyInjection
             todayUtc.AddDays(22).AddHours(2),
             1900,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var collegeDualEvent = await EnsureEventAsync(
@@ -318,6 +329,7 @@ public static class DependencyInjection
             todayUtc.AddDays(29).AddHours(4),
             4200,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var tulsaEvent = await EnsureEventAsync(
@@ -332,6 +344,7 @@ public static class DependencyInjection
             todayUtc.AddDays(36).AddHours(3),
             3000,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var motorCityEvent = await EnsureEventAsync(
@@ -346,6 +359,7 @@ public static class DependencyInjection
             todayUtc.AddDays(43).AddHours(1),
             1500,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var archiveClassicEvent = await EnsureEventAsync(
@@ -360,6 +374,7 @@ public static class DependencyInjection
             todayUtc.AddDays(-34).AddHours(1),
             2800,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var columbusFreestyleLiveEvent = await EnsureEventAsync(
@@ -374,6 +389,7 @@ public static class DependencyInjection
             nowUtc.AddHours(6),
             2600,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var ironCityGrecoOpenEvent = await EnsureEventAsync(
@@ -388,6 +404,7 @@ public static class DependencyInjection
             todayUtc.AddDays(19).AddHours(2),
             2400,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var heartlandFreestyleQualifierEvent = await EnsureEventAsync(
@@ -402,6 +419,7 @@ public static class DependencyInjection
             todayUtc.AddDays(57).AddHours(1),
             2100,
             true,
+            eventAdminUser.Id,
             cancellationToken);
 
         var archiveGrecoDualEvent = await EnsureEventAsync(
@@ -416,6 +434,45 @@ public static class DependencyInjection
             todayUtc.AddDays(-119).AddHours(2),
             2300,
             true,
+            eventAdminUser.Id,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            showcaseEvent.Id,
+            eventAdminUser.Id,
+            UserRole.TournamentDirector,
+            canScoreMatches: true,
+            canManageMatches: true,
+            canManageStreams: true,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            showcaseEvent.Id,
+            matWorkerUser.Id,
+            UserRole.MatWorker,
+            canScoreMatches: true,
+            canManageMatches: true,
+            canManageStreams: false,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            columbusFreestyleLiveEvent.Id,
+            matWorkerUser.Id,
+            UserRole.MatWorker,
+            canScoreMatches: true,
+            canManageMatches: false,
+            canManageStreams: false,
+            cancellationToken);
+
+        await EnsureAthleteStreamingPermissionAsync(
+            dbContext,
+            athleteProfilesByEmail["demo.athlete@pinpointarena.local"].Id,
+            parentUser.Id,
+            matWorkerUser.Id,
+            isActive: true,
             cancellationToken);
 
         var showcaseDivision = await EnsureDivisionAsync(
@@ -1917,6 +1974,8 @@ public static class DependencyInjection
         await dbContext.NotificationMessages.ExecuteDeleteAsync(cancellationToken);
         await dbContext.NotificationSubscriptions.ExecuteDeleteAsync(cancellationToken);
         await dbContext.FreeAgentTeamInvites.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.AthleteStreamingPermissions.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.TournamentStaffAssignments.ExecuteDeleteAsync(cancellationToken);
         await dbContext.StreamSessions.ExecuteDeleteAsync(cancellationToken);
         await dbContext.Matches.ExecuteDeleteAsync(cancellationToken);
         await dbContext.BracketEntries.ExecuteDeleteAsync(cancellationToken);
@@ -2111,6 +2170,7 @@ public static class DependencyInjection
         DateTime endUtc,
         int entryFeeCents,
         bool isPublished,
+        Guid? createdByUserAccountId,
         CancellationToken cancellationToken)
     {
         var normalizedName = name.Trim();
@@ -2129,6 +2189,7 @@ public static class DependencyInjection
 
         tournamentEvent.OrganizerType = organizerType;
         tournamentEvent.OrganizerId = organizerId;
+        tournamentEvent.CreatedByUserAccountId = createdByUserAccountId;
         tournamentEvent.State = state.Trim().ToUpperInvariant();
         tournamentEvent.City = city.Trim();
         tournamentEvent.Venue = venue.Trim();
@@ -2322,7 +2383,8 @@ public static class DependencyInjection
             {
                 BracketId = bracketId,
                 Round = round,
-                MatchNumber = matchNumber
+                MatchNumber = matchNumber,
+                BoutNumber = matchNumber
             };
 
             dbContext.Matches.Add(match);
@@ -2337,7 +2399,72 @@ public static class DependencyInjection
         match.Status = status;
         match.ScheduledUtc = scheduledUtc;
         match.CompletedUtc = completedUtc;
+        match.BoutNumber ??= matchNumber;
         return match;
+    }
+
+    private static async Task<TournamentStaffAssignment> EnsureTournamentStaffAssignmentAsync(
+        WrestlingPlatformDbContext dbContext,
+        Guid eventId,
+        Guid userId,
+        UserRole role,
+        bool canScoreMatches,
+        bool canManageMatches,
+        bool canManageStreams,
+        CancellationToken cancellationToken)
+    {
+        var assignment = await dbContext.TournamentStaffAssignments
+            .FirstOrDefaultAsync(
+                x => x.TournamentEventId == eventId
+                     && x.UserAccountId == userId,
+                cancellationToken);
+
+        if (assignment is null)
+        {
+            assignment = new TournamentStaffAssignment
+            {
+                TournamentEventId = eventId,
+                UserAccountId = userId
+            };
+
+            dbContext.TournamentStaffAssignments.Add(assignment);
+        }
+
+        assignment.Role = role;
+        assignment.CanScoreMatches = canScoreMatches;
+        assignment.CanManageMatches = canManageMatches;
+        assignment.CanManageStreams = canManageStreams;
+        return assignment;
+    }
+
+    private static async Task<AthleteStreamingPermission> EnsureAthleteStreamingPermissionAsync(
+        WrestlingPlatformDbContext dbContext,
+        Guid athleteProfileId,
+        Guid parentGuardianUserAccountId,
+        Guid delegateUserAccountId,
+        bool isActive,
+        CancellationToken cancellationToken)
+    {
+        var permission = await dbContext.AthleteStreamingPermissions
+            .FirstOrDefaultAsync(
+                x => x.AthleteProfileId == athleteProfileId
+                     && x.DelegateUserAccountId == delegateUserAccountId,
+                cancellationToken);
+
+        if (permission is null)
+        {
+            permission = new AthleteStreamingPermission
+            {
+                AthleteProfileId = athleteProfileId,
+                DelegateUserAccountId = delegateUserAccountId
+            };
+
+            dbContext.AthleteStreamingPermissions.Add(permission);
+        }
+
+        permission.ParentGuardianUserAccountId = parentGuardianUserAccountId;
+        permission.IsActive = isActive;
+        return permission;
     }
 
     private static async Task<NotificationSubscription> EnsureNotificationSubscriptionAsync(

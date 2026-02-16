@@ -18,7 +18,89 @@ internal static class ApiSecurityHelpers
 
     internal static bool IsPublicRegistrationRole(UserRole role)
     {
-        return role is UserRole.Athlete or UserRole.Coach or UserRole.Parent or UserRole.Fan;
+        var normalizedRole = NormalizeRole(role);
+        return normalizedRole is UserRole.Athlete
+            or UserRole.Coach
+            or UserRole.ParentGuardian
+            or UserRole.Fan
+            or UserRole.MatWorker
+            or UserRole.TournamentDirector;
+    }
+
+    internal static UserRole NormalizeRole(UserRole role)
+    {
+        return role switch
+        {
+            UserRole.Parent => UserRole.ParentGuardian,
+            UserRole.EventAdmin => UserRole.TournamentDirector,
+            _ => role
+        };
+    }
+
+    internal static UserRole? ParseRole(string? roleRaw)
+    {
+        if (string.IsNullOrWhiteSpace(roleRaw))
+        {
+            return null;
+        }
+
+        if (Enum.TryParse<UserRole>(roleRaw.Trim(), ignoreCase: true, out var role))
+        {
+            return NormalizeRole(role);
+        }
+
+        var normalized = roleRaw
+            .Trim()
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace("/", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
+
+        if (normalized.Contains("parent", StringComparison.Ordinal)
+            && normalized.Contains("guardian", StringComparison.Ordinal))
+        {
+            return UserRole.ParentGuardian;
+        }
+
+        if (normalized.Contains("mat", StringComparison.Ordinal)
+            || normalized.Contains("tableworker", StringComparison.Ordinal))
+        {
+            return UserRole.MatWorker;
+        }
+
+        if (normalized.Contains("tournament", StringComparison.Ordinal)
+            && normalized.Contains("director", StringComparison.Ordinal))
+        {
+            return UserRole.TournamentDirector;
+        }
+
+        return null;
+    }
+
+    internal static UserRole? GetAuthenticatedRole(ClaimsPrincipal principal)
+    {
+        var roleRaw = principal.FindFirstValue(ClaimTypes.Role);
+        return ParseRole(roleRaw);
+    }
+
+    internal static bool IsInRole(ClaimsPrincipal principal, params UserRole[] roles)
+    {
+        var role = GetAuthenticatedRole(principal);
+        if (role is null)
+        {
+            return false;
+        }
+
+        var normalized = NormalizeRole(role.Value);
+        foreach (var acceptedRole in roles)
+        {
+            if (normalized == NormalizeRole(acceptedRole))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     internal static Guid? GetAuthenticatedUserId(ClaimsPrincipal principal)
@@ -29,15 +111,30 @@ internal static class ApiSecurityHelpers
 
     internal static bool IsAdminPrincipal(ClaimsPrincipal principal)
     {
-        return principal.IsInRole(UserRole.SystemAdmin.ToString())
-            || principal.IsInRole(UserRole.EventAdmin.ToString())
-            || principal.IsInRole(UserRole.SchoolAdmin.ToString())
-            || principal.IsInRole(UserRole.ClubAdmin.ToString());
+        return IsInRole(
+            principal,
+            UserRole.SystemAdmin,
+            UserRole.SchoolAdmin,
+            UserRole.ClubAdmin);
+    }
+
+    internal static bool IsTournamentDirectorPrincipal(ClaimsPrincipal principal)
+    {
+        return IsInRole(
+            principal,
+            UserRole.TournamentDirector,
+            UserRole.EventAdmin);
     }
 
     internal static bool IsEventOperatorPrincipal(ClaimsPrincipal principal)
     {
-        return principal.IsInRole(UserRole.Coach.ToString()) || IsAdminPrincipal(principal);
+        return IsInRole(
+            principal,
+            UserRole.Coach,
+            UserRole.MatWorker,
+            UserRole.TournamentDirector,
+            UserRole.EventAdmin)
+            || IsAdminPrincipal(principal);
     }
 
     internal static bool CanAccessUserResource(HttpContext httpContext, Guid requestedUserId)
@@ -104,7 +201,7 @@ internal static class ApiSecurityHelpers
             return true;
         }
 
-        if (!principal.IsInRole(UserRole.Coach.ToString()))
+        if (!IsInRole(principal, UserRole.Coach))
         {
             return false;
         }
@@ -124,6 +221,146 @@ internal static class ApiSecurityHelpers
                 && x.AthleteProfileId == athleteProfileId
                 && x.ApprovedUtc != null,
             cancellationToken);
+    }
+
+    internal static async Task<bool> CanManageTournamentOpsAsync(
+        WrestlingPlatformDbContext dbContext,
+        ClaimsPrincipal principal,
+        Guid eventId,
+        CancellationToken cancellationToken)
+    {
+        if (IsAdminPrincipal(principal))
+        {
+            return true;
+        }
+
+        if (!IsTournamentDirectorPrincipal(principal))
+        {
+            return false;
+        }
+
+        var userId = GetAuthenticatedUserId(principal);
+        if (userId is null)
+        {
+            return false;
+        }
+
+        var tournamentEvent = await dbContext.TournamentEvents
+            .AsNoTracking()
+            .Where(x => x.Id == eventId)
+            .Select(x => new { x.CreatedByUserAccountId, x.OrganizerType, x.OrganizerId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (tournamentEvent is null)
+        {
+            return false;
+        }
+
+        if (tournamentEvent.CreatedByUserAccountId == userId.Value)
+        {
+            return true;
+        }
+
+        if (tournamentEvent.OrganizerType != OrganizerType.Coach)
+        {
+            return false;
+        }
+
+        var organizerCoachOwnerUserId = await dbContext.CoachProfiles
+            .AsNoTracking()
+            .Where(x => x.Id == tournamentEvent.OrganizerId)
+            .Select(x => x.UserAccountId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return organizerCoachOwnerUserId != Guid.Empty && organizerCoachOwnerUserId == userId.Value;
+    }
+
+    internal static async Task<bool> CanScoreEventAsync(
+        WrestlingPlatformDbContext dbContext,
+        ClaimsPrincipal principal,
+        Guid eventId,
+        CancellationToken cancellationToken)
+    {
+        if (await CanManageTournamentOpsAsync(dbContext, principal, eventId, cancellationToken))
+        {
+            return true;
+        }
+
+        if (IsAdminPrincipal(principal))
+        {
+            return true;
+        }
+
+        if (!IsInRole(principal, UserRole.Coach, UserRole.MatWorker))
+        {
+            return false;
+        }
+
+        var userId = GetAuthenticatedUserId(principal);
+        if (userId is null)
+        {
+            return false;
+        }
+
+        return await dbContext.TournamentStaffAssignments
+            .AsNoTracking()
+            .AnyAsync(
+                x => x.TournamentEventId == eventId
+                     && x.UserAccountId == userId.Value
+                     && x.CanScoreMatches,
+                cancellationToken);
+    }
+
+    internal static async Task<bool> CanScoreMatchAsync(
+        WrestlingPlatformDbContext dbContext,
+        ClaimsPrincipal principal,
+        Guid matchId,
+        CancellationToken cancellationToken)
+    {
+        var eventId = await (
+                from match in dbContext.Matches.AsNoTracking()
+                join bracket in dbContext.Brackets.AsNoTracking() on match.BracketId equals bracket.Id
+                where match.Id == matchId
+                select bracket.TournamentEventId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (eventId == Guid.Empty)
+        {
+            return false;
+        }
+
+        return await CanScoreEventAsync(dbContext, principal, eventId, cancellationToken);
+    }
+
+    internal static async Task<bool> CanManageStreamingDelegationAsync(
+        WrestlingPlatformDbContext dbContext,
+        ClaimsPrincipal principal,
+        Guid eventId,
+        CancellationToken cancellationToken)
+    {
+        if (IsAdminPrincipal(principal))
+        {
+            return true;
+        }
+
+        if (IsInRole(principal, UserRole.ParentGuardian, UserRole.Parent))
+        {
+            return true;
+        }
+
+        var userId = GetAuthenticatedUserId(principal);
+        if (userId is null)
+        {
+            return false;
+        }
+
+        return await dbContext.TournamentStaffAssignments
+            .AsNoTracking()
+            .AnyAsync(
+                x => x.TournamentEventId == eventId
+                     && x.UserAccountId == userId.Value
+                     && x.CanManageStreams,
+                cancellationToken);
     }
 
     internal static async Task<AuthTokenResponse> IssueAuthTokenAsync(
@@ -159,7 +396,7 @@ internal static class ApiSecurityHelpers
             refreshTokenExpiresUtc,
             user.Id,
             user.Email,
-            user.Role);
+            NormalizeRole(user.Role));
     }
 
     internal static async Task<AuthTokenResponse?> TryRefreshAuthTokenAsync(
@@ -233,7 +470,7 @@ internal static class ApiSecurityHelpers
             nextRefreshTokenExpiresUtc,
             user.Id,
             user.Email,
-            user.Role);
+            NormalizeRole(user.Role));
     }
 
     internal static async Task RevokeAllRefreshTokensForUserAsync(
@@ -299,7 +536,7 @@ internal static class ApiSecurityHelpers
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, user.Email),
             new(ClaimTypes.Email, user.Email),
-            new(ClaimTypes.Role, user.Role.ToString()),
+            new(ClaimTypes.Role, NormalizeRole(user.Role).ToString()),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N"))
         };
 

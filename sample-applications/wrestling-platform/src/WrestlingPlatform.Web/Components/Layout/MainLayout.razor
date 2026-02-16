@@ -1,3 +1,4 @@
+@using System.Linq
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject PlatformApiClient ApiClient
@@ -74,10 +75,14 @@
                         <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
                         <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
                         <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoParentGuardianAsync" disabled="@Busy">Demo Parent</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoMatWorkerAsync" disabled="@Busy">Demo Mat Worker</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoDirectorAsync" disabled="@Busy">Demo Director</button>
                     }
                     else
                     {
-                        <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
+                        <button class="auth-chip auth-chip-btn" type="button" @onclick="OpenRoleGuide">@CurrentRoleLabel | @AuthSession.Email</button>
+                        <button class="mini-btn secondary" type="button" @onclick="OpenSupportHub">Support</button>
                         <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
                     }
                 </div>
@@ -86,10 +91,11 @@
             <MudHidden Breakpoint="Breakpoint.LgAndUp">
                 <div class="mobile-appbar-actions">
                     <a class="mini-btn secondary" href="/search" @onclick="CloseDrawer">Search</a>
-                    <a class="mini-btn secondary" href="/support?faqId=faq-ops-03" @onclick="CloseDrawer">Support</a>
+                    <button class="mini-btn secondary" type="button" @onclick="OpenSupportHub">Support</button>
                     @if (!AuthSession.IsAuthenticated)
                     {
-                        <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoDirectorAsync" disabled="@Busy">Demo Director</button>
                     }
                     else
                     {
@@ -113,56 +119,104 @@
                 @if (ShowExpandedDrawerContent)
                 {
                     <div class="drawer-brand">
-                        <span class="brand-badge">Navigation</span>
+                        <span class="brand-badge">Role-Driven Navigation</span>
                         <div class="item-title">PinPoint Arena</div>
+                        <div class="role-chip-row">
+                            @foreach (var role in AvailableRoles)
+                            {
+                                <button type="button"
+                                        class="role-chip-btn @(CurrentRole == role ? "active" : "")"
+                                        disabled="@(!AuthSession.IsAuthenticated)"
+                                        @onclick="@(() => SetRolePreview(role))">
+                                    @RoleLabel(role)
+                                </button>
+                            }
+                        </div>
                     </div>
 
                     <MudNavMenu Dense="true" Rounded="true" Class="drawer-nav">
-                        <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Command Center</MudNavLink>
-                        <MudNavLink Href="/lab" Icon="@Icons.Material.Filled.Psychology">Operations Lab</MudNavLink>
-                        <MudNavLink Href="/tournaments" Icon="@Icons.Material.Filled.Event">Events</MudNavLink>
-                        <MudNavLink Href="/registration" Icon="@Icons.Material.Filled.HowToReg">Registration</MudNavLink>
-                        <MudNavLink Href="/brackets" Icon="@Icons.Material.Filled.AccountTree">Bracket Center</MudNavLink>
-                        <MudNavLink Href="/bracket-builder" Icon="@Icons.Material.Filled.AutoFixHigh">Bracket Builder</MudNavLink>
-                        <MudNavLink Href="/table-worker" Icon="@Icons.Material.Filled.TableRestaurant">Table Worker</MudNavLink>
-                        <MudNavLink Href="/mat-scoring" Icon="@Icons.Material.Filled.Timer">Mat Scoring</MudNavLink>
-                        <MudNavLink Href="/live" Icon="@Icons.Material.Filled.LiveTv">Live Hub</MudNavLink>
-                        <MudNavLink Href="/athlete" Icon="@Icons.Material.Filled.Person">Athlete Portal</MudNavLink>
-                        <MudNavLink Href="/coach" Icon="@Icons.Material.Filled.Groups">Coach Portal</MudNavLink>
-                        <MudNavLink Href="/recruiting" Icon="@Icons.Material.Filled.School">Recruiting Hub</MudNavLink>
-                        <MudNavLink Href="/admin" Icon="@Icons.Material.Filled.AdminPanelSettings">Event Admin</MudNavLink>
-                        <MudNavLink Href="/support?faqId=faq-ops-03" Icon="@Icons.Material.Filled.SupportAgent">Support</MudNavLink>
+                        @foreach (var link in DrawerLinks)
+                        {
+                            <MudNavLink Href="@link.Href"
+                                        Match="@(link.Href == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                                        Icon="@link.Icon">
+                                @link.Label
+                            </MudNavLink>
+                        }
                     </MudNavMenu>
+
+                    @if (ShowMatScoringContextHint)
+                    {
+                        <div class="access-hint">
+                            Mat scoring appears only for coaches, mat workers, and tournament directors with an active event.
+                        </div>
+                    }
+
+                    @if (ShowOpsOwnershipHint)
+                    {
+                        <div class="access-hint">
+                            Backend ops center is visible only after a tournament director creates or claims the active event.
+                        </div>
+                    }
 
                     <MudDivider Class="drawer-divider" />
 
                     <section class="support-quick-links">
-                        <span class="drawer-label">FAQ Articles</span>
-                        <a class="support-article-link" href="/support?faqId=faq-registration-01">Athlete Registration Guide</a>
-                        <a class="support-article-link" href="/support?faqId=faq-brackets-02">Bracket Builder Wizard Guide</a>
-                        <a class="support-article-link" href="/support?faqId=faq-scoring-02">Live Clock + Scoring Guide</a>
-                        <a class="support-article-link" href="/support?faqId=faq-stream-01">Mat-Side Streaming Guide</a>
-                        <a class="support-article-link" href="/support?faqId=faq-ops-03">Full Event Ops Checklist</a>
+                        <span class="drawer-label">Comprehensive FAQ Articles</span>
+                        @foreach (var article in FeaturedSupportArticles)
+                        {
+                            <button type="button" class="support-article-link" @onclick="@(() => OpenSupportHub(article.Id))">@article.Title</button>
+                        }
                     </section>
+
+                    @if (AuthSession.IsAuthenticated)
+                    {
+                        <section class="live-filter-shell">
+                            <span class="drawer-label">Live Tournament Filters</span>
+                            <MudDatePicker @bind-Date="TournamentFilterDate"
+                                           Label="Tournament Date"
+                                           Variant="Variant.Outlined"
+                                           Editable="false"
+                                           PickerVariant="PickerVariant.Dialog"
+                                           DateFormat="ddd, MMM d yyyy"
+                                           Class="smart-date-picker" />
+
+                            <MudSelect T="string" Label="Age Group" Dense="true" @bind-Value="LiveAgeFilter" Variant="Variant.Outlined" Class="drawer-select">
+                                @foreach (var age in AgeFilters)
+                                {
+                                    <MudSelectItem T="string" Value="@age">@age</MudSelectItem>
+                                }
+                            </MudSelect>
+
+                            <MudSelect T="string" Label="Weight" Dense="true" @bind-Value="LiveWeightFilter" Variant="Variant.Outlined" Class="drawer-select">
+                                @foreach (var weight in WeightFilters)
+                                {
+                                    <MudSelectItem T="string" Value="@weight">@weight</MudSelectItem>
+                                }
+                            </MudSelect>
+
+                            <MudSelect T="string" Label="Sort Bouts" Dense="true" @bind-Value="LiveSortFilter" Variant="Variant.Outlined" Class="drawer-select">
+                                @foreach (var sort in LiveSortOptions)
+                                {
+                                    <MudSelectItem T="string" Value="@sort">@sort</MudSelectItem>
+                                }
+                            </MudSelect>
+
+                            <a class="mini-btn secondary drawer-action-link" href="@LiveTournamentHref" @onclick="CloseDrawer">Open Live Matches Page</a>
+                            <a class="mini-btn secondary drawer-action-link" href="@FollowCenterHref" @onclick="CloseDrawer">Follow Wrestlers</a>
+                        </section>
+                    }
                 }
                 else
                 {
                     <div class="drawer-mini-rail">
                         <MudNavMenu Dense="true" Class="drawer-mini-nav">
-                            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" />
-                            <MudNavLink Href="/lab" Icon="@Icons.Material.Filled.Psychology" />
-                            <MudNavLink Href="/tournaments" Icon="@Icons.Material.Filled.Event" />
-                            <MudNavLink Href="/registration" Icon="@Icons.Material.Filled.HowToReg" />
-                            <MudNavLink Href="/brackets" Icon="@Icons.Material.Filled.AccountTree" />
-                            <MudNavLink Href="/bracket-builder" Icon="@Icons.Material.Filled.AutoFixHigh" />
-                            <MudNavLink Href="/table-worker" Icon="@Icons.Material.Filled.TableRestaurant" />
-                            <MudNavLink Href="/mat-scoring" Icon="@Icons.Material.Filled.Timer" />
-                            <MudNavLink Href="/live" Icon="@Icons.Material.Filled.LiveTv" />
-                            <MudNavLink Href="/athlete" Icon="@Icons.Material.Filled.Person" />
-                            <MudNavLink Href="/coach" Icon="@Icons.Material.Filled.Groups" />
-                            <MudNavLink Href="/recruiting" Icon="@Icons.Material.Filled.School" />
-                            <MudNavLink Href="/admin" Icon="@Icons.Material.Filled.AdminPanelSettings" />
-                            <MudNavLink Href="/support?faqId=faq-ops-03" Icon="@Icons.Material.Filled.SupportAgent" />
+                            @foreach (var link in DrawerLinks)
+                            {
+                                <MudNavLink Href="@link.Href"
+                                            Match="@(link.Href == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                                            Icon="@link.Icon" />
+                            }
                         </MudNavMenu>
                     </div>
                 }
@@ -175,28 +229,403 @@
                 <div class="auth-message @(AuthOk ? "auth-ok" : "auth-error")">@AuthMessage</div>
             }
 
-            @if (Workflow.TeamId is not null || Workflow.EventId is not null || Workflow.MatchId is not null || Workflow.AthleteProfileId is not null || Workflow.CoachProfileId is not null)
+            @if (!AuthSession.IsAuthenticated)
             {
-                <div class="workflow-strip">
-                    <span class="workflow-chip">Athlete: @Short(Workflow.AthleteProfileId)</span>
-                    <span class="workflow-chip">Coach: @Short(Workflow.CoachProfileId)</span>
-                    <span class="workflow-chip">Team: @Short(Workflow.TeamId)</span>
-                    <span class="workflow-chip">Event: @Short(Workflow.EventId)</span>
-                    <span class="workflow-chip">Match: @Short(Workflow.MatchId)</span>
-                    <button class="mini-btn ghost" @onclick="ClearWorkflow">Clear Workflow</button>
-                </div>
+                <section class="signin-gate">
+                    <h2>Sign-in required</h2>
+                    <p>Event registration, role-driven pages, live tournament tools, scoring, and ops controls require authentication.</p>
+                    <div class="signin-gate-actions">
+                        <button class="mini-btn" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Sign in as Demo Athlete</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Sign in as Demo Coach</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoParentGuardianAsync" disabled="@Busy">Sign in as Demo Parent</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoMatWorkerAsync" disabled="@Busy">Sign in as Demo Mat Worker</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoDirectorAsync" disabled="@Busy">Sign in as Demo Director</button>
+                        <button class="mini-btn ghost" type="button" @onclick="OpenRoleGuide">Open role access guide</button>
+                    </div>
+                </section>
             }
+            else
+            {
+                <section class="role-state-strip">
+                    <span class="workflow-chip">Role: @CurrentRoleLabel</span>
+                    <span class="workflow-chip">Event: @Short(Workflow.EventId)</span>
+                    <span class="workflow-chip">Bout: @(CurrentWorkflowBoutNumber?.ToString() ?? "-")</span>
+                    <a class="mini-btn secondary" href="@LiveTournamentHref">Live Tournament</a>
+                    @if (CanAccessOpsCenter)
+                    {
+                        <a class="mini-btn secondary" href="@OpsCenterHref">Backend Ops Center</a>
+                    }
+                    <button class="mini-btn ghost" type="button" @onclick="OpenSupportHub">FAQ + Support</button>
+                </section>
 
-            <main class="surface">
-                @Body
-            </main>
+                @if (Workflow.TeamId is not null || Workflow.EventId is not null || Workflow.MatchId is not null || Workflow.AthleteProfileId is not null || Workflow.CoachProfileId is not null)
+                {
+                    <div class="workflow-strip">
+                        <span class="workflow-chip">Athlete: @Short(Workflow.AthleteProfileId)</span>
+                        <span class="workflow-chip">Coach: @Short(Workflow.CoachProfileId)</span>
+                        <span class="workflow-chip">Team: @Short(Workflow.TeamId)</span>
+                        <span class="workflow-chip">Event: @Short(Workflow.EventId)</span>
+                        <span class="workflow-chip">Match: @Short(Workflow.MatchId)</span>
+                        <span class="workflow-chip">Bout #: @(CurrentWorkflowBoutNumber?.ToString() ?? "pending")</span>
+                        <button class="mini-btn ghost" @onclick="ClearWorkflow">Clear Workflow</button>
+                    </div>
+                }
+
+                @if (ShowOpsCenterPanel)
+                {
+                    <section class="feature-panel">
+                        <header class="feature-panel-head">
+                            <h2>Backend Ops Center</h2>
+                            <div class="panel-action-row">
+                                @if (!DirectorOwnsActiveEvent)
+                                {
+                                    <button class="mini-btn" type="button" @onclick="CreateAndClaimEvent">Create Event</button>
+                                    <button class="mini-btn secondary" type="button" @onclick="ClaimCurrentEvent">Claim Current Event</button>
+                                }
+                                else
+                                {
+                                    <button class="mini-btn secondary" type="button" @onclick="FinalizeBrackets" disabled="@BracketsFinalized">Finalize Brackets</button>
+                                    <button class="mini-btn secondary" type="button" @onclick="StartTournament" disabled="@(!BracketsFinalized || TournamentStarted || TournamentCancelled)">Start Tournament</button>
+                                    <button class="mini-btn" type="button" @onclick="CancelTournament" disabled="@(PaidRegistrationCount > 0 || TournamentCancelled)">Cancel Event</button>
+                                }
+                            </div>
+                        </header>
+
+                        @if (!DirectorOwnsActiveEvent)
+                        {
+                            <p class="panel-note">Ops access is only visible to tournament directors who created or claimed the active event.</p>
+                        }
+                        else
+                        {
+                            <div class="ops-metrics">
+                                <div class="metric-card">
+                                    <span>Paid Registrations</span>
+                                    <strong>@PaidRegistrationCount</strong>
+                                    <div class="metric-card-actions">
+                                        <button type="button" class="mini-btn ghost" @onclick="DecreasePaidRegistrations">-</button>
+                                        <button type="button" class="mini-btn ghost" @onclick="IncreasePaidRegistrations">+</button>
+                                    </div>
+                                </div>
+                                <div class="metric-card">
+                                    <span>Pending Registrations</span>
+                                    <strong>@PendingRegistrationCount</strong>
+                                </div>
+                                <div class="metric-card">
+                                    <span>Brackets</span>
+                                    <strong>@(BracketsFinalized ? "Finalized" : "Draft")</strong>
+                                </div>
+                                <div class="metric-card">
+                                    <span>Tournament Status</span>
+                                    <strong>@(TournamentCancelled ? "Cancelled" : TournamentStarted ? "Live" : "Pre-start")</strong>
+                                </div>
+                            </div>
+
+                            <div class="ops-grid">
+                                <article class="ops-card">
+                                    <h3>Athletes + Standings</h3>
+                                    <p>Sort and filter athletes by performance metrics including pins and tech falls.</p>
+                                    <div class="ops-controls">
+                                        <input class="mini-input" value="@OpsAthleteSearch" @oninput="OnOpsAthleteSearchInput" placeholder="Filter athlete or team" />
+                                        <MudSelect T="string" Dense="true" Variant="Variant.Outlined" Label="Sort by" @bind-Value="OpsSortMetric" Class="drawer-select">
+                                            <MudSelectItem T="string" Value="@("Pins")">Most Pins</MudSelectItem>
+                                            <MudSelectItem T="string" Value="@("TechFalls")">Most Tech Falls</MudSelectItem>
+                                            <MudSelectItem T="string" Value="@("BoutWins")">Most Bout Wins</MudSelectItem>
+                                        </MudSelect>
+                                    </div>
+                                    <div class="table-shell">
+                                        <table class="ops-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Athlete</th>
+                                                    <th>Age</th>
+                                                    <th>Weight</th>
+                                                    <th>Pins</th>
+                                                    <th>Tech Falls</th>
+                                                    <th>Bout Wins</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var athlete in FilteredAthletes)
+                                                {
+                                                    <tr>
+                                                        <td>@athlete.Name</td>
+                                                        <td>@athlete.AgeGroup</td>
+                                                        <td>@athlete.WeightClass</td>
+                                                        <td>@athlete.Pins</td>
+                                                        <td>@athlete.TechFalls</td>
+                                                        <td>@athlete.BoutWins</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </article>
+
+                                <article class="ops-card">
+                                    <h3>Live Bouts + Brackets</h3>
+                                    <p>Bout numbers are distributed when brackets are finalized and tournament start is confirmed.</p>
+                                    <div class="table-shell">
+                                        <table class="ops-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Bout #</th>
+                                                    <th>Mat</th>
+                                                    <th>Division</th>
+                                                    <th>Wrestlers</th>
+                                                    <th>Status</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var bout in FilteredLiveBouts)
+                                                {
+                                                    <tr>
+                                                        <td>@(bout.BoutNumber?.ToString() ?? "Pending")</td>
+                                                        <td>@bout.Mat</td>
+                                                        <td>@bout.AgeGroup @bout.WeightClass</td>
+                                                        <td>@bout.RedAthlete vs @bout.GreenAthlete</td>
+                                                        <td>@bout.Status</td>
+                                                        <td>
+                                                            <button type="button" class="mini-btn ghost" @onclick="@(() => AdjustBout(bout))">Adjust</button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="panel-action-row">
+                                        <a class="mini-btn secondary" href="@OpsBracketBuilderHref">Bracket Builder (Ops)</a>
+                                        <a class="mini-btn secondary" href="@CompletedBracketsHref">Print Completed Brackets</a>
+                                    </div>
+                                </article>
+                            </div>
+                        }
+                    </section>
+                }
+
+                @if (ShowLiveHubPanel)
+                {
+                    <section class="feature-panel live-panel">
+                        <header class="feature-panel-head">
+                            <h2>Live Tournament Hub</h2>
+                            <div class="panel-action-row">
+                                <a class="mini-btn secondary" href="@LiveTournamentHref">Refresh with filters</a>
+                                <button class="mini-btn ghost" type="button" @onclick="OpenLiveHubGuide">Open live hub guide</button>
+                            </div>
+                        </header>
+
+                        <p class="panel-note">View live mats, brackets, and bouts on one page. Filters support age group, weight, date, and sort mode.</p>
+
+                        <div class="follow-grid">
+                            @foreach (var athlete in AthleteRows)
+                            {
+                                <div class="follow-row">
+                                    <div>
+                                        <strong>@athlete.Name</strong>
+                                        <div class="follow-meta">@athlete.AgeGroup | @athlete.WeightClass | @athlete.Team</div>
+                                    </div>
+                                    <button class="mini-btn @(IsFollowing(athlete.Id) ? "secondary" : "")" type="button" @onclick="@(() => ToggleFollow(athlete.Id))">
+                                        @(IsFollowing(athlete.Id) ? "Following" : "Follow")
+                                    </button>
+                                </div>
+                                @if (IsFollowing(athlete.Id))
+                                {
+                                    var pref = GetFollowPreference(athlete.Id);
+                                    <div class="follow-options">
+                                        <button type="button" class="notify-pill @(pref.InTheHole ? "on" : "")" @onclick="@(() => ToggleFollowOption(athlete.Id, FollowOption.InTheHole))">In the hole</button>
+                                        <button type="button" class="notify-pill @(pref.OnDeck ? "on" : "")" @onclick="@(() => ToggleFollowOption(athlete.Id, FollowOption.OnDeck))">On deck</button>
+                                        <button type="button" class="notify-pill @(pref.MatAssignment ? "on" : "")" @onclick="@(() => ToggleFollowOption(athlete.Id, FollowOption.MatAssignment))">Mat assignment</button>
+                                        <button type="button" class="notify-pill @(pref.Results ? "on" : "")" @onclick="@(() => ToggleFollowOption(athlete.Id, FollowOption.Results))">Results</button>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </section>
+                }
+
+                @if (ShowMatScoringPanel)
+                {
+                    <section class="feature-panel scoring-panel">
+                        <header class="feature-panel-head">
+                            <h2>Mat Scoring Access</h2>
+                        </header>
+
+                        @if (!CanAccessMatScoring)
+                        {
+                            <p class="panel-note">Mat scoring is visible only to coaches, mat workers, and tournament directors with an active tournament context.</p>
+                            <button class="mini-btn ghost" type="button" @onclick="OpenMatScoringGuide">Open scoring access guide</button>
+                        }
+                        else
+                        {
+                            <p class="panel-note">Scoring is limited to this tournament event and mat-specific bout assignments.</p>
+                            <div class="mat-grid">
+                                @foreach (var bout in FilteredLiveBouts)
+                                {
+                                    <a class="mat-card"
+                                       href="@MatScoringBoutHref(bout)">
+                                        <strong>@bout.Mat</strong>
+                                        <span>Bout @(bout.BoutNumber?.ToString() ?? "Pending")</span>
+                                        <span>@bout.RedAthlete vs @bout.GreenAthlete</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+                    </section>
+                }
+
+                @if (ShowPersonalStreamingPanel)
+                {
+                    <section class="feature-panel stream-panel">
+                        <header class="feature-panel-head">
+                            <h2>Personal Live Streaming</h2>
+                            <div class="panel-action-row">
+                                <button type="button" class="mini-btn ghost" @onclick="OpenStreamingGuide">Streaming FAQ</button>
+                            </div>
+                        </header>
+
+                        @if (!CanUsePersonalStreaming)
+                        {
+                            <p class="panel-note">Only a parent/guardian or a delegated user can stream for an athlete. One active personal stream per athlete is allowed.</p>
+                            <button class="mini-btn secondary" type="button" @onclick="GrantStreamingDelegation">Enable delegated access</button>
+                        }
+                        else
+                        {
+                            <div class="stream-settings-grid">
+                                <MudSelect T="string" Dense="true" Variant="Variant.Outlined" Label="Athlete" @bind-Value="StreamingAthleteId" Class="drawer-select">
+                                    <MudSelectItem T="string" Value="@("none")">Select athlete</MudSelectItem>
+                                    @foreach (var athlete in AthleteRows)
+                                    {
+                                        <MudSelectItem T="string" Value="@(athlete.Id.ToString("D"))">@athlete.Name (@athlete.AgeGroup @athlete.WeightClass)</MudSelectItem>
+                                    }
+                                </MudSelect>
+
+                                <MudSelect T="string" Dense="true" Variant="Variant.Outlined" Label="Video mode" @bind-Value="StreamingMode" Class="drawer-select">
+                                    @foreach (var mode in StreamingModes)
+                                    {
+                                        <MudSelectItem T="string" Value="@mode">@mode</MudSelectItem>
+                                    }
+                                </MudSelect>
+
+                                <MudSelect T="string" Dense="true" Variant="Variant.Outlined" Label="Video quality" @bind-Value="StreamingQuality" Class="drawer-select">
+                                    @foreach (var quality in StreamingQualities)
+                                    {
+                                        <MudSelectItem T="string" Value="@quality">@quality</MudSelectItem>
+                                    }
+                                </MudSelect>
+
+                                <MudSelect T="string" Dense="true" Variant="Variant.Outlined" Label="Video audience" @bind-Value="StreamingAudience" Class="drawer-select">
+                                    @foreach (var audience in StreamingAudiences)
+                                    {
+                                        <MudSelectItem T="string" Value="@audience">@audience</MudSelectItem>
+                                    }
+                                </MudSelect>
+
+                                <MudSelect T="string" Dense="true" Variant="Variant.Outlined" Label="Share with opponent" @bind-Value="StreamingShareWithOpponent" Class="drawer-select">
+                                    <MudSelectItem T="string" Value="@("Do not share")">Do not share</MudSelectItem>
+                                    <MudSelectItem T="string" Value="@("Share live feed")">Share live feed</MudSelectItem>
+                                </MudSelect>
+                            </div>
+
+                            <div class="panel-action-row">
+                                @if (!PersonalStreamActive)
+                                {
+                                    <button class="mini-btn" type="button" @onclick="StartPersonalStream">Start Live Stream</button>
+                                }
+                                else
+                                {
+                                    <button class="mini-btn" type="button" @onclick="EndPersonalStream">End Live Stream</button>
+                                }
+                            </div>
+
+                            <p class="panel-note">@StreamStatus</p>
+
+                            @if (ShowSaveStreamPrompt)
+                            {
+                                <div class="save-prompt">
+                                    <strong>Save this stream to the athlete profile?</strong>
+                                    <div class="panel-action-row">
+                                        <button class="mini-btn secondary" type="button" @onclick="() => SaveStream(true)">Save Private</button>
+                                        <button class="mini-btn secondary" type="button" @onclick="() => SaveStream(false)">Save Shared</button>
+                                        <button class="mini-btn ghost" type="button" @onclick="DiscardStream">Discard</button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </section>
+                }
+
+                <main class="surface">
+                    @Body
+                </main>
+            }
 
             <footer class="app-footer">
                 <span>Built for K-6, Middle School, High School, and College competition workflows.</span>
+                <button type="button" class="footer-link-btn" @onclick="OpenSupportHub">Support + FAQs</button>
             </footer>
         </MudMainContent>
     </MudLayout>
+
+    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+        @if (AuthSession.IsAuthenticated)
+        {
+            <nav class="mobile-bottom-nav" @onclick:stopPropagation="true">
+                @foreach (var link in MobileBottomLinks)
+                {
+                    <a href="@link.Href" class="mobile-bottom-link" @onclick="CloseDrawer">
+                        <MudIcon Icon="@link.Icon" Class="mobile-bottom-icon" />
+                        <span>@link.ShortLabel</span>
+                    </a>
+                }
+            </nav>
+        }
+    </MudHidden>
 </div>
+
+@if (SupportOverlayOpen && ActiveSupportArticle is not null)
+{
+    <div class="support-overlay" @onclick="CloseSupportHub">
+        <section class="support-sheet" @onclick:stopPropagation="true">
+            <header class="support-sheet-head">
+                <div>
+                    <span class="drawer-label">Support + FAQ</span>
+                    <h2>@ActiveSupportArticle.Title</h2>
+                    <p>@ActiveSupportArticle.Summary</p>
+                    <span class="support-audience">Audience: @ActiveSupportArticle.Audience</span>
+                </div>
+                <button class="mini-btn ghost" type="button" @onclick="CloseSupportHub">Close</button>
+            </header>
+
+            <div class="support-sheet-body">
+                <aside class="support-index">
+                    @foreach (var article in SupportArticles)
+                    {
+                        <button type="button"
+                                class="support-index-link @(string.Equals(article.Id, ActiveSupportArticle.Id, StringComparison.OrdinalIgnoreCase) ? "active" : "")"
+                                @onclick="@(() => OpenSupportHub(article.Id))">
+                            @article.Title
+                        </button>
+                    }
+                </aside>
+
+                <article class="support-article-body">
+                    @foreach (var articleSection in ActiveSupportArticle.Sections)
+                    {
+                        <section class="support-article-section">
+                            <h3>@articleSection.Heading</h3>
+                            <ol>
+                                @foreach (var step in articleSection.Steps)
+                                {
+                                    <li>@step</li>
+                                }
+                            </ol>
+                        </section>
+                    }
+                </article>
+            </div>
+        </section>
+    </div>
+}
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -205,6 +634,85 @@
 </div>
 
 @code {
+    private enum PlatformRole
+    {
+        Athlete,
+        ParentGuardian,
+        Coach,
+        Fan,
+        MatWorker,
+        TournamentDirector
+    }
+
+    private enum FollowOption
+    {
+        InTheHole,
+        OnDeck,
+        MatAssignment,
+        Results
+    }
+
+    private sealed record DrawerLink(string Label, string Href, string Icon, string ShortLabel);
+
+    private sealed record SupportSection(string Heading, IReadOnlyList<string> Steps);
+
+    private sealed record SupportArticle(string Id, string Title, string Audience, string Summary, IReadOnlyList<SupportSection> Sections);
+
+    private sealed record AthletePerformanceRow(Guid Id, string Name, string Team, string AgeGroup, string WeightClass, int Pins, int TechFalls, int BoutWins);
+
+    private sealed class LiveBoutRow
+    {
+        public LiveBoutRow(Guid id, string mat, string ageGroup, string weightClass, string redAthlete, string greenAthlete, string status)
+        {
+            Id = id;
+            Mat = mat;
+            AgeGroup = ageGroup;
+            WeightClass = weightClass;
+            RedAthlete = redAthlete;
+            GreenAthlete = greenAthlete;
+            Status = status;
+        }
+
+        public Guid Id { get; }
+        public string Mat { get; }
+        public string AgeGroup { get; }
+        public string WeightClass { get; }
+        public string RedAthlete { get; }
+        public string GreenAthlete { get; }
+        public string Status { get; set; }
+        public int? BoutNumber { get; set; }
+    }
+
+    private sealed class FollowPreference
+    {
+        public bool InTheHole { get; set; } = true;
+        public bool OnDeck { get; set; } = true;
+        public bool MatAssignment { get; set; } = true;
+        public bool Results { get; set; } = true;
+    }
+
+    private const string DefaultSupportArticleId = "faq-ops-03";
+
+    private static readonly IReadOnlyList<PlatformRole> AvailableRoles =
+    [
+        PlatformRole.Athlete,
+        PlatformRole.ParentGuardian,
+        PlatformRole.Coach,
+        PlatformRole.Fan,
+        PlatformRole.MatWorker,
+        PlatformRole.TournamentDirector
+    ];
+
+    private static readonly IReadOnlyList<string> AgeFilters = ["All ages", "8U", "10U", "12U", "14U", "16U", "Junior"];
+    private static readonly IReadOnlyList<string> WeightFilters = ["All weights", "45 lb", "52 lb", "60 lb", "70 lb", "84 lb", "100 lb"];
+    private static readonly IReadOnlyList<string> LiveSortOptions = ["Most Pins", "Most Tech Falls", "Bout Number", "On Deck", "In The Hole", "Mat Order"];
+    private static readonly IReadOnlyList<string> StreamingModes = ["Live stream only", "Live stream & record to device", "Record to device only"];
+    private static readonly IReadOnlyList<string> StreamingQualities = ["720p", "1080p", "4K"];
+    private static readonly IReadOnlyList<string> StreamingAudiences = ["Parent + Athlete", "Family + Team", "Public"];
+
+    private static readonly IReadOnlyList<SupportArticle> SupportArticles = BuildSupportArticles();
+    private static readonly IReadOnlyDictionary<string, SupportArticle> SupportArticlesById = BuildSupportArticleLookup();
+
     private bool Busy;
     private string Email = "";
     private string Password = "";
@@ -227,11 +735,171 @@
     private string DrawerToggleAriaLabel => CurrentIsMobile
         ? (DrawerOpen ? "Close navigation menu" : "Open navigation menu")
         : (DrawerOpen ? "Collapse navigation menu" : "Open navigation menu");
-    private string FullSearchHref => $"/search?q={Uri.EscapeDataString(SearchText.Trim())}";
+    private string FullSearchHref => BuildHref("/search", ("q", SearchText.Trim()));
+
+    private PlatformRole? RolePreview;
+    private DateTime? TournamentFilterDate = DateTime.Today;
+    private string LiveAgeFilter = "All ages";
+    private string LiveWeightFilter = "All weights";
+    private string LiveSortFilter = "Most Pins";
+
+    private bool SupportOverlayOpen;
+    private string? ActiveSupportArticleId = DefaultSupportArticleId;
+    private string CurrentPath = "/";
+
+    private readonly HashSet<Guid> OwnedTournamentIds = [];
+    private bool TournamentCancelled;
+    private bool BracketsFinalized;
+    private bool TournamentStarted;
+    private int PaidRegistrationCount;
+    private int PendingRegistrationCount = 24;
+    private string OpsAthleteSearch = "";
+    private string OpsSortMetric = "Pins";
+
+    private bool StreamingDelegationEnabled;
+    private string StreamingAthleteId = "none";
+    private string StreamingMode = "Live stream & record to device";
+    private string StreamingQuality = "1080p";
+    private string StreamingAudience = "Parent + Athlete";
+    private string StreamingShareWithOpponent = "Do not share";
+    private bool PersonalStreamActive;
+    private bool ShowSaveStreamPrompt;
+    private string StreamStatus = "Ready to start.";
+
+    private readonly HashSet<Guid> ActiveAthleteStreams = [];
+    private readonly Dictionary<Guid, FollowPreference> FollowPreferences = [];
+
+    private readonly List<AthletePerformanceRow> AthleteRows =
+    [
+        new(Guid.Parse("11111111-1111-1111-1111-111111111111"), "Jase Strain", "PinPoint Youth", "8U", "70 lb", 7, 3, 9),
+        new(Guid.Parse("22222222-2222-2222-2222-222222222222"), "Ryan Malone", "Northern Elite", "10U", "84 lb", 5, 4, 8),
+        new(Guid.Parse("33333333-3333-3333-3333-333333333333"), "Kate Irwin", "Central Grapplers", "12U", "84 lb", 6, 2, 7),
+        new(Guid.Parse("44444444-4444-4444-4444-444444444444"), "Nathan A", "Northland WC", "10U", "70 lb", 4, 5, 7),
+        new(Guid.Parse("55555555-5555-5555-5555-555555555555"), "Gavin Whitley", "Rotties WC", "10U", "70 lb", 4, 2, 6)
+    ];
+
+    private readonly List<LiveBoutRow> LiveBouts =
+    [
+        new(Guid.Parse("aaaaaaa1-0000-0000-0000-000000000001"), "Mat 1", "8U", "70 lb", "Jase Strain", "Nathan A", "On Deck"),
+        new(Guid.Parse("aaaaaaa2-0000-0000-0000-000000000002"), "Mat 2", "10U", "84 lb", "Ryan Malone", "Kate Irwin", "In The Hole"),
+        new(Guid.Parse("aaaaaaa3-0000-0000-0000-000000000003"), "Mat 3", "12U", "84 lb", "Gavin Whitley", "Nathan A", "Live"),
+        new(Guid.Parse("aaaaaaa4-0000-0000-0000-000000000004"), "Mat 4", "10U", "70 lb", "Jase Strain", "Ryan Malone", "Pending")
+    ];
+
+    private PlatformRole CurrentRole => RolePreview ?? ParseRole(AuthSession.Role);
+    private string CurrentRoleLabel => RoleLabel(CurrentRole);
+    private string? ActiveEventIdText => Workflow.EventId?.ToString("D");
+    private int? CurrentWorkflowBoutNumber => Workflow.MatchId is null ? null : PredictBoutNumber(Workflow.MatchId.Value);
+    private bool HasEventContext => Workflow.EventId is not null;
+    private bool HasScoringRole => CurrentRole is PlatformRole.Coach or PlatformRole.MatWorker or PlatformRole.TournamentDirector;
+    private bool IsTournamentDirector => CurrentRole == PlatformRole.TournamentDirector;
+    private bool DirectorOwnsActiveEvent => IsTournamentDirector && Workflow.EventId is Guid eventId && OwnedTournamentIds.Contains(eventId);
+    private bool CanAccessOpsCenter => AuthSession.IsAuthenticated && DirectorOwnsActiveEvent;
+    private bool CanAccessMatScoring => AuthSession.IsAuthenticated && HasScoringRole && HasEventContext;
+    private bool CanUsePersonalStreaming => AuthSession.IsAuthenticated && (CurrentRole == PlatformRole.ParentGuardian || StreamingDelegationEnabled);
+    private bool ShowMatScoringContextHint => AuthSession.IsAuthenticated && HasScoringRole && !HasEventContext;
+    private bool ShowOpsOwnershipHint => AuthSession.IsAuthenticated && IsTournamentDirector && !DirectorOwnsActiveEvent;
+    private bool ShowOpsCenterPanel => AuthSession.IsAuthenticated && CurrentPath.StartsWith("/admin", StringComparison.OrdinalIgnoreCase);
+    private bool ShowLiveHubPanel => AuthSession.IsAuthenticated &&
+                                     (CurrentPath.StartsWith("/live", StringComparison.OrdinalIgnoreCase) || CurrentPath.StartsWith("/tournaments", StringComparison.OrdinalIgnoreCase));
+    private bool ShowMatScoringPanel => AuthSession.IsAuthenticated && CurrentPath.StartsWith("/mat-scoring", StringComparison.OrdinalIgnoreCase);
+    private bool ShowPersonalStreamingPanel => AuthSession.IsAuthenticated && CurrentPath.StartsWith("/live", StringComparison.OrdinalIgnoreCase);
+
+    private string LiveTournamentHref => BuildHref(
+        "/live",
+        ("eventId", ActiveEventIdText),
+        ("date", TournamentFilterDate?.ToString("yyyy-MM-dd")),
+        ("ageGroup", NormalizeFilterOption(LiveAgeFilter)),
+        ("weight", NormalizeFilterOption(LiveWeightFilter)),
+        ("sort", NormalizeSortOption(LiveSortFilter)));
+
+    private string FollowCenterHref => BuildHref(
+        "/live",
+        ("eventId", ActiveEventIdText),
+        ("panel", "follow"),
+        ("notifications", "in-hole,on-deck,mat,results"));
+
+    private string MatScoringHref => BuildHref("/mat-scoring", ("eventId", ActiveEventIdText), ("boutNumber", CurrentWorkflowBoutNumber?.ToString()));
+    private string OpsCenterHref => BuildHref("/admin", ("eventId", ActiveEventIdText), ("ops", "center"));
+    private string OpsBracketBuilderHref => BuildHref("/bracket-builder", ("eventId", ActiveEventIdText), ("ops", "1"));
+    private string CompletedBracketsHref => BuildHref("/brackets", ("eventId", ActiveEventIdText), ("view", "completed"));
+
+    private IReadOnlyList<SupportArticle> FeaturedSupportArticles =>
+    [
+        SupportArticlesById["faq-role-access-01"],
+        SupportArticlesById["faq-registration-01"],
+        SupportArticlesById["faq-live-04"],
+        SupportArticlesById["faq-scoring-02"],
+        SupportArticlesById["faq-stream-01"],
+        SupportArticlesById["faq-ops-03"]
+    ];
+
+    private SupportArticle? ActiveSupportArticle =>
+        string.IsNullOrWhiteSpace(ActiveSupportArticleId)
+            ? null
+            : (SupportArticlesById.TryGetValue(ActiveSupportArticleId, out var article) ? article : null);
+
+    private IReadOnlyList<DrawerLink> DrawerLinks => BuildDrawerLinks();
+    private IReadOnlyList<DrawerLink> MobileBottomLinks => DrawerLinks.Take(5).ToList();
+
+    private IEnumerable<AthletePerformanceRow> FilteredAthletes
+    {
+        get
+        {
+            IEnumerable<AthletePerformanceRow> query = AthleteRows;
+            if (!string.IsNullOrWhiteSpace(OpsAthleteSearch))
+            {
+                query = query.Where(a =>
+                    a.Name.Contains(OpsAthleteSearch, StringComparison.OrdinalIgnoreCase) ||
+                    a.Team.Contains(OpsAthleteSearch, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return OpsSortMetric switch
+            {
+                "TechFalls" => query.OrderByDescending(a => a.TechFalls).ThenByDescending(a => a.Pins),
+                "BoutWins" => query.OrderByDescending(a => a.BoutWins).ThenByDescending(a => a.Pins),
+                _ => query.OrderByDescending(a => a.Pins).ThenByDescending(a => a.TechFalls)
+            };
+        }
+    }
+
+    private IEnumerable<LiveBoutRow> FilteredLiveBouts
+    {
+        get
+        {
+            IEnumerable<LiveBoutRow> query = LiveBouts;
+            if (!IsAllFilter(LiveAgeFilter))
+            {
+                query = query.Where(b => string.Equals(b.AgeGroup, LiveAgeFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!IsAllFilter(LiveWeightFilter))
+            {
+                query = query.Where(b => string.Equals(b.WeightClass, LiveWeightFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return LiveSortFilter switch
+            {
+                "Most Tech Falls" => query.OrderByDescending(TechFallsForBout).ThenByDescending(PinsForBout),
+                "Bout Number" => query.OrderBy(b => b.BoutNumber ?? int.MaxValue),
+                "On Deck" => query.OrderBy(b => b.Status.Equals("On Deck", StringComparison.OrdinalIgnoreCase) ? 0 : 1),
+                "In The Hole" => query.OrderBy(b => b.Status.Equals("In The Hole", StringComparison.OrdinalIgnoreCase) ? 0 : 1),
+                "Mat Order" => query.OrderBy(b => MatSortNumber(b.Mat)),
+                _ => query.OrderByDescending(PinsForBout).ThenByDescending(TechFallsForBout)
+            };
+        }
+    }
 
     protected override void OnInitialized()
     {
         DrawerOpen = false;
+        SyncLocationState(Navigation.Uri);
+
+        if (Workflow.EventId is Guid eventId)
+        {
+            OwnedTournamentIds.Add(eventId);
+        }
+
         Navigation.LocationChanged += OnLocationChanged;
     }
 
@@ -253,6 +921,7 @@
         {
             Password = string.Empty;
             MfaCode = string.Empty;
+            RolePreview = ParseRole(AuthSession.Role);
             if (CurrentIsMobile)
             {
                 DrawerOpen = false;
@@ -276,11 +945,37 @@
         await SignInAsync();
     }
 
+    private async Task SignInAsDemoParentGuardianAsync()
+    {
+        Email = "demo.parent@pinpointarena.local";
+        Password = "DemoPass!123";
+        await SignInAsync();
+    }
+
+    private async Task SignInAsDemoMatWorkerAsync()
+    {
+        Email = "demo.matworker@pinpointarena.local";
+        Password = "DemoPass!123";
+        await SignInAsync();
+    }
+
+    private async Task SignInAsDemoDirectorAsync()
+    {
+        Email = "demo.director@pinpointarena.local";
+        Password = "DemoPass!123";
+        await SignInAsync();
+    }
+
     private async Task SignOutAsync()
     {
         await ApiClient.LogoutAsync();
         AuthOk = true;
         AuthMessage = "Signed out.";
+        RolePreview = null;
+        StreamingDelegationEnabled = false;
+        PersonalStreamActive = false;
+        ShowSaveStreamPrompt = false;
+        StreamStatus = "Ready to start.";
         if (CurrentIsMobile)
         {
             DrawerOpen = false;
@@ -363,13 +1058,15 @@
         ApplyWorkflowFromSearch(result);
     }
 
-    private static string SearchResultHref(GlobalSearchResultItem result) => result.Type switch
+    private string SearchResultHref(GlobalSearchResultItem result) => result.Type switch
     {
-        GlobalSearchEntityType.Match => $"/mat-scoring?matchId={result.Id:D}",
-        GlobalSearchEntityType.Tournament => $"/events/{result.Id:D}",
+        GlobalSearchEntityType.Match => CanAccessMatScoring
+            ? BuildHref("/mat-scoring", ("eventId", ActiveEventIdText), ("matchId", result.Id.ToString("D")), ("boutNumber", PredictBoutNumber(result.Id).ToString()))
+            : BuildHref("/live", ("eventId", ActiveEventIdText), ("faqId", "faq-scoring-02")),
+        GlobalSearchEntityType.Tournament => BuildHref($"/events/{result.Id:D}", ("eventId", result.Id.ToString("D"))),
         GlobalSearchEntityType.Athlete => "/athlete",
         GlobalSearchEntityType.Coach => "/coach",
-        GlobalSearchEntityType.Stream => "/live",
+        GlobalSearchEntityType.Stream => LiveTournamentHref,
         GlobalSearchEntityType.Team => "/coach",
         _ => "/search"
     };
@@ -426,6 +1123,7 @@
             DrawerOpen = false;
         }
 
+        SyncLocationState(args.Location);
         _ = InvokeAsync(StateHasChanged);
     }
 
@@ -434,5 +1132,677 @@
     private static string Short(Guid? id)
     {
         return id is null ? "-" : id.Value.ToString()[..8];
+    }
+
+    private static string Short(Guid id)
+    {
+        return id.ToString()[..8];
+    }
+
+    private void SetRolePreview(PlatformRole role)
+    {
+        if (!AuthSession.IsAuthenticated)
+        {
+            return;
+        }
+
+        RolePreview = role;
+    }
+
+    private IReadOnlyList<DrawerLink> BuildDrawerLinks()
+    {
+        var links = new List<DrawerLink>
+        {
+            new("Command Center", "/", Icons.Material.Filled.Dashboard, "Home")
+        };
+
+        if (!AuthSession.IsAuthenticated)
+        {
+            links.Add(new("Support Center", BuildHref("/support", ("faqId", "faq-role-access-01")), Icons.Material.Filled.SupportAgent, "Help"));
+            return links;
+        }
+
+        links.Add(new("Tournaments (Live)", BuildHref("/tournaments", ("tab", "live"), ("eventId", ActiveEventIdText)), Icons.Material.Filled.LiveTv, "Live"));
+        links.Add(new("Tournaments (Upcoming)", BuildHref("/tournaments", ("tab", "upcoming")), Icons.Material.Filled.Event, "Upcoming"));
+        links.Add(new("Tournaments (Completed)", BuildHref("/tournaments", ("tab", "completed")), Icons.Material.Filled.Event, "Done"));
+        links.Add(new("Event Registration", "/registration", Icons.Material.Filled.HowToReg, "Register"));
+
+        switch (CurrentRole)
+        {
+            case PlatformRole.Athlete:
+                links.Add(new("Athlete Profile", "/athlete", Icons.Material.Filled.Person, "Profile"));
+                links.Add(new("My Bouts + Alerts", BuildHref("/live", ("panel", "follow"), ("eventId", ActiveEventIdText)), Icons.Material.Filled.NotificationsActive, "Alerts"));
+                break;
+            case PlatformRole.ParentGuardian:
+                links.Add(new("Family Athlete Profiles", "/athlete", Icons.Material.Filled.Groups, "Family"));
+                links.Add(new("Personal Streaming", BuildHref("/live", ("panel", "stream"), ("eventId", ActiveEventIdText)), Icons.Material.Filled.LiveTv, "Stream"));
+                links.Add(new("Follower Notifications", FollowCenterHref, Icons.Material.Filled.NotificationsActive, "Follow"));
+                break;
+            case PlatformRole.Coach:
+                links.Add(new("Coach Portal", "/coach", Icons.Material.Filled.Groups, "Coach"));
+                links.Add(new("Team Brackets", BuildHref("/brackets", ("eventId", ActiveEventIdText)), Icons.Material.Filled.AccountTree, "Brackets"));
+                break;
+            case PlatformRole.Fan:
+                links.Add(new("Live Match Feed", LiveTournamentHref, Icons.Material.Filled.LiveTv, "Feed"));
+                links.Add(new("Bracket Viewer", BuildHref("/brackets", ("eventId", ActiveEventIdText)), Icons.Material.Filled.AccountTree, "Brackets"));
+                links.Add(new("Follow Wrestlers", FollowCenterHref, Icons.Material.Filled.NotificationsActive, "Follow"));
+                break;
+            case PlatformRole.MatWorker:
+                links.Add(new("Mat Worker Queue", BuildHref("/table-worker", ("eventId", ActiveEventIdText)), Icons.Material.Filled.TableRestaurant, "Queue"));
+                break;
+            case PlatformRole.TournamentDirector:
+                links.Add(new("Tournament Director", BuildHref("/admin", ("eventId", ActiveEventIdText)), Icons.Material.Filled.AdminPanelSettings, "Director"));
+                break;
+        }
+
+        if (CanAccessMatScoring)
+        {
+            links.Add(new("Mat Scoring", MatScoringHref, Icons.Material.Filled.Timer, "Score"));
+        }
+
+        if (CanAccessOpsCenter)
+        {
+            links.Add(new("Backend Ops Center", OpsCenterHref, Icons.Material.Filled.AdminPanelSettings, "Ops"));
+            links.Add(new("Bracket Builder (Ops)", OpsBracketBuilderHref, Icons.Material.Filled.AutoFixHigh, "Build"));
+        }
+
+        links.Add(new("Support Center", BuildHref("/support", ("faqId", DefaultSupportArticleId)), Icons.Material.Filled.SupportAgent, "Help"));
+        return links;
+    }
+
+    private void OpenSupportHub()
+    {
+        OpenSupportHub(DefaultSupportArticleId);
+    }
+
+    private void OpenSupportHub(string articleId)
+    {
+        if (!SupportArticlesById.ContainsKey(articleId))
+        {
+            articleId = DefaultSupportArticleId;
+        }
+
+        ActiveSupportArticleId = articleId;
+        SupportOverlayOpen = true;
+
+        if (CurrentIsMobile)
+        {
+            DrawerOpen = false;
+        }
+    }
+
+    private void CloseSupportHub()
+    {
+        SupportOverlayOpen = false;
+    }
+
+    private void OpenRoleGuide() => OpenSupportHub("faq-role-access-01");
+    private void OpenLiveHubGuide() => OpenSupportHub("faq-live-04");
+    private void OpenMatScoringGuide() => OpenSupportHub("faq-scoring-02");
+    private void OpenStreamingGuide() => OpenSupportHub("faq-stream-01");
+
+    private void ClaimCurrentEvent()
+    {
+        if (!IsTournamentDirector)
+        {
+            AuthOk = false;
+            AuthMessage = "Only tournament directors can claim event ownership.";
+            return;
+        }
+
+        if (Workflow.EventId is not Guid eventId)
+        {
+            AuthOk = false;
+            AuthMessage = "Select an event first, then claim ownership.";
+            return;
+        }
+
+        OwnedTournamentIds.Add(eventId);
+        AuthOk = true;
+        AuthMessage = "Event ownership confirmed. Backend Ops Center unlocked.";
+    }
+
+    private void CreateAndClaimEvent()
+    {
+        if (!IsTournamentDirector)
+        {
+            AuthOk = false;
+            AuthMessage = "Only tournament directors can create events from Ops Center.";
+            return;
+        }
+
+        var eventId = Guid.NewGuid();
+        Workflow.EventId = eventId;
+        OwnedTournamentIds.Add(eventId);
+        TournamentCancelled = false;
+        BracketsFinalized = false;
+        TournamentStarted = false;
+        PaidRegistrationCount = 0;
+        PendingRegistrationCount = 24;
+
+        foreach (var bout in LiveBouts)
+        {
+            bout.BoutNumber = null;
+            bout.Status = "Pending";
+        }
+
+        AuthOk = true;
+        AuthMessage = $"Event created: {Short(eventId)}. Build brackets to generate bout numbers.";
+    }
+
+    private void FinalizeBrackets()
+    {
+        if (!CanAccessOpsCenter)
+        {
+            AuthOk = false;
+            AuthMessage = "Ops Center access denied.";
+            return;
+        }
+
+        BracketsFinalized = true;
+        AssignBoutNumbers();
+        AuthOk = true;
+        AuthMessage = "Brackets finalized and preliminary bout numbers distributed.";
+    }
+
+    private void StartTournament()
+    {
+        if (!CanAccessOpsCenter)
+        {
+            AuthOk = false;
+            AuthMessage = "Ops Center access denied.";
+            return;
+        }
+
+        if (!BracketsFinalized)
+        {
+            AuthOk = false;
+            AuthMessage = "Finalize brackets before starting tournament.";
+            return;
+        }
+
+        TournamentStarted = true;
+        foreach (var bout in LiveBouts.Where(b => b.Status == "Pending"))
+        {
+            bout.Status = "On Deck";
+        }
+
+        AuthOk = true;
+        AuthMessage = "Tournament started. Bout numbers are active and distributed.";
+    }
+
+    private void CancelTournament()
+    {
+        if (!CanAccessOpsCenter)
+        {
+            AuthOk = false;
+            AuthMessage = "Ops Center access denied.";
+            return;
+        }
+
+        if (PaidRegistrationCount > 0)
+        {
+            AuthOk = false;
+            AuthMessage = "Event cancellation blocked: paid registrations exist.";
+            return;
+        }
+
+        TournamentCancelled = true;
+        TournamentStarted = false;
+        foreach (var bout in LiveBouts)
+        {
+            bout.Status = "Cancelled";
+        }
+
+        AuthOk = true;
+        AuthMessage = "Event cancelled. Participants and followers notified.";
+    }
+
+    private void IncreasePaidRegistrations()
+    {
+        PaidRegistrationCount++;
+        if (PendingRegistrationCount > 0)
+        {
+            PendingRegistrationCount--;
+        }
+    }
+
+    private void DecreasePaidRegistrations()
+    {
+        if (PaidRegistrationCount == 0)
+        {
+            return;
+        }
+
+        PaidRegistrationCount--;
+        PendingRegistrationCount++;
+    }
+
+    private void AdjustBout(LiveBoutRow bout)
+    {
+        if (!CanAccessOpsCenter)
+        {
+            return;
+        }
+
+        bout.Status = "Adjusted";
+        AuthOk = true;
+        AuthMessage = $"Adjustment applied to {bout.Mat}, bout {(bout.BoutNumber?.ToString() ?? "Pending")}.";
+    }
+
+    private void OnOpsAthleteSearchInput(ChangeEventArgs args)
+    {
+        OpsAthleteSearch = args.Value?.ToString() ?? "";
+    }
+
+    private void ToggleFollow(Guid athleteId)
+    {
+        if (FollowPreferences.ContainsKey(athleteId))
+        {
+            FollowPreferences.Remove(athleteId);
+            return;
+        }
+
+        FollowPreferences[athleteId] = new FollowPreference();
+    }
+
+    private bool IsFollowing(Guid athleteId) => FollowPreferences.ContainsKey(athleteId);
+
+    private FollowPreference GetFollowPreference(Guid athleteId)
+    {
+        if (!FollowPreferences.TryGetValue(athleteId, out var preference))
+        {
+            preference = new FollowPreference();
+            FollowPreferences[athleteId] = preference;
+        }
+
+        return preference;
+    }
+
+    private void ToggleFollowOption(Guid athleteId, FollowOption option)
+    {
+        var preference = GetFollowPreference(athleteId);
+        switch (option)
+        {
+            case FollowOption.InTheHole:
+                preference.InTheHole = !preference.InTheHole;
+                break;
+            case FollowOption.OnDeck:
+                preference.OnDeck = !preference.OnDeck;
+                break;
+            case FollowOption.MatAssignment:
+                preference.MatAssignment = !preference.MatAssignment;
+                break;
+            case FollowOption.Results:
+                preference.Results = !preference.Results;
+                break;
+        }
+    }
+
+    private void GrantStreamingDelegation()
+    {
+        StreamingDelegationEnabled = true;
+        StreamStatus = "Delegated streaming access enabled for this session.";
+    }
+
+    private void StartPersonalStream()
+    {
+        if (!CanUsePersonalStreaming)
+        {
+            StreamStatus = "Only a parent/guardian or delegated user can start personal streaming.";
+            return;
+        }
+
+        var athleteId = ParseAthleteId(StreamingAthleteId);
+        if (athleteId is null)
+        {
+            StreamStatus = "Select an athlete before starting stream.";
+            return;
+        }
+
+        if (ActiveAthleteStreams.Contains(athleteId.Value))
+        {
+            StreamStatus = "A personal stream is already active for this athlete.";
+            return;
+        }
+
+        ActiveAthleteStreams.Add(athleteId.Value);
+        PersonalStreamActive = true;
+        ShowSaveStreamPrompt = false;
+        StreamStatus = $"Live stream started for {AthleteName(athleteId.Value)}. Mode: {StreamingMode}.";
+    }
+
+    private void EndPersonalStream()
+    {
+        var athleteId = ParseAthleteId(StreamingAthleteId);
+        if (athleteId is not null)
+        {
+            ActiveAthleteStreams.Remove(athleteId.Value);
+        }
+
+        PersonalStreamActive = false;
+        ShowSaveStreamPrompt = true;
+        StreamStatus = "Stream ended. Save options are ready.";
+    }
+
+    private void SaveStream(bool isPrivate)
+    {
+        ShowSaveStreamPrompt = false;
+        StreamStatus = isPrivate
+            ? "Video saved as Private (parent/guardian + athlete only)."
+            : "Video saved to athlete profile and shared to selected audience.";
+    }
+
+    private void DiscardStream()
+    {
+        ShowSaveStreamPrompt = false;
+        StreamStatus = "Video discarded.";
+    }
+
+    private void AssignBoutNumbers()
+    {
+        var ordered = LiveBouts
+            .OrderBy(b => MatSortNumber(b.Mat))
+            .ThenBy(b => b.AgeGroup)
+            .ThenBy(b => b.WeightClass)
+            .ToList();
+
+        var bout = 101;
+        foreach (var liveBout in ordered)
+        {
+            liveBout.BoutNumber = bout;
+            bout += 2;
+        }
+    }
+
+    private int PinsForBout(LiveBoutRow bout) => PinsByAthleteName(bout.RedAthlete) + PinsByAthleteName(bout.GreenAthlete);
+    private int TechFallsForBout(LiveBoutRow bout) => TechFallsByAthleteName(bout.RedAthlete) + TechFallsByAthleteName(bout.GreenAthlete);
+
+    private int PinsByAthleteName(string name) =>
+        AthleteRows.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase))?.Pins ?? 0;
+
+    private int TechFallsByAthleteName(string name) =>
+        AthleteRows.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase))?.TechFalls ?? 0;
+
+    private static int MatSortNumber(string mat)
+    {
+        var digits = new string(mat.Where(char.IsDigit).ToArray());
+        return int.TryParse(digits, out var number) ? number : int.MaxValue;
+    }
+
+    private static int PredictBoutNumber(Guid matchId)
+    {
+        var bytes = matchId.ToByteArray();
+        var seed = BitConverter.ToInt32(bytes, 0);
+        var positive = Math.Abs(seed);
+        return 100 + (positive % 900);
+    }
+
+    private static string BuildHref(string basePath, params (string Key, string? Value)[] parameters)
+    {
+        var pairs = new List<string>();
+        foreach (var parameter in parameters)
+        {
+            if (string.IsNullOrWhiteSpace(parameter.Value))
+            {
+                continue;
+            }
+
+            pairs.Add($"{Uri.EscapeDataString(parameter.Key)}={Uri.EscapeDataString(parameter.Value)}");
+        }
+
+        return pairs.Count == 0 ? basePath : $"{basePath}?{string.Join("&", pairs)}";
+    }
+
+    private string MatScoringBoutHref(LiveBoutRow bout)
+    {
+        return BuildHref(
+            "/mat-scoring",
+            ("eventId", ActiveEventIdText),
+            ("mat", bout.Mat),
+            ("boutNumber", bout.BoutNumber?.ToString()),
+            ("matchId", bout.Id.ToString("D")));
+    }
+
+    private static string? NormalizeFilterOption(string option) => IsAllFilter(option) ? null : option;
+    private static string? NormalizeSortOption(string sort) => string.IsNullOrWhiteSpace(sort) ? null : sort;
+    private static bool IsAllFilter(string value) => value.StartsWith("All", StringComparison.OrdinalIgnoreCase);
+
+    private static string RoleLabel(PlatformRole role) => role switch
+    {
+        PlatformRole.Athlete => "Athlete",
+        PlatformRole.ParentGuardian => "Parent/Guardian",
+        PlatformRole.Coach => "Coach",
+        PlatformRole.Fan => "Fan",
+        PlatformRole.MatWorker => "Mat Worker",
+        PlatformRole.TournamentDirector => "Tournament Director",
+        _ => "Athlete"
+    };
+
+    private static PlatformRole ParseRole(object? role)
+    {
+        var value = role?.ToString()?.Trim().ToLowerInvariant() ?? "";
+        if (value.Contains("tournament") && value.Contains("director")) return PlatformRole.TournamentDirector;
+        if (value.Contains("mat") || value.Contains("table")) return PlatformRole.MatWorker;
+        if (value.Contains("parent") || value.Contains("guardian")) return PlatformRole.ParentGuardian;
+        if (value.Contains("coach")) return PlatformRole.Coach;
+        if (value.Contains("fan")) return PlatformRole.Fan;
+        return PlatformRole.Athlete;
+    }
+
+    private static Guid? ParseAthleteId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return Guid.TryParse(value, out var athleteId) ? athleteId : null;
+    }
+
+    private string AthleteName(Guid athleteId) =>
+        AthleteRows.FirstOrDefault(a => a.Id == athleteId)?.Name ?? "Selected athlete";
+
+    private void SyncLocationState(string location)
+    {
+        var uri = Navigation.ToAbsoluteUri(location);
+        CurrentPath = uri.AbsolutePath;
+
+        var faqId = ReadQueryParam(uri, "faqId");
+        if (!string.IsNullOrWhiteSpace(faqId) && SupportArticlesById.ContainsKey(faqId))
+        {
+            ActiveSupportArticleId = faqId;
+            SupportOverlayOpen = true;
+        }
+    }
+
+    private static string? ReadQueryParam(Uri uri, string key)
+    {
+        var query = uri.Query;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        var pairs = query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var pair in pairs)
+        {
+            var parts = pair.Split('=', 2);
+            if (!string.Equals(Uri.UnescapeDataString(parts[0]), key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty;
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<SupportArticle> BuildSupportArticles()
+    {
+        return
+        [
+            new SupportArticle(
+                "faq-role-access-01",
+                "Roles + Sign-In Access Matrix",
+                "Athletes, Parents/Guardians, Coaches, Fans, Mat Workers, Tournament Directors",
+                "Every major workflow is role-driven. Users must sign in before accessing registration, profiles, tournament tools, scoring, and ops.",
+                [
+                    new SupportSection("1) Sign in and verify role", [
+                        "Sign in with your account credentials from the top bar.",
+                        "Confirm your active role badge in the app header.",
+                        "Use role preview chips to validate role-based navigation and permissions.",
+                        "If your role is incorrect, contact platform support with your account email and event ID."
+                    ]),
+                    new SupportSection("2) Role capabilities", [
+                        "Athletes: manage profile, registration, and follow bout notifications.",
+                        "Parents/Guardians: manage linked athletes, follow alerts, and personal streaming controls.",
+                        "Coaches + Mat Workers: access scoring only when an event context is active.",
+                        "Tournament Directors: create or claim events to unlock backend ops center controls."
+                    ]),
+                    new SupportSection("3) Security requirements", [
+                        "All protected pages require authentication.",
+                        "Mat scoring and ops actions require role validation plus event context.",
+                        "Stream access is restricted to parent/guardian or delegated users.",
+                        "Audit logs should capture role, event, and action metadata for every critical operation."
+                    ])
+                ]),
+            new SupportArticle(
+                "faq-registration-01",
+                "Athlete Registration Guide",
+                "Athletes, Parents/Guardians, Coaches",
+                "Complete registration flow from profile validation through payment and event confirmation.",
+                [
+                    new SupportSection("1) Prepare profile + eligibility", [
+                        "Confirm athlete profile includes legal name, age group, and weight class.",
+                        "Validate required medical and waiver fields before checkout.",
+                        "Select tournament and division on the registration page.",
+                        "Review seeding notes and bracket eligibility warnings."
+                    ]),
+                    new SupportSection("2) Checkout and confirmation", [
+                        "Complete payment to move registration from pending to paid.",
+                        "Keep confirmation ID for support and event check-in.",
+                        "Use tournament page to track status updates in real time.",
+                        "If payment fails, retry from registration page without creating duplicates."
+                    ]),
+                    new SupportSection("3) Tournament-day readiness", [
+                        "Verify mat assignment and bout queue notifications are enabled.",
+                        "Follow athlete notifications for in-the-hole and on-deck calls.",
+                        "Check bracket updates after weigh-ins and scratch processing.",
+                        "Contact ops center before first whistle if you need a correction."
+                    ])
+                ]),
+            new SupportArticle(
+                "faq-scoring-02",
+                "Mat Scoring + Access Policy",
+                "Coaches, Mat Workers, Tournament Directors",
+                "Mat scoring is isolated by event context and permissions to protect bout integrity.",
+                [
+                    new SupportSection("1) Access requirements", [
+                        "Sign in with coach, mat worker, or tournament director role.",
+                        "Select an active tournament event.",
+                        "Open mat scoring from role-driven navigation.",
+                        "If access is blocked, verify role assignment and event ownership."
+                    ]),
+                    new SupportSection("2) Score a bout", [
+                        "Open assigned mat card and confirm bout number.",
+                        "Start clock only after referee and table worker confirm athletes.",
+                        "Capture scoring events in sequence and verify period transitions.",
+                        "Submit final score to publish result to live hub and bracket view."
+                    ]),
+                    new SupportSection("3) Match integrity controls", [
+                        "Only authorized users can score within selected tournament context.",
+                        "Every scoring change is tracked with timestamp and user identity.",
+                        "Directors can issue post-match adjustments in ops center when required.",
+                        "Disputed results should be resolved before advancing bracket state."
+                    ])
+                ]),
+            new SupportArticle(
+                "faq-stream-01",
+                "Personal Streaming Guide",
+                "Parents/Guardians and Delegated Streamers",
+                "Personal streaming supports guardian controls, single-stream lock, and save-to-profile privacy options.",
+                [
+                    new SupportSection("1) Permission model", [
+                        "Parent/guardian role can stream by default.",
+                        "Delegated users can stream only after guardian grants permission.",
+                        "Only one personal stream can be active per athlete at a time.",
+                        "Attempting a second stream shows a lock message until prior stream ends."
+                    ]),
+                    new SupportSection("2) Before starting stream", [
+                        "Select athlete, video mode, quality, and audience.",
+                        "Choose whether to share with opponent.",
+                        "Use private audience mode for guardian + athlete only viewing.",
+                        "Start stream and monitor status health indicators."
+                    ]),
+                    new SupportSection("3) End-of-stream workflow", [
+                        "Stop stream when bout is complete.",
+                        "Choose save option: private, shared, or discard.",
+                        "Saving private restricts visibility to parent/guardian and athlete.",
+                        "Saved clips can be attached to athlete profile timeline."
+                    ])
+                ]),
+            new SupportArticle(
+                "faq-ops-03",
+                "Tournament Director Backend Ops Center",
+                "Tournament Directors",
+                "Directors get full tournament control only for events they created or claimed.",
+                [
+                    new SupportSection("1) Unlock ops center", [
+                        "Sign in as tournament director.",
+                        "Create a new event from ops center or claim an active event.",
+                        "Once ownership is confirmed, backend controls become visible.",
+                        "Ops center actions are scoped to that event only."
+                    ]),
+                    new SupportSection("2) Operational controls", [
+                        "Finalize brackets before tournament start.",
+                        "Start tournament to activate distributed bout numbers.",
+                        "Sort athlete standings by pins, tech falls, or bout wins.",
+                        "Adjust bout data and publish updates live."
+                    ]),
+                    new SupportSection("3) Critical actions", [
+                        "Cancel event only when paid registration count is zero.",
+                        "Print completed brackets for awards workflow.",
+                        "Route bracket building inside ops center for pre-start governance.",
+                        "Use adjustment controls to fix bracket or bout issues before finals."
+                    ])
+                ]),
+            new SupportArticle(
+                "faq-live-04",
+                "Live Tournament Hub Guide",
+                "All signed-in roles",
+                "Live hub combines mats, brackets, filters, follows, and bout state in one tournament-specific view.",
+                [
+                    new SupportSection("1) Filter and sort live data", [
+                        "Choose tournament date via MudDatePicker.",
+                        "Filter by age group and weight class.",
+                        "Sort by most pins, tech falls, bout order, on-deck, or in-the-hole.",
+                        "Refresh live page with filter query for sharable tournament context."
+                    ]),
+                    new SupportSection("2) Bouts + bracket visibility", [
+                        "Each match is treated as a bout with event-scoped numbering.",
+                        "Live mat cards link directly to scoring or bracket views.",
+                        "Bracket updates reflect scoring submissions and approved adjustments.",
+                        "Completed bouts flow to awards-ready print views."
+                    ]),
+                    new SupportSection("3) Follow notifications", [
+                        "Follow one or more wrestlers from live hub.",
+                        "Enable in-the-hole, on-deck, mat assignment, and results alerts.",
+                        "Notification preferences can vary per athlete.",
+                        "Use follow center links for rapid updates during tournament day."
+                    ])
+                ])
+        ];
+    }
+
+    private static IReadOnlyDictionary<string, SupportArticle> BuildSupportArticleLookup()
+    {
+        var lookup = new Dictionary<string, SupportArticle>(StringComparer.OrdinalIgnoreCase);
+        foreach (var article in SupportArticles)
+        {
+            lookup[article.Id] = article;
+        }
+        return lookup;
     }
 }
