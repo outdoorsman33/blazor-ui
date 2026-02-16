@@ -117,6 +117,8 @@
             {
                 @foreach (var pool in VisiblePools)
                 {
+                    var poolRows = BuildPoolRows(pool);
+                    var poolRounds = PoolRounds(pool);
                     <article class="list-item spacer-top">
                         <div class="item-head">
                             <span class="item-title">@pool.PoolName</span>
@@ -127,7 +129,7 @@
                                 <thead>
                                     <tr>
                                         <th>Athlete</th>
-                                        @foreach (var round in PoolRounds(pool))
+                                        @foreach (var round in poolRounds)
                                         {
                                             <th>RR Rnd @round</th>
                                         }
@@ -136,7 +138,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var row in BuildPoolRows(pool))
+                                    @foreach (var row in poolRows)
                                     {
                                         <tr>
                                             <td>
@@ -170,6 +172,35 @@
                                     }
                                 </tbody>
                             </table>
+                        </div>
+                        <div class="pool-mobile-board spacer-top">
+                            @foreach (var row in poolRows)
+                            {
+                                <article class="list-item pool-mobile-row">
+                                    <div class="item-head">
+                                        <span class="item-title">@row.AthleteName</span>
+                                        <span class="item-meta">@row.Wins-@row.Losses | Diff @row.Differential</span>
+                                    </div>
+                                    <div class="pool-mobile-cells spacer-top">
+                                        @foreach (var cell in row.Cells)
+                                        {
+                                            @if (cell.Match is null)
+                                            {
+                                                <span class="pool-mobile-empty">RR @cell.Round: -</span>
+                                            }
+                                            else
+                                            {
+                                                <a class="pool-mobile-cell @(cell.IsWin ? "win" : "loss") @(cell.Match.Status == MatchStatus.OnMat ? "live" : string.Empty)"
+                                                   href="@MatScoringRoute(cell.Match.MatchId)">
+                                                    <span class="item-title">RR @cell.Round | @cell.ResultLabel</span>
+                                                    <span class="helper">@cell.OpponentLabel</span>
+                                                    <span class="helper">@((cell.Match.Score ?? cell.Match.Status.ToString()))</span>
+                                                </a>
+                                            }
+                                        }
+                                    </div>
+                                </article>
+                            }
                         </div>
                     </article>
                 }
@@ -224,7 +255,7 @@
             }
             else
             {
-                <div class="bracket-tree-wrap spacer-top" @ref="BracketViewportRef">
+                <div class="bracket-tree-wrap bracket-desktop-view spacer-top" @ref="BracketViewportRef">
                     <div class="bracket-stage-canvas" style="@BracketCanvasStyle">
                         <div class="bracket-stage" style="@BracketStageStyle">
                             <svg class="bracket-links" viewBox="@BracketViewBox" preserveAspectRatio="none" aria-hidden="true">
@@ -272,6 +303,47 @@
                             }
                         </div>
                     </div>
+                </div>
+
+                <div class="bracket-mobile-view spacer-top">
+                    @foreach (var round in MobileRounds)
+                    {
+                        <article class="list-item bracket-mobile-round">
+                            <div class="item-head">
+                                <span class="item-title">Round @round.Round</span>
+                                <span class="item-meta">@round.Matches.Count matches</span>
+                            </div>
+                            <div class="bracket-mobile-cards spacer-top">
+                                @foreach (var match in round.Matches)
+                                {
+                                    <article class="bracket-mobile-card @MatchStatusClass(match.Status) @(SelectedMatchId == match.MatchId ? "selected" : string.Empty)"
+                                             @onclick="@(() => SelectMatch(match))"
+                                             @onkeydown="@((KeyboardEventArgs args) => OnNodeKeyDown(args, match))"
+                                             tabindex="0"
+                                             role="button">
+                                        <div class="item-head">
+                                            <span class="item-title">Match @match.MatchNumber</span>
+                                            <span class="item-meta">@match.Status</span>
+                                        </div>
+                                        <div class="helper">@match.Label</div>
+                                        <div class="bracket-athlete @(IsWinner(match, match.AthleteA) ? "winner" : string.Empty)">
+                                            @AthleteLabel(match.AthleteA)
+                                        </div>
+                                        <div class="bracket-athlete @(IsWinner(match, match.AthleteB) ? "winner" : string.Empty)">
+                                            @AthleteLabel(match.AthleteB)
+                                        </div>
+                                        <div class="split spacer-top">
+                                            <span class="helper">@(match.Score ?? "Pending")</span>
+                                            <span class="helper">@(match.ResultMethod ?? match.MatNumber ?? "TBD")</span>
+                                        </div>
+                                        <div class="actions">
+                                            <a class="btn ghost" href="@MatScoringRoute(match.MatchId)">Open Mat Scoring</a>
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        </article>
+                    }
                 </div>
             }
         </section>
@@ -397,6 +469,13 @@
             .ThenBy(pool => pool.WeightClass)
             .ToList()
         ?? [];
+    private List<(int Round, List<BracketVisualMatch> Matches)> MobileRounds =>
+        DivisionMatches
+            .Where(IsVisibleByFilters)
+            .GroupBy(match => match.Round)
+            .OrderBy(group => group.Key)
+            .Select(group => (Round: group.Key, Matches: group.OrderBy(match => match.MatchNumber).ToList()))
+            .ToList();
 
     private EliminationLayout ActiveLayout => BuildEliminationLayout(DivisionMatches);
     private string BracketViewBox => $"0 0 {ActiveLayout.Width:0.##} {ActiveLayout.Height:0.##}";

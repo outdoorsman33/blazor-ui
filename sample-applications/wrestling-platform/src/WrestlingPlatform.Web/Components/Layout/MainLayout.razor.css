@@ -419,3 +419,62 @@ a {
         padding: 1rem;
     }
 }
+
+@media (max-width: 720px) {
+    .topbar-row {
+        grid-template-columns: 1fr;
+    }
+
+    .global-search-shell {
+        flex-wrap: wrap;
+    }
+
+    .global-search-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .auth-panel {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.45rem;
+        width: 100%;
+    }
+
+    .mini-input,
+    .mini-input.mfa-input,
+    .mini-btn {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+    }
+
+    .main-nav a {
+        flex: 1 1 calc(50% - 0.45rem);
+        text-align: center;
+    }
+}
+
+@media (max-width: 520px) {
+    .app-shell {
+        width: calc(100% - 0.55rem);
+        margin-top: 0.45rem;
+    }
+
+    .surface {
+        margin-top: 0.7rem;
+        padding: 0.72rem;
+    }
+
+    .main-nav a {
+        flex-basis: 100%;
+    }
+
+    .workflow-strip {
+        padding: 0.42rem;
+    }
+
+    .workflow-chip {
+        font-size: 0.72rem;
+    }
+}

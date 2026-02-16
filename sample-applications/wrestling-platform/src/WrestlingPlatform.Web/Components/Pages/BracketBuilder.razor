@@ -1,0 +1,680 @@
+@page "/bracket-builder"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+
+<PageTitle>Bracket Builder - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Bracket Builder Wizard</h1>
+        <p class="page-subtitle">Create event-ready elimination or pool workflows with guided setup, release controls, and fast bracket generation.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Guided Wizard</span>
+        <span class="tag">Rank-Aware Seeding</span>
+        <span class="tag">Mobile Ready</span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+}
+
+<section class="panel bracket-builder-shell">
+    <div class="wizard-steps" role="tablist" aria-label="Bracket builder steps">
+        @foreach (var step in WizardSteps)
+        {
+            var isActive = ActiveStep == step.Number;
+            var isDone = ActiveStep > step.Number;
+            <button type="button"
+                    class="wizard-step @(isActive ? "active" : string.Empty) @(isDone ? "done" : string.Empty)"
+                    @onclick="@(() => JumpToStep(step.Number))">
+                <span class="wizard-step-index">@step.Number</span>
+                <span class="wizard-step-label">@step.Label</span>
+            </button>
+        }
+    </div>
+
+    @if (ActiveStep == 1)
+    {
+        <article class="wizard-pane">
+            <h2>1) Select Tournament</h2>
+            <p class="helper">Pick the event you want to build or rebuild brackets for.</p>
+            <div class="form-grid spacer-top">
+                <div class="field">
+                    <label>State</label>
+                    <select class="select" @bind="StateFilter">
+                        @foreach (var state in FormOptions.UsStatesWithAny)
+                        {
+                            <option value="@state.Code">@state.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Selected Event</label>
+                    <select class="select" @bind="SelectedEventIdText">
+                        <option value="">Select event...</option>
+                        @foreach (var evt in EventOptions)
+                        {
+                            <option value="@evt.EventId">@evt.EventName (@evt.State/@evt.City)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Event Id (manual)</label>
+                    <input class="input mono" @bind="SelectedEventIdText" />
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn ghost" @onclick="LoadEventsAsync" disabled="@IsBusy">Refresh Events</button>
+                <button class="btn ghost" @onclick="ApplyWorkflowEventAsync" disabled="@IsBusy">Use Workflow Event</button>
+                <button class="btn secondary" @onclick="LoadSelectedEventContextAsync" disabled="@IsBusy">Load Event Context</button>
+                <a class="btn ghost" href="@SelectedBracketsHref">Open Bracket Center</a>
+            </div>
+
+            <ul class="list spacer-top">
+                @if (EventOptions.Count == 0)
+                {
+                    <li class="list-item">No tournaments found for this filter yet.</li>
+                }
+                else
+                {
+                    @foreach (var evt in EventOptions.Take(10))
+                    {
+                        <li class="list-item wizard-event-item @(SelectedEventId == evt.EventId ? "selected" : string.Empty)">
+                            <div class="item-head">
+                                <span class="item-title">@evt.EventName</span>
+                                <span class="item-meta">@evt.State / @evt.City</span>
+                            </div>
+                            <div class="split spacer-top">
+                                <span>@evt.StartUtc.ToLocalTime().ToString("MMM dd yyyy")</span>
+                                <span>@evt.Style</span>
+                                <a class="btn ghost" href="@BracketsRoute(evt.EventId)">Open</a>
+                                <button class="btn secondary" @onclick="@(() => SelectEventAsync(evt.EventId))" disabled="@IsBusy">Select</button>
+                            </div>
+                        </li>
+                    }
+                }
+            </ul>
+        </article>
+    }
+    else if (ActiveStep == 2)
+    {
+        <article class="wizard-pane">
+            <h2>2) Division + Weight Setup</h2>
+            @if (Directory is null)
+            {
+                <p class="helper">Load an event first to inspect divisions.</p>
+            }
+            else
+            {
+                <div class="list">
+                    <div class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">@Directory.EventName</span>
+                            <span class="item-meta">@Directory.State / @Directory.City</span>
+                        </div>
+                        <div class="helper spacer-top">@Directory.Venue | @Directory.StartUtc.ToLocalTime():g</div>
+                    </div>
+                </div>
+                <div class="form-grid spacer-top">
+                    <div class="field">
+                        <label>Division</label>
+                        <select class="select" @bind="SelectedDivisionIdText" @bind:after="SyncSelectedDivisionToRequest">
+                            <option value="">Manual level/weight selection</option>
+                            @foreach (var division in Directory.Divisions.OrderBy(x => x.Level).ThenBy(x => x.WeightClass))
+                            {
+                                <option value="@division.DivisionId">@division.Name (@division.Level @division.WeightClass lbs)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Generation Level</label>
+                        <select class="select" @bind="GenerationLevel">
+                            @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                            {
+                                <option value="@level">@level</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Weight Class</label>
+                        <select class="select" @bind="GenerationWeightClass">
+                            @foreach (var weight in FormOptions.WeightClassesFor(GenerationLevel))
+                            {
+                                <option value="@weight">@weight lbs</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                @if (SelectedDivision is not null)
+                {
+                    <div class="list spacer-top">
+                        <div class="list-item">
+                            <div class="item-head">
+                                <span class="item-title">Division Snapshot</span>
+                                <span class="tag">@SelectedDivision.Style</span>
+                            </div>
+                            <div class="split spacer-top">
+                                <span>Age Group: @SelectedDivision.AgeGroup</span>
+                                <span>Registrants: @SelectedDivision.RegistrantCount</span>
+                                <span>Cap: @(SelectedDivision.RegistrantCap?.ToString() ?? "Unlimited")</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+        </article>
+    }
+    else if (ActiveStep == 3)
+    {
+        <article class="wizard-pane">
+            <h2>3) Builder Controls</h2>
+            <p class="helper">Configure how brackets are released and created (including AI-seeded behavior through controls).</p>
+            <div class="form-grid spacer-top">
+                <div class="field">
+                    <label>Tournament Format</label>
+                    <select class="select" @bind="DraftTournamentFormat">
+                        @foreach (var value in Enum.GetValues<TournamentFormat>())
+                        {
+                            <option value="@value">@value</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Bracket Release Mode</label>
+                    <select class="select" @bind="DraftReleaseMode">
+                        @foreach (var value in Enum.GetValues<BracketReleaseMode>())
+                        {
+                            <option value="@value">@value</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Release Date/Time (local)</label>
+                    <input class="input" type="text" placeholder="YYYY-MM-DDTHH:mm" @bind="DraftReleaseLocal" />
+                </div>
+                <div class="field">
+                    <label>Bracket Creation Preference</label>
+                    <select class="select" @bind="DraftCreationMode">
+                        @foreach (var value in Enum.GetValues<BracketCreationMode>())
+                        {
+                            <option value="@value">@value</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Scoring Preset</label>
+                    <select class="select" @bind="DraftScoringPreset">
+                        @foreach (var value in Enum.GetValues<ScoringPreset>())
+                        {
+                            <option value="@value">@value</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Overtime Format</label>
+                    <select class="select" @bind="DraftOvertimeFormat">
+                        @foreach (var value in Enum.GetValues<OvertimeFormat>())
+                        {
+                            <option value="@value">@value</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Max OT Periods</label>
+                    <input class="input" type="number" min="0" max="12" @bind="DraftMaxOvertimePeriods" />
+                </div>
+                <div class="field check-row">
+                    <input id="builder-strict-rule-enforcement" type="checkbox" @bind="DraftStrictRuleEnforcement" />
+                    <label for="builder-strict-rule-enforcement">Strict rule enforcement</label>
+                </div>
+                <div class="field check-row">
+                    <input id="builder-end-first-score" type="checkbox" @bind="DraftEndOnFirstOvertimeScore" />
+                    <label for="builder-end-first-score">End on first overtime score</label>
+                </div>
+                <div class="field check-row">
+                    <input id="builder-cap-enabled" type="checkbox" @bind="DraftRegistrationCapEnabled" />
+                    <label for="builder-cap-enabled">Registration cap enabled</label>
+                </div>
+                <div class="field">
+                    <label>Registration Cap</label>
+                    <input class="input" type="number" min="0" @bind="DraftRegistrationCap" disabled="@(!DraftRegistrationCapEnabled)" />
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn primary" @onclick="ApplyControlsAsync" disabled="@IsBusy">Apply Controls</button>
+                <a class="btn ghost" href="@SelectedBracketsHref">Review in Bracket Center</a>
+            </div>
+        </article>
+    }
+    else
+    {
+        <article class="wizard-pane">
+            <h2>4) Generate + Preview</h2>
+            <p class="helper">Generate bracket lanes with your selected strategy, then jump directly into live bracket operations.</p>
+            <div class="list spacer-top">
+                <div class="list-item">
+                    <div class="item-head">
+                        <span class="item-title">Generation Summary</span>
+                        <span class="tag">@DraftCreationMode</span>
+                    </div>
+                    <div class="split spacer-top">
+                        <span>Level: @GenerationLevel</span>
+                        <span>Weight: @GenerationWeightClass lbs</span>
+                        <span>Division: @(SelectedDivision?.Name ?? "Manual selection")</span>
+                        <span>Request Mode: @ResolveGenerationMode()</span>
+                    </div>
+                </div>
+                @if (LastGeneration is not null)
+                {
+                    <div class="list-item">
+                        <div class="split">
+                            <span class="item-title">Bracket Created</span>
+                            <span class="tag">Bracket @Short(LastGeneration.BracketId)</span>
+                        </div>
+                        <div class="split spacer-top">
+                            <span>Entrants: @LastGeneration.EntrantCount</span>
+                            <span>Matches: @LastGeneration.MatchCount</span>
+                            <span>Visual lanes: @(VisualBundle?.BracketMatches.Count ?? 0)</span>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="actions">
+                <button class="btn primary" @onclick="GenerateBracketAsync" disabled="@IsBusy">Generate Bracket</button>
+                <button class="btn ghost" @onclick="LoadVisualBundleAsync" disabled="@IsBusy">Refresh Visual Preview</button>
+                <a class="btn secondary" href="@SelectedBracketsHref">Open Bracket Center</a>
+                <a class="btn ghost" href="@SelectedMatScoringHref">Open First Match Scoring</a>
+            </div>
+        </article>
+    }
+
+    <div class="actions wizard-footer">
+        <button class="btn ghost" @onclick="BackStep" disabled="@(ActiveStep <= 1)">Back</button>
+        <button class="btn secondary" @onclick="NextStep" disabled="@(ActiveStep >= 4)">Next</button>
+    </div>
+</section>
+
+@code {
+    private sealed record WizardStep(int Number, string Label);
+
+    private static readonly List<WizardStep> WizardSteps =
+    [
+        new(1, "Tournament"),
+        new(2, "Division"),
+        new(3, "Controls"),
+        new(4, "Generate")
+    ];
+
+    private bool IsBusy;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+    private int ActiveStep = 1;
+
+    private string StateFilter = "OH";
+    private string SelectedEventIdText = string.Empty;
+    private List<TableWorkerEventSummary> EventOptions = [];
+    private TournamentDirectoryRow? Directory;
+    private string SelectedDivisionIdText = string.Empty;
+    private CompetitionLevel GenerationLevel = CompetitionLevel.HighSchool;
+    private decimal GenerationWeightClass = 132m;
+
+    private TournamentFormat DraftTournamentFormat = TournamentFormat.EliminationBracket;
+    private BracketReleaseMode DraftReleaseMode = BracketReleaseMode.Immediate;
+    private string DraftReleaseLocal = DateTime.Now.AddHours(3).ToString("yyyy-MM-ddTHH:mm");
+    private BracketCreationMode DraftCreationMode = BracketCreationMode.Seeded;
+    private bool DraftRegistrationCapEnabled;
+    private int? DraftRegistrationCap;
+    private ScoringPreset DraftScoringPreset = ScoringPreset.NfhsHighSchool;
+    private OvertimeFormat DraftOvertimeFormat = OvertimeFormat.FolkstyleStandard;
+    private int DraftMaxOvertimePeriods = 3;
+    private bool DraftEndOnFirstOvertimeScore;
+    private bool DraftStrictRuleEnforcement = true;
+
+    private BracketGenerationResult? LastGeneration;
+    private TournamentBracketVisualBundle? VisualBundle;
+
+    private Guid? SelectedEventId =>
+        Guid.TryParse(SelectedEventIdText, out var eventId) ? eventId : null;
+
+    private Guid? SelectedDivisionId =>
+        Guid.TryParse(SelectedDivisionIdText, out var divisionId) ? divisionId : null;
+
+    private TournamentDivisionDirectoryRow? SelectedDivision =>
+        Directory?.Divisions.FirstOrDefault(division => division.DivisionId == SelectedDivisionId);
+
+    private string SelectedBracketsHref =>
+        SelectedEventId is null ? "/brackets" : BracketsRoute(SelectedEventId.Value);
+
+    private string SelectedMatScoringHref
+    {
+        get
+        {
+            var firstMatch = VisualBundle?.BracketMatches.OrderBy(match => match.Round).ThenBy(match => match.MatchNumber).FirstOrDefault();
+            return firstMatch is null ? "/mat-scoring" : $"/mat-scoring?matchId={firstMatch.MatchId:D}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Workflow.EventId is not null)
+        {
+            SelectedEventIdText = Workflow.EventId.Value.ToString();
+        }
+
+        await LoadEventsAsync();
+
+        if (SelectedEventId is not null)
+        {
+            await LoadEventContextAsync(SelectedEventId.Value);
+        }
+    }
+
+    private async Task LoadEventsAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var events = await ApiClient.GetTableWorkerEventsAsync(StateFilter, 365);
+            if (!events.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = events.Message;
+                EventOptions = [];
+                return;
+            }
+
+            EventOptions = events.Data ?? [];
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {EventOptions.Count} tournament options.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ApplyWorkflowEventAsync()
+    {
+        if (Workflow.EventId is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "Workflow event is empty.";
+            return;
+        }
+
+        SelectedEventIdText = Workflow.EventId.Value.ToString();
+        await LoadEventContextAsync(Workflow.EventId.Value);
+    }
+
+    private async Task SelectEventAsync(Guid eventId)
+    {
+        SelectedEventIdText = eventId.ToString();
+        await LoadEventContextAsync(eventId);
+    }
+
+    private async Task LoadSelectedEventContextAsync()
+    {
+        if (SelectedEventId is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "Select a valid tournament event first.";
+            return;
+        }
+
+        await LoadEventContextAsync(SelectedEventId.Value);
+    }
+
+    private async Task LoadEventContextAsync(Guid eventId)
+    {
+        IsBusy = true;
+        try
+        {
+            Workflow.EventId = eventId;
+            var directoryResult = await ApiClient.GetTournamentDirectoryAsync(eventId);
+            if (!directoryResult.Success || directoryResult.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = directoryResult.Message;
+                Directory = null;
+                return;
+            }
+
+            Directory = directoryResult.Data;
+            if (Directory.Divisions.Count > 0)
+            {
+                var workflowDivision = Workflow.DivisionId;
+                var selected = workflowDivision is not null
+                    ? Directory.Divisions.FirstOrDefault(x => x.DivisionId == workflowDivision.Value)
+                    : null;
+
+                selected ??= Directory.Divisions
+                    .OrderByDescending(division => division.RegistrantCount)
+                    .ThenBy(division => division.Level)
+                    .ThenBy(division => division.WeightClass)
+                    .First();
+
+                SelectedDivisionIdText = selected.DivisionId.ToString();
+                SyncSelectedDivisionToRequest();
+            }
+
+            await LoadTournamentControlsAsync(eventId);
+            await LoadVisualBundleAsync();
+            ActiveStep = Math.Max(ActiveStep, 2);
+
+            StatusSuccess = true;
+            StatusMessage = $"Loaded event context for {Directory.EventName}.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task LoadTournamentControlsAsync(Guid eventId)
+    {
+        var controlsResult = await ApiClient.GetTournamentControlsAsync(eventId);
+        if (!controlsResult.Success || controlsResult.Data is null)
+        {
+            return;
+        }
+
+        var controls = controlsResult.Data;
+        DraftTournamentFormat = controls.TournamentFormat;
+        DraftReleaseMode = controls.BracketReleaseMode;
+        DraftReleaseLocal = (controls.BracketReleaseUtc ?? DateTime.UtcNow.AddHours(3)).ToLocalTime().ToString("yyyy-MM-ddTHH:mm");
+        DraftCreationMode = controls.BracketCreationMode;
+        DraftRegistrationCapEnabled = controls.RegistrationCapEnabled;
+        DraftRegistrationCap = controls.RegistrationCap;
+        DraftScoringPreset = controls.ScoringPreset;
+        DraftOvertimeFormat = controls.OvertimeFormat;
+        DraftMaxOvertimePeriods = controls.MaxOvertimePeriods;
+        DraftEndOnFirstOvertimeScore = controls.EndOnFirstOvertimeScore;
+        DraftStrictRuleEnforcement = controls.StrictScoringEnforcement;
+    }
+
+    private void SyncSelectedDivisionToRequest()
+    {
+        var division = SelectedDivision;
+        if (division is null)
+        {
+            return;
+        }
+
+        Workflow.DivisionId = division.DivisionId;
+        GenerationLevel = division.Level;
+        GenerationWeightClass = division.WeightClass;
+    }
+
+    private async Task ApplyControlsAsync()
+    {
+        if (SelectedEventId is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "Select an event before applying controls.";
+            return;
+        }
+
+        DateTime? releaseUtc = null;
+        if (DraftReleaseMode == BracketReleaseMode.Scheduled)
+        {
+            if (!DateTime.TryParse(DraftReleaseLocal, out var releaseLocal))
+            {
+                StatusSuccess = false;
+                StatusMessage = "Provide a valid scheduled release date/time.";
+                return;
+            }
+
+            releaseUtc = releaseLocal.ToUniversalTime();
+        }
+
+        if (!DraftRegistrationCapEnabled)
+        {
+            DraftRegistrationCap = null;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var request = new UpdateTournamentControlSettingsRequest(
+                DraftTournamentFormat,
+                DraftReleaseMode,
+                releaseUtc,
+                DraftCreationMode,
+                DraftRegistrationCapEnabled,
+                DraftRegistrationCap,
+                DraftScoringPreset,
+                DraftStrictRuleEnforcement,
+                DraftOvertimeFormat,
+                DraftMaxOvertimePeriods,
+                DraftEndOnFirstOvertimeScore);
+
+            var result = await ApiClient.UpdateTournamentControlsAsync(SelectedEventId.Value, request);
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            ActiveStep = Math.Max(ActiveStep, 4);
+            StatusSuccess = true;
+            StatusMessage = "Bracket builder controls saved.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task GenerateBracketAsync()
+    {
+        if (SelectedEventId is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "Select an event first.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var request = new GenerateBracketRequest(
+                GenerationLevel,
+                GenerationWeightClass,
+                ResolveGenerationMode(),
+                SelectedDivisionId);
+
+            var result = await ApiClient.GenerateBracketAsync(SelectedEventId.Value, request);
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            LastGeneration = result.Data;
+            await LoadVisualBundleAsync();
+            StatusSuccess = true;
+            StatusMessage = $"Bracket generated: {result.Data.MatchCount} matches from {result.Data.EntrantCount} entrants.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task LoadVisualBundleAsync()
+    {
+        if (SelectedEventId is null)
+        {
+            VisualBundle = null;
+            return;
+        }
+
+        var result = await ApiClient.GetBracketVisualAsync(SelectedEventId.Value);
+        if (!result.Success)
+        {
+            VisualBundle = null;
+            return;
+        }
+
+        VisualBundle = result.Data;
+    }
+
+    private BracketGenerationMode ResolveGenerationMode()
+    {
+        return DraftCreationMode switch
+        {
+            BracketCreationMode.Random => BracketGenerationMode.Random,
+            BracketCreationMode.Seeded => BracketGenerationMode.Seeded,
+            BracketCreationMode.Manual => BracketGenerationMode.Manual,
+            BracketCreationMode.AiSeeded => BracketGenerationMode.Manual,
+            _ => BracketGenerationMode.Manual
+        };
+    }
+
+    private void BackStep()
+    {
+        ActiveStep = Math.Max(1, ActiveStep - 1);
+    }
+
+    private async Task NextStep()
+    {
+        if (ActiveStep == 1 && SelectedEventId is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "Select an event first.";
+            return;
+        }
+
+        if (ActiveStep == 1 && SelectedEventId is not null && Directory?.EventId != SelectedEventId.Value)
+        {
+            await LoadEventContextAsync(SelectedEventId.Value);
+            if (Directory is null)
+            {
+                return;
+            }
+        }
+
+        if (ActiveStep == 2 && Directory is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "Load event context before moving ahead.";
+            return;
+        }
+
+        ActiveStep = Math.Min(4, ActiveStep + 1);
+    }
+
+    private void JumpToStep(int step)
+    {
+        ActiveStep = Math.Clamp(step, 1, 4);
+    }
+
+    private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
+
+    private static string Short(Guid id) => id.ToString()[..8];
+}

@@ -9,9 +9,9 @@
         <p class="page-subtitle">Searchable FAQs, step-by-step playbooks, and an in-app assistant to guide every workflow.</p>
     </div>
     <div class="tag-row">
-        <span class="tag">FAQ Search</span>
-        <span class="tag">Guided Steps</span>
-        <span class="tag">Help Assistant</span>
+        <a class="tag" href="#faq-search">FAQ Search</a>
+        <a class="tag" href="#guided-steps">Guided Steps</a>
+        <a class="tag" href="#help-assistant">Help Assistant</a>
     </div>
 </div>
 
@@ -21,7 +21,7 @@
 }
 
 <div class="panel-grid two">
-    <section class="panel">
+    <section id="faq-search" class="panel">
         <div class="item-head">
             <h2>FAQ Search</h2>
             <button class="btn ghost" @onclick="LoadFaqsAsync" disabled="@IsBusy">Refresh</button>
@@ -52,19 +52,25 @@
             {
                 @foreach (var item in Faqs)
                 {
-                    <li class="list-item">
-                        <div class="item-head">
-                            <span class="item-title">@item.Question</span>
-                            <span class="tag">@item.Category</span>
+                    <li class="list-item support-faq-item">
+                        <a class="support-faq-link" href="@FaqRoute(item.Id)">
+                            <div class="item-head">
+                                <span class="item-title">@item.Question</span>
+                                <span class="tag">@item.Category</span>
+                            </div>
+                            <div class="helper spacer-top">@item.Answer</div>
+                        </a>
+                        <div class="actions support-faq-actions">
+                            <a class="btn ghost" href="@FaqRoute(item.Id)">Open FAQ</a>
+                            <a class="btn ghost" href="@ResolveRouteForCategory(item.Category)">Open Workflow</a>
                         </div>
-                        <div class="helper spacer-top">@item.Answer</div>
                     </li>
                 }
             }
         </ul>
     </section>
 
-    <section class="panel">
+    <section id="guided-steps" class="panel">
         <div class="item-head">
             <h2>Step-by-Step Guide</h2>
             <button class="btn ghost" @onclick="LoadGuideAsync" disabled="@IsBusy">Reload</button>
@@ -91,7 +97,7 @@
     </section>
 </div>
 
-<section class="panel spacer-top">
+<section id="help-assistant" class="panel spacer-top">
     <h2>Help Assistant</h2>
     <p class="helper">Ask questions in plain language. The assistant routes you to the right workflow and FAQs.</p>
 
@@ -129,15 +135,13 @@
             {
                 <div class="list-item">
                     <div class="item-title">Suggested Actions</div>
-                    <div class="timeline spacer-top">
+                    <div class="list spacer-top">
                         @foreach (var action in ChatResponse.SuggestedActions)
                         {
-                            <div class="timeline-item">
-                                <div class="split">
-                                    <span>@action</span>
-                                    <a class="btn ghost" href="@ResolveRouteForAction(action)">Open</a>
-                                </div>
-                            </div>
+                            <a class="assistant-action-link" href="@ResolveRouteForAction(action)">
+                                <span class="assistant-action-title">@action</span>
+                                <span class="assistant-action-open">Open</span>
+                            </a>
                         }
                     </div>
                 </div>
@@ -146,10 +150,13 @@
             {
                 <div class="list-item">
                     <div class="item-title">Related FAQs</div>
-                    <div class="actions">
-                        @foreach (var faqId in ChatResponse.SuggestedFaqIds)
+                    <div class="list spacer-top">
+                        @foreach (var faq in ResolveSuggestedFaqs(ChatResponse.SuggestedFaqIds))
                         {
-                            <a class="btn ghost" href="@FaqRoute(faqId)">@faqId</a>
+                            <a class="assistant-faq-link" href="@FaqRoute(faq.Id)">
+                                <span class="assistant-faq-title">@faq.Question</span>
+                                <span class="assistant-faq-meta">@faq.Category</span>
+                            </a>
                         }
                     </div>
                 </div>
@@ -176,6 +183,7 @@
     private string? StatusMessage;
     private string FaqQuery = string.Empty;
     private List<HelpFaqItem> Faqs = [];
+    private List<HelpFaqItem> AllFaqs = [];
     private List<SupportGuideStep> GuideSteps = [];
     private string ChatMessage = string.Empty;
     private string ChatContext = string.Empty;
@@ -247,6 +255,10 @@
             }
 
             Faqs = result.Data ?? [];
+            if (string.IsNullOrWhiteSpace(FaqQuery))
+            {
+                AllFaqs = [.. Faqs];
+            }
             StatusSuccess = true;
             StatusMessage = $"Loaded {Faqs.Count} FAQs.";
         }
@@ -326,6 +338,14 @@
             }
 
             ChatResponse = result.Data;
+            if (AllFaqs.Count == 0)
+            {
+                var faqResult = await ApiClient.GetHelpFaqsAsync();
+                if (faqResult.Success)
+                {
+                    AllFaqs = faqResult.Data ?? [];
+                }
+            }
             StatusSuccess = true;
             StatusMessage = "Assistant response ready.";
         }
@@ -367,6 +387,77 @@
         StatusMessage = $"Showing FAQ: {matched.Question}";
     }
 
+    private List<HelpFaqItem> ResolveSuggestedFaqs(List<string> faqIds)
+    {
+        if (faqIds.Count == 0)
+        {
+            return [];
+        }
+
+        var merged = AllFaqs.Count > 0 ? AllFaqs : Faqs;
+        var resolved = new List<HelpFaqItem>(faqIds.Count);
+        foreach (var faqId in faqIds.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var match = merged.FirstOrDefault(x => string.Equals(x.Id, faqId, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                resolved.Add(new HelpFaqItem(faqId, "Support", faqId, "Open this FAQ entry in Support Center.", []));
+                continue;
+            }
+
+            resolved.Add(match);
+        }
+
+        return resolved;
+    }
+
+    private static string ResolveRouteForCategory(string category)
+    {
+        var normalized = category.Trim().ToLowerInvariant();
+
+        if (normalized.Contains("registration"))
+        {
+            return "/registration";
+        }
+
+        if (normalized.Contains("bracket"))
+        {
+            return "/bracket-builder";
+        }
+
+        if (normalized.Contains("mat") || normalized.Contains("score"))
+        {
+            return "/mat-scoring";
+        }
+
+        if (normalized.Contains("table"))
+        {
+            return "/table-worker";
+        }
+
+        if (normalized.Contains("stream") || normalized.Contains("live"))
+        {
+            return "/live";
+        }
+
+        if (normalized.Contains("nil") || normalized.Contains("athlete"))
+        {
+            return "/athlete";
+        }
+
+        if (normalized.Contains("coach"))
+        {
+            return "/coach";
+        }
+
+        if (normalized.Contains("search") || normalized.Contains("discover"))
+        {
+            return "/search";
+        }
+
+        return "/support";
+    }
+
     private static string ResolveRouteForAction(string action)
     {
         var normalized = action.Trim().ToLowerInvariant();
@@ -378,7 +469,7 @@
 
         if (normalized.Contains("bracket"))
         {
-            return "/brackets";
+            return "/bracket-builder";
         }
 
         if (normalized.Contains("score"))
