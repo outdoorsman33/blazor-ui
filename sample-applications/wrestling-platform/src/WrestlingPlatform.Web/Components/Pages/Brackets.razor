@@ -54,6 +54,8 @@
         <button class="btn ghost" @onclick="LoadEventsAsync" disabled="@IsBusy">Refresh Events</button>
         <button class="btn primary" @onclick="LoadVisualAsync" disabled="@IsBusy">Load Brackets</button>
         <button class="btn ghost" @onclick="UseWorkflowEvent" disabled="@IsBusy">Use Workflow Event</button>
+        <a class="btn ghost" href="@SelectedEventDetailsHref">Event Details</a>
+        <a class="btn ghost" href="@SelectedRegistrationHref">Event Registration</a>
         <a class="btn secondary" href="@SelectedBracketsHref">Open via URL</a>
     </div>
     <ul class="list spacer-top">
@@ -70,14 +72,15 @@
                         <span class="item-title">@evt.EventName</span>
                         <span class="item-meta">@evt.State / @evt.City</span>
                     </div>
-                    <div class="split spacer-top">
-                        <span>@evt.StartUtc.ToLocalTime().ToString("MMM dd yyyy")</span>
-                        <span>@evt.Style</span>
-                        <a class="btn secondary" href="@BracketsRoute(evt.EventId)">Select</a>
-                    </div>
-                </li>
+                        <div class="split spacer-top">
+                            <span>@evt.StartUtc.ToLocalTime().ToString("MMM dd yyyy")</span>
+                            <span>@evt.Style</span>
+                            <a class="btn ghost" href="@EventRoute(evt.EventId)">Event</a>
+                            <a class="btn secondary" href="@BracketsRoute(evt.EventId)">Select</a>
+                        </div>
+                    </li>
+                }
             }
-        }
     </ul>
 </section>
 
@@ -429,6 +432,10 @@
 
     private string SelectedBracketsHref =>
         Guid.TryParse(SelectedEventIdText, out var eventId) ? BracketsRoute(eventId) : "/brackets";
+    private string SelectedEventDetailsHref =>
+        Guid.TryParse(SelectedEventIdText, out var eventId) ? EventRoute(eventId) : "/tournaments";
+    private string SelectedRegistrationHref =>
+        Guid.TryParse(SelectedEventIdText, out var eventId) ? $"/events/{eventId:D}/registration" : "/registration";
 
     private List<DivisionOption> DivisionOptions => BuildDivisionOptions();
 
@@ -1086,6 +1093,7 @@
     }
 
     private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
+    private static string EventRoute(Guid eventId) => $"/events/{eventId:D}";
 
     private static string MatScoringRoute(Guid matchId) => $"/mat-scoring?matchId={matchId:D}";
 

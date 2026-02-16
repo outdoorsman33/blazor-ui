@@ -3782,13 +3782,13 @@ static List<HelpFaqItem> GetHelpFaqItems()
             "faq-registration-01",
             "Registration",
             "How do I register an athlete for a tournament?",
-            "Go to Tournament Registration, search events, select one, enter athlete ID, choose team or free-agent, then submit registration.",
+            "Open Tournaments, choose the event, then open Register for Event. Enter athlete ID, choose team or free-agent, and submit registration.",
             ["registration", "athlete", "event", "entry", "free-agent"]),
         new HelpFaqItem(
             "faq-brackets-01",
             "Brackets",
             "How are brackets released?",
-            "Event directors control release mode in Registration controls: Immediate, Scheduled, or Manual release.",
+            "Event directors set release mode in registration controls: Immediate, Scheduled, or Manual release. Once released, brackets appear in Bracket Center.",
             ["brackets", "release", "director", "manual", "scheduled"]),
         new HelpFaqItem(
             "faq-brackets-02",
@@ -3818,8 +3818,8 @@ static List<HelpFaqItem> GetHelpFaqItems()
             "faq-scoring-03",
             "Mat Scoring",
             "What happens if services go down during a live tournament?",
-            "Use Ops Checklist > Recovery Snapshot to reopen each active match with period/clock context and resume scoring from the exact mat state.",
-            ["recovery", "outage", "resume", "live event", "ops checklist"]),
+            "Open Table Worker for the event, select the impacted mat, and reopen the active match. Saved clock, period, and scoring state allow fast resume with minimal disruption.",
+            ["recovery", "outage", "resume", "live event", "table worker"]),
         new HelpFaqItem(
             "faq-nil-01",
             "NIL",
@@ -3842,20 +3842,20 @@ static List<HelpFaqItem> GetHelpFaqItems()
             "faq-ops-01",
             "Event Ops",
             "When should brackets be generated relative to weigh-ins?",
-            "Best practice: complete weigh-ins, freeze scratch list, then generate bracket numbers. Ops Checklist can enforce this gate automatically.",
-            ["weigh-ins", "scratch", "generate", "ops", "checklist"]),
+            "Complete weigh-ins first, freeze scratch list, then generate brackets and bout numbers in Bracket Builder. Do not reseed after live scoring begins unless you republish brackets.",
+            ["weigh-ins", "scratch", "generate", "event workflow", "bracket builder"]),
         new HelpFaqItem(
             "faq-ops-02",
             "Event Ops",
             "How do I publish final results after event completion?",
-            "In Ops Checklist, lock final results, export placings/team points, print award sheets, and publish final brackets.",
+            "In Bracket Center and Event Admin, verify all finals are complete, export placings and team points, then publish finals and award sheets.",
             ["final results", "placings", "team points", "awards", "publish"]),
         new HelpFaqItem(
             "faq-ops-03",
             "Event Ops",
             "What is the full live-event operations checklist?",
-            "Before event: lock divisions/weights, format, bout length, scoring rules, and registration deadline; set seeding mode; prepare print contingency. Weigh-ins: run weigh-ins, freeze scratch list, then generate brackets and bout numbers. During: run head table assignments and mat table scorer/timer coverage, and post QR links for live results. After: lock results, export placings/team points, print awards, and publish final brackets.",
-            ["ops checklist", "before event", "weigh-ins", "head table", "qr", "after event"]),
+            "Before event: lock divisions/weights, format, scoring preset, OT policy, and registration deadline; set seeding mode and print contingency sheets. Weigh-ins: run weigh-ins, freeze scratch list, then generate brackets and bout numbers. During: run head table assignments and mat table scorer/timer coverage, and post QR/live links for results. After: lock finals, export placings/team points, print awards, and publish final brackets.",
+            ["event workflow", "before event", "weigh-ins", "head table", "qr", "after event"]),
         new HelpFaqItem(
             "faq-search-01",
             "Search",
@@ -3870,17 +3870,17 @@ static List<SupportGuideStep> GetSupportGuideSteps()
     return
     [
         new SupportGuideStep(1, "Sign In", "Use demo credentials or your account to unlock role-based workflows.", "/", "Open Command Center"),
-        new SupportGuideStep(2, "Configure Event Rules", "Set age/weight divisions, bout format (RR/DE/Madison), bout length, and scoring policy.", "/ops-checklist", "Open Ops Checklist"),
+        new SupportGuideStep(2, "Configure Event Rules", "Set age/weight divisions, bout format (RR/DE/Madison), bout length, and scoring policy.", "/tournaments", "Open Events"),
         new SupportGuideStep(3, "Set Registration Window", "Publish registration and enforce hard deadline, entry caps, and free-agent options.", "/registration", "Open Registration"),
-        new SupportGuideStep(4, "Choose Seeding + Contingency", "Confirm random vs coach seeding and prep print contingency sheets before start.", "/ops-checklist", "Open Preflight"),
-        new SupportGuideStep(5, "Run Weigh-ins + Scratch", "Complete weigh-ins and freeze scratch list before bracket generation.", "/ops-checklist", "Open Weigh-ins"),
+        new SupportGuideStep(4, "Choose Seeding + Contingency", "Confirm random vs coach seeding and prep print contingency sheets before start.", "/bracket-builder", "Open Bracket Builder"),
+        new SupportGuideStep(5, "Run Weigh-ins + Scratch", "Complete weigh-ins and freeze scratch list before bracket generation.", "/registration", "Open Event Registration"),
         new SupportGuideStep(6, "Build Brackets + Bout Numbers", "Use Bracket Builder wizard and generate divisions after scratch freeze.", "/bracket-builder", "Open Bracket Builder"),
         new SupportGuideStep(7, "Run Head Table + Mat Tables", "Assign mats, manage bout numbers, and maintain scorer/timer coverage on each table.", "/table-worker", "Open Table Worker"),
         new SupportGuideStep(8, "Score Live Match", "Control period clock (start/pause/resume/seek) and apply scoring actions live.", "/mat-scoring", "Open Mat Scoring"),
-        new SupportGuideStep(9, "Publish Live Links", "Post QR links for live results, mat schedules, and bracket views for families.", "/ops-checklist", "Open Live Links"),
-        new SupportGuideStep(10, "Recover Fast", "Use Recovery Snapshot to resume live matches from saved period/clock context after outages.", "/ops-checklist", "Open Recovery"),
+        new SupportGuideStep(9, "Publish Live Links", "Post QR links for live results, mat schedules, and bracket views for families.", "/live", "Open Live Hub"),
+        new SupportGuideStep(10, "Recover Fast", "Use Table Worker and Mat Scoring restore flow to resume live matches from saved period/clock context.", "/table-worker", "Open Recovery Flow"),
         new SupportGuideStep(11, "Stream + Archive", "Provision stream sessions, publish live playback, and feed athlete video archives.", "/live", "Open Live Hub"),
-        new SupportGuideStep(12, "Publish Finals", "Lock results, export placings/team points, print awards, and publish final brackets.", "/ops-checklist", "Open Publish Checklist"),
+        new SupportGuideStep(12, "Publish Finals", "Lock results, export placings/team points, print awards, and publish final brackets.", "/brackets", "Open Bracket Center"),
         new SupportGuideStep(13, "Build Athlete Brand", "Update NIL profile, social links, highlights, and recruiting cards.", "/athlete", "Open Athlete Portal")
     ];
 }
@@ -3935,8 +3935,8 @@ static HelpChatResponse BuildHelpChatResponse(string message, string? context)
              || normalized.Contains("scratch", StringComparison.Ordinal)
              || normalized.Contains("checklist", StringComparison.Ordinal))
     {
-        reply = "Use Ops Checklist for preflight gating and outage recovery. Freeze scratch list before bracket generation, then use Recovery Snapshot to resume active mats.";
-        suggestions.Add("Open /ops-checklist");
+        reply = "Use event workflow controls and Table Worker recovery: freeze scratch list before bracket generation, then reopen impacted mats and resume from saved period/clock state.";
+        suggestions.Add("Open /table-worker");
         suggestions.Add("Open /bracket-builder");
         faqSuggestions.Add("faq-scoring-03");
         faqSuggestions.Add("faq-ops-01");

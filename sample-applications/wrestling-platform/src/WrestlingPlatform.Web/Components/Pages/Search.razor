@@ -150,7 +150,7 @@
     private static string SearchResultRoute(GlobalSearchResultItem item) => item.Type switch
     {
         GlobalSearchEntityType.Athlete => "/athlete",
-        GlobalSearchEntityType.Tournament => $"/brackets?eventId={item.Id:D}",
+        GlobalSearchEntityType.Tournament => $"/events/{item.Id:D}",
         GlobalSearchEntityType.Match => $"/mat-scoring?matchId={item.Id:D}",
         GlobalSearchEntityType.Team => "/coach",
         GlobalSearchEntityType.Coach => "/coach",

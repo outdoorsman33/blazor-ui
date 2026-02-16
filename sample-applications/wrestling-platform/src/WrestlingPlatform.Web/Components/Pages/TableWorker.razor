@@ -182,6 +182,9 @@
 </section>
 
 @code {
+    [SupplyParameterFromQuery(Name = "eventId")]
+    public Guid? EventId { get; set; }
+
     private bool IsBusy;
     private bool StatusSuccess;
     private string? StatusMessage;
@@ -204,6 +207,12 @@
         if (Workflow.EventId is not null)
         {
             SelectedEventIdText = Workflow.EventId.Value.ToString();
+        }
+
+        if (EventId is not null)
+        {
+            SelectedEventIdText = EventId.Value.ToString();
+            Workflow.EventId = EventId.Value;
         }
 
         await LoadEventsAsync();

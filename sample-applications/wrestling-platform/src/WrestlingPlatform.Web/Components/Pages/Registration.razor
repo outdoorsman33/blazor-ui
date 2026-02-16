@@ -1,4 +1,5 @@
 @page "/registration"
+@page "/events/{RouteEventId:guid}/registration"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
 
@@ -55,6 +56,7 @@
         </div>
         <div class="actions">
             <button class="btn primary" @onclick="SearchAsync" disabled="@IsBusy">Search</button>
+            <a class="btn ghost" href="@SelectedEventHref">Open Selected Event</a>
         </div>
         <div class="table-wrap spacer-top">
             <table class="table">
@@ -279,6 +281,9 @@
     [SupplyParameterFromQuery(Name = "eventId")]
     public Guid? EventId { get; set; }
 
+    [Parameter]
+    public Guid? RouteEventId { get; set; }
+
     private bool IsBusy;
     private bool StatusSuccess;
     private string? StatusMessage;
@@ -310,6 +315,7 @@
     private bool RegisterAsFreeAgent;
 
     private PaymentIntentResult? LastPaymentIntent;
+    private string SelectedEventHref => Guid.TryParse(SelectedEventIdText, out var eventId) ? $"/events/{eventId:D}" : "/tournaments";
 
     protected override async Task OnInitializedAsync()
     {
@@ -319,11 +325,12 @@
             RegistrationEventIdText = Workflow.EventId.Value.ToString();
         }
 
-        if (EventId is not null)
+        var requestedEventId = RouteEventId ?? EventId;
+        if (requestedEventId is not null)
         {
-            SelectedEventIdText = EventId.Value.ToString();
-            RegistrationEventIdText = EventId.Value.ToString();
-            Workflow.EventId = EventId.Value;
+            SelectedEventIdText = requestedEventId.Value.ToString();
+            RegistrationEventIdText = requestedEventId.Value.ToString();
+            Workflow.EventId = requestedEventId.Value;
         }
 
         if (Workflow.AthleteProfileId is not null)

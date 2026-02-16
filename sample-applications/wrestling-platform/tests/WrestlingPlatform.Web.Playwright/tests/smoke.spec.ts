@@ -14,12 +14,14 @@ test.describe("PinPoint Arena smoke", () => {
       { label: "Recruiting Hub", heading: /College Recruiting Hub/i }
     ];
 
+    const drawerToggle = page.getByRole("button", { name: /open navigation menu|menu/i }).first();
+
     for (const target of navTargets) {
       const link = page.getByRole("link", { name: new RegExp(`^${target.label}$`, "i") }).first();
       if (!(await link.isVisible().catch(() => false))) {
-        const menuToggle = page.getByRole("button", { name: /Menu/i }).first();
-        if (await menuToggle.isVisible().catch(() => false)) {
-          await menuToggle.click();
+        if (await drawerToggle.isVisible().catch(() => false)) {
+          await drawerToggle.click();
+          await expect(link).toBeVisible();
         }
       }
 

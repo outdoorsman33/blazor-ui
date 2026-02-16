@@ -67,7 +67,7 @@
                     {
                         <li class="list-item">
                             <div class="item-head">
-                                <span class="item-title">@card.Name</span>
+                                <a class="item-title" href="@EventRoute(card.EventId)">@card.Name</a>
                                 <span class="item-meta">@card.City, @card.State</span>
                             </div>
                             <div class="helper spacer-top">@card.StartUtc.ToLocalTime():MMM dd, yyyy h:mm tt - @card.EndUtc.ToLocalTime():MMM dd, yyyy h:mm tt</div>
@@ -83,6 +83,7 @@
                                 <div class="tag spacer-top">Workflow Selected</div>
                             }
                             <div class="actions">
+                                <a class="btn primary" href="@EventRoute(card.EventId)">Open Event</a>
                                 <a class="btn secondary" href="@RegistrationRoute(card.EventId)">Register</a>
                                 <a class="btn ghost" href="@BracketsRoute(card.EventId)">Brackets</a>
                                 <a class="btn ghost" href="@LiveRoute(card.EventId)">Live</a>
@@ -109,7 +110,7 @@
                     {
                         <li class="list-item">
                             <div class="item-head">
-                                <span class="item-title">@card.Name</span>
+                                <a class="item-title" href="@EventRoute(card.EventId)">@card.Name</a>
                                 <span class="item-meta">@card.City, @card.State</span>
                             </div>
                             <div class="helper spacer-top">@card.StartUtc.ToLocalTime():MMM dd, yyyy h:mm tt - @card.EndUtc.ToLocalTime():MMM dd, yyyy h:mm tt</div>
@@ -125,6 +126,7 @@
                                 <div class="tag spacer-top">Workflow Selected</div>
                             }
                             <div class="actions">
+                                <a class="btn primary" href="@EventRoute(card.EventId)">Open Event</a>
                                 <a class="btn secondary" href="@RegistrationRoute(card.EventId)">Register</a>
                                 <a class="btn ghost" href="@BracketsRoute(card.EventId)">Brackets</a>
                                 <a class="btn ghost" href="@LiveRoute(card.EventId)">Live</a>
@@ -151,7 +153,7 @@
                     {
                         <li class="list-item">
                             <div class="item-head">
-                                <span class="item-title">@card.Name</span>
+                                <a class="item-title" href="@EventRoute(card.EventId)">@card.Name</a>
                                 <span class="item-meta">@card.City, @card.State</span>
                             </div>
                             <div class="helper spacer-top">@card.StartUtc.ToLocalTime():MMM dd, yyyy h:mm tt - @card.EndUtc.ToLocalTime():MMM dd, yyyy h:mm tt</div>
@@ -167,6 +169,7 @@
                                 <div class="tag spacer-top">Workflow Selected</div>
                             }
                             <div class="actions">
+                                <a class="btn primary" href="@EventRoute(card.EventId)">Open Event</a>
                                 <a class="btn secondary" href="@RegistrationRoute(card.EventId)">Register</a>
                                 <a class="btn ghost" href="@BracketsRoute(card.EventId)">Brackets</a>
                                 <a class="btn ghost" href="@LiveRoute(card.EventId)">Live</a>
@@ -236,7 +239,9 @@
             : $"Workflow event loaded: {selected.Name} ({selected.State}/{selected.City}).";
     }
 
-    private static string RegistrationRoute(Guid eventId) => $"/registration?eventId={eventId:D}";
+    private static string EventRoute(Guid eventId) => $"/events/{eventId:D}";
+
+    private static string RegistrationRoute(Guid eventId) => $"/events/{eventId:D}/registration";
 
     private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
 

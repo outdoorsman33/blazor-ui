@@ -1,0 +1,436 @@
+@page "/events/{EventId:guid}"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+
+<PageTitle>Event Details - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Event Details</h1>
+        <p class="page-subtitle">Event-specific overview for schedule, divisions, rules, overtime policy, brackets, registration, and live viewing.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Event-Centric</span>
+        <span class="tag">Bracket + Registration</span>
+        <span class="tag">Division Filters</span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+}
+
+@if (Directory is null)
+{
+    <section class="panel">
+        <h2>Loading Event...</h2>
+        <p class="helper">Fetching event details and division directory.</p>
+    </section>
+}
+else
+{
+    <section class="panel">
+        <div class="item-head">
+            <h2>@Directory.EventName</h2>
+            <span class="tag">@Directory.State / @Directory.City</span>
+        </div>
+        <div class="split spacer-top">
+            <span class="tag">@EventLifecycleLabel</span>
+            <span class="tag">@Directory.Controls.TournamentFormat</span>
+            <span class="tag">@Directory.Controls.ScoringPreset</span>
+            <span class="tag">@Directory.Controls.OvertimeFormat</span>
+        </div>
+        <div class="actions">
+            <a class="btn primary" href="@EventRegistrationHref">Register for Event</a>
+            <a class="btn secondary" href="@BracketsHref">Open Brackets</a>
+            <a class="btn ghost" href="@LiveHref">Watch Live</a>
+            <a class="btn ghost" href="@TableWorkerHref">Table Worker</a>
+            <button class="btn ghost" @onclick="LoadAsync" disabled="@IsBusy">Reload Event</button>
+        </div>
+    </section>
+
+    <div class="metric-grid spacer-top">
+        <article class="metric-card">
+            <div class="metric-label">Venue</div>
+            <div class="metric-value">@Directory.Venue</div>
+        </article>
+        <article class="metric-card">
+            <div class="metric-label">Start Time</div>
+            <div class="metric-value">@Directory.StartUtc.ToLocalTime().ToString("MMM dd yyyy h:mm tt")</div>
+        </article>
+        <article class="metric-card">
+            <div class="metric-label">End Time</div>
+            <div class="metric-value">@Directory.EndUtc.ToLocalTime().ToString("MMM dd yyyy h:mm tt")</div>
+        </article>
+        <article class="metric-card">
+            <div class="metric-label">Entry Fee</div>
+            <div class="metric-value">$@((Directory.EntryFeeCents / 100m).ToString("0.00"))</div>
+        </article>
+        <article class="metric-card">
+            <div class="metric-label">Registration</div>
+            <div class="metric-value">@RegistrationLabel</div>
+        </article>
+        <article class="metric-card">
+            <div class="metric-label">Bracket Release</div>
+            <div class="metric-value">@BracketReleaseLabel</div>
+        </article>
+    </div>
+
+    <div class="panel-grid two spacer-top">
+        <section class="panel">
+            <h2>Rules, Periods, and Overtime</h2>
+            <ul class="list spacer-top">
+                <li class="list-item">
+                    <div class="item-head">
+                        <span class="item-title">Scoring Preset</span>
+                        <span class="tag">@Directory.Controls.ScoringPreset</span>
+                    </div>
+                    <div class="helper spacer-top">@ScoringPresetSummary(Directory.Controls.ScoringPreset)</div>
+                </li>
+                <li class="list-item">
+                    <div class="item-head">
+                        <span class="item-title">Regulation Period Plan</span>
+                        <span class="tag">@Directory.Controls.OvertimeFormat</span>
+                    </div>
+                    <div class="helper spacer-top">@PeriodPlanLabel(Directory.Controls.ScoringPreset)</div>
+                </li>
+                <li class="list-item">
+                    <div class="item-head">
+                        <span class="item-title">Overtime Configuration</span>
+                        <span class="tag">Max OT: @Directory.Controls.MaxOvertimePeriods</span>
+                    </div>
+                    <div class="helper spacer-top">@OvertimeSummary(Directory.Controls)</div>
+                </li>
+                <li class="list-item">
+                    <div class="item-head">
+                        <span class="item-title">Bracket Generation</span>
+                        <span class="tag">@Directory.Controls.BracketCreationMode</span>
+                    </div>
+                    <div class="helper spacer-top">Use Bracket Builder for random, seeded, AI-seeded, or manual operations per division.</div>
+                </li>
+            </ul>
+        </section>
+
+        <section class="panel">
+            <h2>Bracket Snapshot</h2>
+            @if (VisualBundle is null)
+            {
+                <p class="helper spacer-top">Bracket visual bundle is loading.</p>
+            }
+            else
+            {
+                <div class="metric-grid spacer-top">
+                    <article class="metric-card">
+                        <div class="metric-label">Released</div>
+                        <div class="metric-value">@(VisualBundle.BracketsReleased ? "Yes" : "No")</div>
+                    </article>
+                    <article class="metric-card">
+                        <div class="metric-label">Elimination Matches</div>
+                        <div class="metric-value">@VisualBundle.BracketMatches.Count</div>
+                    </article>
+                    <article class="metric-card">
+                        <div class="metric-label">Pool Groups</div>
+                        <div class="metric-value">@VisualBundle.Pools.Count</div>
+                    </article>
+                </div>
+                <div class="actions">
+                    <a class="btn secondary" href="@BracketsHref">Open Interactive Brackets</a>
+                    <a class="btn ghost" href="@BracketBuilderHref">Open Bracket Builder</a>
+                </div>
+            }
+        </section>
+    </div>
+
+    <section class="panel spacer-top">
+        <div class="item-head">
+            <h2>Divisions and Weights</h2>
+            <span class="tag">@FilteredDivisions.Count shown / @Directory.Divisions.Count total</span>
+        </div>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Level</label>
+                <select class="select" @bind="DivisionLevelFilter">
+                    <option value="">All</option>
+                    @foreach (var level in Enum.GetValues<CompetitionLevel>())
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Style</label>
+                <select class="select" @bind="StyleFilter">
+                    <option value="">All</option>
+                    @foreach (var style in Enum.GetValues<WrestlingStyle>())
+                    {
+                        <option value="@style">@style</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Age Group</label>
+                <input class="input" @bind="AgeGroupFilter" @bind:event="oninput" placeholder="K-6, Middle, HS..." />
+            </div>
+            <div class="field">
+                <label>Weight Min</label>
+                <input class="input" type="number" min="0" @bind="WeightMin" />
+            </div>
+            <div class="field">
+                <label>Weight Max</label>
+                <input class="input" type="number" min="0" @bind="WeightMax" />
+            </div>
+            <div class="field">
+                <label>Sort</label>
+                <select class="select" @bind="SortMode">
+                    <option value="level">Level + Weight</option>
+                    <option value="weight">Weight</option>
+                    <option value="registrants">Registrant Count</option>
+                    <option value="name">Division Name</option>
+                </select>
+            </div>
+        </div>
+        <div class="actions">
+            <a class="btn primary" href="@BracketsHref">View Brackets for Event</a>
+            <a class="btn secondary" href="@EventRegistrationHref">Open Event Registration</a>
+            <button class="btn ghost" @onclick="ResetDivisionFilters">Reset Filters</button>
+        </div>
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Division</th>
+                        <th>Level</th>
+                        <th>Age Group</th>
+                        <th>Weight</th>
+                        <th>Style</th>
+                        <th>Format</th>
+                        <th>Registrants</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (FilteredDivisions.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="7">No divisions match current filters.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var division in FilteredDivisions)
+                        {
+                            <tr>
+                                <td>@division.Name</td>
+                                <td>@division.Level</td>
+                                <td>@division.AgeGroup</td>
+                                <td>@division.WeightClass</td>
+                                <td>@division.Style</td>
+                                <td>@division.TournamentFormat</td>
+                                <td>@division.RegistrantCount</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid EventId { get; set; }
+
+    private bool IsBusy;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+    private TournamentDirectoryRow? Directory;
+    private TournamentBracketVisualBundle? VisualBundle;
+
+    private string DivisionLevelFilter = string.Empty;
+    private string StyleFilter = string.Empty;
+    private string AgeGroupFilter = string.Empty;
+    private decimal? WeightMin;
+    private decimal? WeightMax;
+    private string SortMode = "level";
+
+    private string EventRegistrationHref => $"/events/{EventId:D}/registration";
+    private string BracketsHref => $"/brackets?eventId={EventId:D}";
+    private string LiveHref => $"/live?eventId={EventId:D}";
+    private string TableWorkerHref => $"/table-worker?eventId={EventId:D}";
+    private string BracketBuilderHref => $"/bracket-builder";
+
+    private string EventLifecycleLabel
+    {
+        get
+        {
+            if (Directory is null)
+            {
+                return "Loading";
+            }
+
+            var now = DateTime.UtcNow;
+            if (Directory.StartUtc <= now && Directory.EndUtc >= now)
+            {
+                return "Live";
+            }
+
+            return Directory.StartUtc > now ? "Upcoming" : "Archived";
+        }
+    }
+
+    private string RegistrationLabel
+    {
+        get
+        {
+            if (Directory is null)
+            {
+                return "-";
+            }
+
+            if (!Directory.Controls.RegistrationCapEnabled || Directory.Controls.RegistrationCap is null)
+            {
+                return "Unlimited";
+            }
+
+            return $"{Directory.Controls.CurrentRegistrantCount}/{Directory.Controls.RegistrationCap}";
+        }
+    }
+
+    private string BracketReleaseLabel =>
+        Directory is null
+            ? "-"
+            : Directory.Controls.BracketReleaseMode == BracketReleaseMode.Scheduled && Directory.Controls.BracketReleaseUtc is not null
+                ? $"Scheduled {Directory.Controls.BracketReleaseUtc.Value.ToLocalTime():MMM dd h:mm tt}"
+                : Directory.Controls.BracketReleaseMode.ToString();
+
+    private List<TournamentDivisionDirectoryRow> FilteredDivisions
+    {
+        get
+        {
+            if (Directory is null)
+            {
+                return [];
+            }
+
+            IEnumerable<TournamentDivisionDirectoryRow> query = Directory.Divisions;
+
+            if (!string.IsNullOrWhiteSpace(DivisionLevelFilter)
+                && Enum.TryParse<CompetitionLevel>(DivisionLevelFilter, out var level))
+            {
+                query = query.Where(row => row.Level == level);
+            }
+
+            if (!string.IsNullOrWhiteSpace(StyleFilter)
+                && Enum.TryParse<WrestlingStyle>(StyleFilter, out var style))
+            {
+                query = query.Where(row => row.Style == style);
+            }
+
+            if (!string.IsNullOrWhiteSpace(AgeGroupFilter))
+            {
+                var age = AgeGroupFilter.Trim();
+                query = query.Where(row => row.AgeGroup.Contains(age, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (WeightMin is not null)
+            {
+                query = query.Where(row => row.WeightClass >= WeightMin.Value);
+            }
+
+            if (WeightMax is not null)
+            {
+                query = query.Where(row => row.WeightClass <= WeightMax.Value);
+            }
+
+            query = SortMode switch
+            {
+                "weight" => query.OrderBy(row => row.WeightClass).ThenBy(row => row.Level),
+                "registrants" => query.OrderByDescending(row => row.RegistrantCount).ThenBy(row => row.Level),
+                "name" => query.OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase),
+                _ => query.OrderBy(row => row.Level).ThenBy(row => row.WeightClass)
+            };
+
+            return query.ToList();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (EventId == Guid.Empty)
+        {
+            StatusSuccess = false;
+            StatusMessage = "A valid event id is required.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            Workflow.EventId = EventId;
+
+            var directoryTask = ApiClient.GetTournamentDirectoryAsync(EventId);
+            var visualTask = ApiClient.GetBracketVisualAsync(EventId);
+            await Task.WhenAll(directoryTask, visualTask);
+
+            var directory = await directoryTask;
+            var visual = await visualTask;
+
+            if (!directory.Success || directory.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = directory.Message;
+                Directory = null;
+                VisualBundle = null;
+                return;
+            }
+
+            Directory = directory.Data;
+            VisualBundle = visual.Success ? visual.Data : null;
+            StatusSuccess = true;
+            StatusMessage = $"Loaded event details for {Directory.EventName}.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ResetDivisionFilters()
+    {
+        DivisionLevelFilter = string.Empty;
+        StyleFilter = string.Empty;
+        AgeGroupFilter = string.Empty;
+        WeightMin = null;
+        WeightMax = null;
+        SortMode = "level";
+    }
+
+    private static string ScoringPresetSummary(ScoringPreset preset) => preset switch
+    {
+        ScoringPreset.NfhsHighSchool => "NFHS folkstyle rules with high-school point actions and OT policy support.",
+        ScoringPreset.NcaaFolkstyle => "NCAA folkstyle controls with college-level scoring defaults and stricter enforcement options.",
+        ScoringPreset.UwwFreestyle => "UWW freestyle profile with exposure, caution, and criteria-aware outcomes.",
+        ScoringPreset.UwwGrecoRoman => "UWW Greco profile with throw/exposure emphasis and criteria support.",
+        _ => "Custom scoring preset configured for this tournament."
+    };
+
+    private static string PeriodPlanLabel(ScoringPreset preset) => preset switch
+    {
+        ScoringPreset.NfhsHighSchool => "3 regulation periods (2:00 each default).",
+        ScoringPreset.NcaaFolkstyle => "3 regulation periods (3:00 + 2:00 + 2:00 default).",
+        ScoringPreset.UwwFreestyle => "2 regulation periods (3:00 each default).",
+        ScoringPreset.UwwGrecoRoman => "2 regulation periods (3:00 each default).",
+        _ => "Configured at event level in mat scoring rules."
+    };
+
+    private static string OvertimeSummary(TournamentControlSettings controls)
+    {
+        var sudden = controls.EndOnFirstOvertimeScore ? "Sudden score enabled." : "Sudden score disabled.";
+        return $"{controls.OvertimeFormat} with max {controls.MaxOvertimePeriods} overtime periods. {sudden}";
+    }
+}

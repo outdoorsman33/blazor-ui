@@ -52,6 +52,8 @@
         <div class="actions">
             <button class="btn ghost" @onclick="LoadEventsAsync" disabled="@IsBusy">Refresh Events</button>
             <button class="btn primary" @onclick="LoadStreamsAsync" disabled="@IsBusy">Load Live Streams</button>
+            <a class="btn ghost" href="@SelectedEventDetailsHref">Event Details</a>
+            <a class="btn ghost" href="@SelectedRegistrationHref">Event Registration</a>
         </div>
         <ul class="list spacer-top">
             @if (Events.Count == 0)
@@ -210,6 +212,10 @@
 
     private StreamSession? LastProvisionedStream;
     private List<StreamSession> ActiveStreams = [];
+    private string SelectedEventDetailsHref =>
+        Guid.TryParse(SelectedEventIdText, out var eventId) ? $"/events/{eventId:D}" : "/tournaments";
+    private string SelectedRegistrationHref =>
+        Guid.TryParse(SelectedEventIdText, out var eventId) ? $"/events/{eventId:D}/registration" : "/registration";
     private static readonly List<SamplePlaybackOption> SamplePlaybackOptions =
     [
         new("Sample: Big Buck Bunny", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),

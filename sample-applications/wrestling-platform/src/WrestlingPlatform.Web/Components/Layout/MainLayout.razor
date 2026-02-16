@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 @inject PlatformApiClient ApiClient
 @inject AuthSession AuthSession
 @inject WorkflowState Workflow
@@ -8,111 +9,214 @@
     <div class="ambient ambient-left"></div>
     <div class="ambient ambient-right"></div>
 
-    <header class="topbar" @onclick:stopPropagation="true">
-        <div class="topbar-row">
+    <MudBreakpointProvider OnBreakpointChanged="OnBreakpointChanged" />
+
+    <MudLayout Class="mud-layout-shell">
+        <MudAppBar Dense="true" Elevation="2" Class="topbar mud-topbar" @onclick:stopPropagation="true">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                           Color="Color.Inherit"
+                           Edge="Edge.Start"
+                           Class="drawer-toggle"
+                           aria-label="Open navigation menu"
+                           OnClick="ToggleDrawer" />
+
             <div class="brand-block">
                 <span class="brand-badge">USA Wrestling Platform</span>
-                <a href="/" class="brand-link">PinPoint Arena</a>
+                <a href="/" class="brand-link" @onclick="CloseDrawer">PinPoint Arena</a>
             </div>
 
-            <div class="global-search-shell">
-                <input class="global-search-input"
-                       value="@SearchText"
-                       @oninput="OnSearchInputAsync"
-                       @onkeydown="OnSearchKeyDown"
-                       placeholder="Search athletes, tournaments, teams, coaches, matches..."
-                       aria-label="Global Search" />
-                <a class="global-search-btn" href="@FullSearchHref" @onclick="OnSearchLinkClick">Search</a>
+            <MudHidden Breakpoint="Breakpoint.MdAndDown">
+                <div class="global-search-shell">
+                    <input class="global-search-input"
+                           value="@SearchText"
+                           @oninput="OnSearchInputAsync"
+                           @onkeydown="OnSearchKeyDown"
+                           placeholder="Search athletes, tournaments, teams, coaches, matches..."
+                           aria-label="Global Search" />
+                    <a class="global-search-btn" href="@FullSearchHref" @onclick="OnSearchLinkClick">Search</a>
 
-                @if (SearchOpen)
-                {
-                    <div class="search-dropdown">
-                        @if (!string.IsNullOrWhiteSpace(SearchStatus))
-                        {
-                            <div class="search-hint">@SearchStatus</div>
-                        }
-                        else if (SearchResults.Count == 0)
-                        {
-                            <div class="search-hint">No matches found.</div>
-                        }
-                        else
-                        {
-                            @foreach (var result in SearchResults)
+                    @if (SearchOpen)
+                    {
+                        <div class="search-dropdown">
+                            @if (!string.IsNullOrWhiteSpace(SearchStatus))
                             {
-                                <a class="search-item" href="@SearchResultHref(result)" @onclick="@(() => OnSearchResultClick(result))">
-                                    <span class="search-title">@result.Title</span>
-                                    <span class="search-meta">@result.Subtitle</span>
-                                </a>
+                                <div class="search-hint">@SearchStatus</div>
                             }
-                            <a class="search-more" href="@FullSearchHref" @onclick="OnSearchLinkClick">Open full search page</a>
+                            else if (SearchResults.Count == 0)
+                            {
+                                <div class="search-hint">No matches found.</div>
+                            }
+                            else
+                            {
+                                @foreach (var result in SearchResults)
+                                {
+                                    <a class="search-item" href="@SearchResultHref(result)" @onclick="@(() => OnSearchResultClick(result))">
+                                        <span class="search-title">@result.Title</span>
+                                        <span class="search-meta">@result.Subtitle</span>
+                                    </a>
+                                }
+                                <a class="search-more" href="@FullSearchHref" @onclick="OnSearchLinkClick">Open full search page</a>
+                            }
+                        </div>
+                    }
+                </div>
+            </MudHidden>
+
+            <MudSpacer />
+
+            <MudHidden Breakpoint="Breakpoint.MdAndDown">
+                <div class="auth-panel">
+                    @if (!AuthSession.IsAuthenticated)
+                    {
+                        <input class="mini-input" @bind="Email" placeholder="email" />
+                        <input class="mini-input" @bind="Password" type="password" placeholder="password" />
+                        <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
+                        <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
+                    }
+                    else
+                    {
+                        <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
+                        <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
+                    }
+                </div>
+            </MudHidden>
+
+            <MudHidden Breakpoint="Breakpoint.LgAndUp">
+                <div class="mobile-appbar-actions">
+                    <a class="mini-btn secondary" href="/search" @onclick="CloseDrawer">Search</a>
+                    @if (!AuthSession.IsAuthenticated)
+                    {
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
+                    }
+                    else
+                    {
+                        <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
+                    }
+                </div>
+            </MudHidden>
+        </MudAppBar>
+
+        <MudDrawer @bind-Open="DrawerOpen"
+                   Variant="@CurrentDrawerVariant"
+                   Breakpoint="Breakpoint.Md"
+                   Elevation="2"
+                   ClipMode="@CurrentDrawerClipMode"
+                   Class="main-drawer"
+                   @onclick:stopPropagation="true">
+            <div class="drawer-content">
+                <div class="drawer-brand">
+                    <span class="brand-badge">Navigation</span>
+                    <div class="item-title">PinPoint Arena</div>
+                </div>
+
+                <MudNavMenu Dense="true" Rounded="true" Class="drawer-nav">
+                    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Command Center</MudNavLink>
+                    <MudNavLink Href="/lab" Icon="@Icons.Material.Filled.Psychology">Operations Lab</MudNavLink>
+                    <MudNavLink Href="/tournaments" Icon="@Icons.Material.Filled.Event">Events</MudNavLink>
+                    <MudNavLink Href="/registration" Icon="@Icons.Material.Filled.HowToReg">Registration</MudNavLink>
+                    <MudNavLink Href="/brackets" Icon="@Icons.Material.Filled.AccountTree">Bracket Center</MudNavLink>
+                    <MudNavLink Href="/bracket-builder" Icon="@Icons.Material.Filled.AutoFixHigh">Bracket Builder</MudNavLink>
+                    <MudNavLink Href="/table-worker" Icon="@Icons.Material.Filled.TableRestaurant">Table Worker</MudNavLink>
+                    <MudNavLink Href="/mat-scoring" Icon="@Icons.Material.Filled.Timer">Mat Scoring</MudNavLink>
+                    <MudNavLink Href="/live" Icon="@Icons.Material.Filled.LiveTv">Live Hub</MudNavLink>
+                    <MudNavLink Href="/athlete" Icon="@Icons.Material.Filled.Person">Athlete Portal</MudNavLink>
+                    <MudNavLink Href="/coach" Icon="@Icons.Material.Filled.Groups">Coach Portal</MudNavLink>
+                    <MudNavLink Href="/recruiting" Icon="@Icons.Material.Filled.School">Recruiting Hub</MudNavLink>
+                    <MudNavLink Href="/admin" Icon="@Icons.Material.Filled.AdminPanelSettings">Event Admin</MudNavLink>
+                    <MudNavLink Href="/support" Icon="@Icons.Material.Filled.SupportAgent">Support</MudNavLink>
+                </MudNavMenu>
+
+                <MudDivider Class="drawer-divider" />
+
+                <section class="drawer-tools">
+                    <label class="drawer-label">Quick Search</label>
+                    <div class="global-search-shell drawer-search-shell">
+                        <input class="global-search-input"
+                               value="@SearchText"
+                               @oninput="OnSearchInputAsync"
+                               @onkeydown="OnSearchKeyDown"
+                               placeholder="athlete, event, team..."
+                               aria-label="Drawer Search" />
+                        <a class="global-search-btn drawer-search-btn" href="@FullSearchHref" @onclick="OnSearchLinkClick">Search</a>
+
+                        @if (SearchOpen)
+                        {
+                            <div class="search-dropdown">
+                                @if (!string.IsNullOrWhiteSpace(SearchStatus))
+                                {
+                                    <div class="search-hint">@SearchStatus</div>
+                                }
+                                else if (SearchResults.Count == 0)
+                                {
+                                    <div class="search-hint">No matches found.</div>
+                                }
+                                else
+                                {
+                                    @foreach (var result in SearchResults)
+                                    {
+                                        <a class="search-item" href="@SearchResultHref(result)" @onclick="@(() => OnSearchResultClick(result))">
+                                            <span class="search-title">@result.Title</span>
+                                            <span class="search-meta">@result.Subtitle</span>
+                                        </a>
+                                    }
+                                    <a class="search-more" href="@FullSearchHref" @onclick="OnSearchLinkClick">Open full search page</a>
+                                }
+                            </div>
                         }
                     </div>
-                }
+                </section>
+
+                <MudDivider Class="drawer-divider" />
+
+                <section class="drawer-auth">
+                    <label class="drawer-label">Account</label>
+                    @if (!AuthSession.IsAuthenticated)
+                    {
+                        <input class="mini-input" @bind="Email" placeholder="email" />
+                        <input class="mini-input" @bind="Password" type="password" placeholder="password" />
+                        <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
+                        <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
+                        <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
+                    }
+                    else
+                    {
+                        <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
+                        <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
+                    }
+                </section>
             </div>
+        </MudDrawer>
 
-            <button class="nav-toggle" @onclick="ToggleNavMenu" aria-expanded="@NavMenuOpen">Menu</button>
+        <MudMainContent>
+            @if (!string.IsNullOrWhiteSpace(AuthMessage))
+            {
+                <div class="auth-message @(AuthOk ? "auth-ok" : "auth-error")">@AuthMessage</div>
+            }
 
-            <div class="auth-panel">
-                @if (!AuthSession.IsAuthenticated)
-                {
-                    <input class="mini-input" @bind="Email" placeholder="email" />
-                    <input class="mini-input" @bind="Password" type="password" placeholder="password" />
-                    <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
-                    <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
-                    <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
-                    <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
-                }
-                else
-                {
-                    <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
-                    <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
-                }
-            </div>
-        </div>
+            @if (Workflow.TeamId is not null || Workflow.EventId is not null || Workflow.MatchId is not null || Workflow.AthleteProfileId is not null || Workflow.CoachProfileId is not null)
+            {
+                <div class="workflow-strip">
+                    <span class="workflow-chip">Athlete: @Short(Workflow.AthleteProfileId)</span>
+                    <span class="workflow-chip">Coach: @Short(Workflow.CoachProfileId)</span>
+                    <span class="workflow-chip">Team: @Short(Workflow.TeamId)</span>
+                    <span class="workflow-chip">Event: @Short(Workflow.EventId)</span>
+                    <span class="workflow-chip">Match: @Short(Workflow.MatchId)</span>
+                    <button class="mini-btn ghost" @onclick="ClearWorkflow">Clear Workflow</button>
+                </div>
+            }
 
-        <nav class="main-nav @(NavMenuOpen ? "is-open" : string.Empty)" aria-label="Main navigation">
-            <NavLink href="/" Match="NavLinkMatch.All">Command Center</NavLink>
-            <NavLink href="/lab">Operations Lab</NavLink>
-            <NavLink href="/tournaments">Tournaments</NavLink>
-            <NavLink href="/registration">Registration</NavLink>
-            <NavLink href="/brackets">Bracket Center</NavLink>
-            <NavLink href="/bracket-builder">Bracket Builder</NavLink>
-            <NavLink href="/table-worker">Table Worker</NavLink>
-            <NavLink href="/mat-scoring">Mat Scoring</NavLink>
-            <NavLink href="/live">Live Hub</NavLink>
-            <NavLink href="/athlete">Athlete Portal</NavLink>
-            <NavLink href="/coach">Coach Portal</NavLink>
-            <NavLink href="/recruiting">Recruiting Hub</NavLink>
-            <NavLink href="/admin">Event Admin</NavLink>
-            <NavLink href="/ops-checklist">Ops Checklist</NavLink>
-            <NavLink href="/support">Support</NavLink>
-        </nav>
-    </header>
+            <main class="surface">
+                @Body
+            </main>
 
-    @if (!string.IsNullOrWhiteSpace(AuthMessage))
-    {
-        <div class="auth-message @(AuthOk ? "auth-ok" : "auth-error")">@AuthMessage</div>
-    }
-
-    @if (Workflow.TeamId is not null || Workflow.EventId is not null || Workflow.MatchId is not null || Workflow.AthleteProfileId is not null || Workflow.CoachProfileId is not null)
-    {
-        <div class="workflow-strip">
-            <span class="workflow-chip">Athlete: @Short(Workflow.AthleteProfileId)</span>
-            <span class="workflow-chip">Coach: @Short(Workflow.CoachProfileId)</span>
-            <span class="workflow-chip">Team: @Short(Workflow.TeamId)</span>
-            <span class="workflow-chip">Event: @Short(Workflow.EventId)</span>
-            <span class="workflow-chip">Match: @Short(Workflow.MatchId)</span>
-            <button class="mini-btn ghost" @onclick="ClearWorkflow">Clear Workflow</button>
-        </div>
-    }
-
-    <main class="surface">
-        @Body
-    </main>
-
-    <footer class="app-footer">
-        <span>Built for K-6, Middle School, High School, and College competition workflows.</span>
-    </footer>
+            <footer class="app-footer">
+                <span>Built for K-6, Middle School, High School, and College competition workflows.</span>
+            </footer>
+        </MudMainContent>
+    </MudLayout>
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -132,8 +236,24 @@
     private string? SearchStatus;
     private List<GlobalSearchResultItem> SearchResults = [];
     private bool SearchOpen;
-    private bool NavMenuOpen;
+    private bool DrawerOpen;
+    private Breakpoint CurrentBreakpoint = Breakpoint.Lg;
+    private bool CurrentIsMobile => IsMobileBreakpoint(CurrentBreakpoint);
+    private DrawerVariant CurrentDrawerVariant => CurrentIsMobile ? DrawerVariant.Temporary : DrawerVariant.Responsive;
+    private DrawerClipMode CurrentDrawerClipMode => CurrentIsMobile ? DrawerClipMode.Never : DrawerClipMode.Always;
     private string FullSearchHref => $"/search?q={Uri.EscapeDataString(SearchText.Trim())}";
+
+    protected override void OnInitialized()
+    {
+        // Default to open on desktop; mobile is corrected as soon as the first breakpoint event arrives.
+        DrawerOpen = true;
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
 
     private async Task SignInAsync()
     {
@@ -148,6 +268,7 @@
         {
             Password = string.Empty;
             MfaCode = string.Empty;
+            DrawerOpen = false;
         }
 
         Busy = false;
@@ -172,9 +293,16 @@
         await ApiClient.LogoutAsync();
         AuthOk = true;
         AuthMessage = "Signed out.";
+        DrawerOpen = false;
     }
 
-    private void ToggleNavMenu() => NavMenuOpen = !NavMenuOpen;
+    private void ToggleDrawer() => DrawerOpen = !DrawerOpen;
+
+    private Task CloseDrawer()
+    {
+        DrawerOpen = false;
+        return Task.CompletedTask;
+    }
 
     private async Task OnSearchInputAsync(ChangeEventArgs args)
     {
@@ -213,7 +341,7 @@
     private Task RunFullSearchAsync()
     {
         SearchOpen = false;
-        NavMenuOpen = false;
+        DrawerOpen = false;
         Navigation.NavigateTo(FullSearchHref);
         return Task.CompletedTask;
     }
@@ -221,21 +349,21 @@
     private Task OnSearchLinkClick()
     {
         SearchOpen = false;
-        NavMenuOpen = false;
+        DrawerOpen = false;
         return Task.CompletedTask;
     }
 
     private void OnSearchResultClick(GlobalSearchResultItem result)
     {
         SearchOpen = false;
-        NavMenuOpen = false;
+        DrawerOpen = false;
         ApplyWorkflowFromSearch(result);
     }
 
     private static string SearchResultHref(GlobalSearchResultItem result) => result.Type switch
     {
         GlobalSearchEntityType.Match => $"/mat-scoring?matchId={result.Id:D}",
-        GlobalSearchEntityType.Tournament => $"/brackets?eventId={result.Id:D}",
+        GlobalSearchEntityType.Tournament => $"/events/{result.Id:D}",
         GlobalSearchEntityType.Athlete => "/athlete",
         GlobalSearchEntityType.Coach => "/coach",
         GlobalSearchEntityType.Stream => "/live",
@@ -268,6 +396,36 @@
     private void CloseSearchMenu()
     {
         SearchOpen = false;
+    }
+
+    private void OnBreakpointChanged(Breakpoint breakpoint)
+    {
+        var wasMobile = CurrentIsMobile;
+        CurrentBreakpoint = breakpoint;
+        var isMobile = CurrentIsMobile;
+
+        if (wasMobile == isMobile)
+        {
+            return;
+        }
+
+        DrawerOpen = !isMobile;
+    }
+
+    private static bool IsMobileBreakpoint(Breakpoint breakpoint)
+    {
+        return breakpoint is Breakpoint.Xs or Breakpoint.Sm;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        SearchOpen = false;
+        if (CurrentIsMobile)
+        {
+            DrawerOpen = false;
+        }
+
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void ClearWorkflow() => Workflow.Clear();

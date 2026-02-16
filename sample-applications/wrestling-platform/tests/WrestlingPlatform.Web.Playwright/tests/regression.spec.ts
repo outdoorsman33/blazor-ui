@@ -17,9 +17,9 @@ test.describe("PinPoint Arena regression", () => {
       { label: "Athlete Portal", heading: /Athlete Portal/i },
       { label: "Coach Portal", heading: /Coach Portal/i },
       { label: "Event Admin", heading: /Event Admin Portal/i },
-      { label: "Ops Checklist", heading: /Tournament Ops Checklist/i },
       { label: "Mat Scoring", heading: /Mat-Side Real-Time Scoring/i },
-      { label: "Recruiting Hub", heading: /College Recruiting Hub/i }
+      { label: "Recruiting Hub", heading: /College Recruiting Hub/i },
+      { label: "Support", heading: /Support Center/i }
     ];
 
     for (const target of targets) {
@@ -121,7 +121,7 @@ test.describe("PinPoint Arena regression", () => {
     await assistantSection.getByRole("link", { name: /open/i }).first().click();
 
     await expect(page).toHaveURL(
-      /\/(brackets|registration|support|mat-scoring|table-worker|live|athlete|coach|search|ops-checklist|bracket-builder)/i
+      /\/(events|tournaments|brackets|registration|support|mat-scoring|table-worker|live|athlete|coach|search|bracket-builder)/i
     );
   });
 });

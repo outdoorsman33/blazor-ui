@@ -246,7 +246,7 @@
             <div class="actions">
                 <button class="btn primary" @onclick="ApplyControlsAsync" disabled="@IsBusy">Apply Controls</button>
                 <a class="btn ghost" href="@SelectedBracketsHref">Review in Bracket Center</a>
-                <a class="btn ghost" href="@SelectedOpsChecklistHref">Open Ops Checklist</a>
+                <a class="btn ghost" href="@SelectedEventDetailsHref">Open Event Details</a>
             </div>
         </article>
     }
@@ -287,7 +287,7 @@
                 <button class="btn primary" @onclick="GenerateBracketAsync" disabled="@IsBusy">Generate Bracket</button>
                 <button class="btn ghost" @onclick="LoadVisualBundleAsync" disabled="@IsBusy">Refresh Visual Preview</button>
                 <a class="btn secondary" href="@SelectedBracketsHref">Open Bracket Center</a>
-                <a class="btn ghost" href="@SelectedOpsChecklistHref">Open Ops Checklist</a>
+                <a class="btn ghost" href="@SelectedEventDetailsHref">Open Event Details</a>
                 <a class="btn ghost" href="@SelectedMatScoringHref">Open First Match Scoring</a>
             </div>
         </article>
@@ -350,8 +350,8 @@
     private string SelectedBracketsHref =>
         SelectedEventId is null ? "/brackets" : BracketsRoute(SelectedEventId.Value);
 
-    private string SelectedOpsChecklistHref =>
-        SelectedEventId is null ? "/ops-checklist" : $"/ops-checklist?eventId={SelectedEventId.Value:D}";
+    private string SelectedEventDetailsHref =>
+        SelectedEventId is null ? "/tournaments" : $"/events/{SelectedEventId.Value:D}";
 
     private string SelectedMatScoringHref
     {

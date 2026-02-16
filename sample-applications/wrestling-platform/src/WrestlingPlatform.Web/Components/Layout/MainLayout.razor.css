@@ -72,10 +72,25 @@ a {
     border: 1px solid rgba(213, 208, 195, 0.85);
     box-shadow: var(--shadow);
     border-radius: var(--radius-xl);
-    padding: 0.95rem 1.05rem;
-    display: grid;
-    gap: 0.8rem;
+    padding: 0.65rem 0.9rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
     backdrop-filter: blur(6px);
+}
+
+.mud-layout-shell {
+    background: transparent;
+}
+
+.drawer-toggle {
+    border: 1px solid #d5cfbf;
+    border-radius: 999px;
+    color: #2d3a42;
+}
+
+.drawer-toggle:hover {
+    background: #f6f1e8;
 }
 
 .topbar-row {
@@ -88,6 +103,7 @@ a {
 .brand-block {
     display: grid;
     gap: 0.15rem;
+    min-width: 170px;
 }
 
 .brand-badge {
@@ -109,6 +125,7 @@ a {
     display: flex;
     gap: 0.35rem;
     align-items: center;
+    width: min(560px, 100%);
 }
 
 .global-search-input {
@@ -199,6 +216,80 @@ a {
     cursor: pointer;
     text-decoration: none;
     display: block;
+}
+
+.main-drawer {
+    width: min(86vw, 320px);
+}
+
+.drawer-content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    padding: 0.95rem;
+    background: linear-gradient(180deg, #fffefb 0%, #f8f2e7 100%);
+}
+
+.drawer-brand {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.item-title {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-size: 1.45rem;
+    color: #1f2a31;
+}
+
+.drawer-nav {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.drawer-nav ::deep .mud-nav-link {
+    border-radius: 12px;
+    margin: 0;
+    font-weight: 600;
+    color: #2d3b45;
+}
+
+.drawer-nav ::deep .mud-nav-link.active {
+    background: #e9f2fb;
+    color: #15557f;
+}
+
+.drawer-divider {
+    border-color: #d9d1bf !important;
+}
+
+.drawer-tools,
+.drawer-auth {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.drawer-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #56636d;
+    font-weight: 700;
+}
+
+.drawer-search-shell {
+    width: 100%;
+}
+
+.drawer-search-btn {
+    min-width: 86px;
+    justify-content: center;
+}
+
+.mobile-appbar-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
 }
 
 .nav-toggle {
@@ -355,64 +446,22 @@ a {
     color: #3c4a53;
 }
 
-@keyframes float {
-    0%,
-    100% {
-        transform: translateY(0);
-    }
-
-    50% {
-        transform: translateY(10px);
-    }
-}
-
-@media (max-width: 1260px) {
-    .topbar-row {
-        grid-template-columns: auto 1fr auto;
-    }
-
-    .auth-panel {
-        grid-column: 1 / -1;
-        justify-content: flex-start;
-    }
+.mud-layout-shell ::deep .mud-main-content {
+    padding-top: 0.6rem;
 }
 
 @media (max-width: 980px) {
+    .topbar {
+        border-radius: 16px;
+        padding: 0.55rem 0.65rem;
+    }
+
+    .brand-link {
+        font-size: 1.38rem;
+    }
+
     .app-shell {
         width: min(1240px, calc(100% - 1rem));
-    }
-
-    .topbar {
-        padding: 0.8rem;
-    }
-
-    .topbar-row {
-        grid-template-columns: 1fr auto;
-        gap: 0.55rem;
-    }
-
-    .brand-block {
-        grid-column: 1 / -1;
-    }
-
-    .global-search-shell {
-        grid-column: 1 / -1;
-    }
-
-    .nav-toggle {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .main-nav {
-        display: none;
-        justify-content: flex-start;
-        padding-top: 0.4rem;
-    }
-
-    .main-nav.is-open {
-        display: flex;
     }
 
     .surface {
@@ -421,22 +470,21 @@ a {
 }
 
 @media (max-width: 720px) {
-    .topbar-row {
-        grid-template-columns: 1fr;
+    .main-drawer {
+        width: min(92vw, 320px);
     }
 
-    .global-search-shell {
-        flex-wrap: wrap;
+    .brand-block {
+        min-width: 130px;
     }
 
-    .global-search-btn {
-        width: 100%;
-        justify-content: center;
+    .brand-link {
+        font-size: 1.28rem;
     }
 
     .auth-panel {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr;
         gap: 0.45rem;
         width: 100%;
     }
@@ -449,9 +497,8 @@ a {
         max-width: none;
     }
 
-    .main-nav a {
-        flex: 1 1 calc(50% - 0.45rem);
-        text-align: center;
+    .workflow-strip {
+        padding: 0.45rem 0.5rem;
     }
 }
 
@@ -462,19 +509,23 @@ a {
     }
 
     .surface {
-        margin-top: 0.7rem;
+        margin-top: 0.65rem;
         padding: 0.72rem;
-    }
-
-    .main-nav a {
-        flex-basis: 100%;
-    }
-
-    .workflow-strip {
-        padding: 0.42rem;
+        border-radius: 14px;
     }
 
     .workflow-chip {
         font-size: 0.72rem;
+    }
+}
+
+@keyframes float {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(10px);
     }
 }
