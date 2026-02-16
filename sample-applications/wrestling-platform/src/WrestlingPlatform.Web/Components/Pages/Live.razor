@@ -218,10 +218,10 @@
         Guid.TryParse(SelectedEventIdText, out var eventId) ? $"/events/{eventId:D}/registration" : "/registration";
     private static readonly List<SamplePlaybackOption> SamplePlaybackOptions =
     [
-        new("Sample: Big Buck Bunny", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
-        new("Sample: Elephants Dream", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
-        new("Sample: Sintel", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"),
-        new("Sample: Mux HLS", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
+        new("Sample: Big Buck Bunny", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"),
+        new("Sample: Elephants Dream", "https://test-streams.mux.dev/x36xhzz/url_6/193039199_mp4_h264_aac_hq_7.m3u8"),
+        new("Sample: Sintel", "https://test-streams.mux.dev/pts_shift/master.m3u8"),
+        new("Sample: Tears of Steel", "https://test-streams.mux.dev/tos_ismc/main.m3u8")
     ];
 
     protected override async Task OnInitializedAsync()

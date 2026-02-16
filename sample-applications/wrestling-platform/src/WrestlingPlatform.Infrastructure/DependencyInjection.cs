@@ -1512,7 +1512,7 @@ public static class DependencyInjection
             quarterFinal1.Id,
             "Mat 1 iPhone 14",
             StreamStatus.Live,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
             matchStartUtc.AddMinutes(2),
             endedUtc: null,
             cancellationToken);
@@ -1523,7 +1523,7 @@ public static class DependencyInjection
             quarterFinal3.Id,
             "Mat 2 PTZ Cam",
             StreamStatus.Live,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+            "https://test-streams.mux.dev/x36xhzz/url_6/193039199_mp4_h264_aac_hq_7.m3u8",
             matchStartUtc.AddMinutes(46),
             endedUtc: null,
             cancellationToken);
@@ -1534,7 +1534,7 @@ public static class DependencyInjection
             semiFinal1.Id,
             "Table Cam Backup",
             StreamStatus.Provisioned,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            "https://test-streams.mux.dev/pts_shift/master.m3u8",
             startedUtc: null,
             endedUtc: null,
             cancellationToken);
@@ -1616,7 +1616,7 @@ public static class DependencyInjection
             archiveFinal.Id,
             "Archive Cam - Mat 3",
             StreamStatus.Ended,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
             archiveStartUtc.AddMinutes(80),
             archiveStartUtc.AddMinutes(110),
             cancellationToken);
@@ -1823,7 +1823,7 @@ public static class DependencyInjection
             freestyleFinal.Id,
             "Freestyle Mat Cam",
             StreamStatus.Live,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+            "https://test-streams.mux.dev/tos_ismc/main.m3u8",
             freestyleStartUtc.AddMinutes(44),
             endedUtc: null,
             cancellationToken);
@@ -1834,7 +1834,7 @@ public static class DependencyInjection
             freestyleSemiFinalA.Id,
             "Freestyle Table Backup",
             StreamStatus.Provisioned,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            "https://test-streams.mux.dev/pts_shift/master.m3u8",
             startedUtc: null,
             endedUtc: null,
             cancellationToken);
@@ -1845,7 +1845,7 @@ public static class DependencyInjection
             grecoSemiFinalA.Id,
             "Greco Mat Cam",
             StreamStatus.Provisioned,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+            "https://test-streams.mux.dev/x36xhzz/url_6/193039199_mp4_h264_aac_hq_7.m3u8",
             startedUtc: null,
             endedUtc: null,
             cancellationToken);
@@ -1856,7 +1856,7 @@ public static class DependencyInjection
             archiveGrecoMatch.Id,
             "Archive Greco Cam",
             StreamStatus.Ended,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+            "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
             archiveGrecoStartUtc.AddMinutes(15),
             archiveGrecoStartUtc.AddMinutes(40),
             cancellationToken);
@@ -2026,7 +2026,7 @@ public static class DependencyInjection
             directorSandboxHighMatch.Id,
             "Director Sandbox Mat Cam",
             StreamStatus.Provisioned,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+            "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
             startedUtc: null,
             endedUtc: null,
             cancellationToken);
@@ -2037,7 +2037,7 @@ public static class DependencyInjection
             archiveFinal.Id,
             "Eli Family Private Stream",
             StreamStatus.Ended,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
             archiveStartUtc.AddMinutes(86),
             archiveStartUtc.AddMinutes(109),
             cancellationToken,
@@ -2054,7 +2054,7 @@ public static class DependencyInjection
             freestyleFinal.Id,
             "Sophia Parent Stream",
             StreamStatus.Live,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+            "https://test-streams.mux.dev/x36xhzz/url_6/193039199_mp4_h264_aac_hq_7.m3u8",
             freestyleStartUtc.AddMinutes(43),
             endedUtc: null,
             cancellationToken,
@@ -2071,7 +2071,7 @@ public static class DependencyInjection
             freestyleSemiFinalA.Id,
             "Eli Delegate Stream",
             StreamStatus.Provisioned,
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            "https://test-streams.mux.dev/pts_shift/master.m3u8",
             startedUtc: null,
             endedUtc: null,
             cancellationToken,
@@ -3286,13 +3286,13 @@ public static class DependencyInjection
     {
         var samples = new[]
         {
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
-            "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+            "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+            "https://test-streams.mux.dev/x36xhzz/url_6/193039199_mp4_h264_aac_hq_7.m3u8",
+            "https://test-streams.mux.dev/pts_shift/master.m3u8",
+            "https://test-streams.mux.dev/tos_ismc/main.m3u8"
         };
 
-        var index = Math.Abs(seed.GetHashCode()) % samples.Length;
+        var index = (int)(unchecked((uint)seed.GetHashCode()) % (uint)samples.Length);
         return samples[index];
     }
 

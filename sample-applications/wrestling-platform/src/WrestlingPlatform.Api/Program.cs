@@ -4197,7 +4197,7 @@ static async Task InitializeDemoRuntimeStateAsync(
                     ? 0
                     : (int)(unchecked((uint)HashCode.Combine(athleteId, supplementIndex)) % (uint)samplePlaybackUrls.Count);
                 var sourceUrl = samplePlaybackUrls.Count == 0
-                    ? "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+                    ? "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
                     : samplePlaybackUrls[sourceIndex];
 
                 var normalizedPlayback = NormalizePlaybackUrlForClient(
@@ -4490,7 +4490,8 @@ static List<string> ResolveSamplePlaybackUrls(IConfiguration configuration)
         .Select(x => x!)
         .Where(x =>
             Uri.TryCreate(x, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && !IsDeprecatedSamplePlaybackUrl(uri))
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToList();
 
@@ -4501,10 +4502,10 @@ static List<string> ResolveSamplePlaybackUrls(IConfiguration configuration)
 
     return
     [
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
-        "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+        "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+        "https://test-streams.mux.dev/x36xhzz/url_6/193039199_mp4_h264_aac_hq_7.m3u8",
+        "https://test-streams.mux.dev/pts_shift/master.m3u8",
+        "https://test-streams.mux.dev/tos_ismc/main.m3u8"
     ];
 }
 
@@ -4539,6 +4540,11 @@ static string NormalizePlaybackUrlForClient(
         return fallback;
     }
 
+    if (IsDeprecatedSamplePlaybackUrl(uri))
+    {
+        return fallback;
+    }
+
     return trimmed;
 }
 
@@ -4546,11 +4552,26 @@ static string SelectSamplePlaybackUrl(Guid eventId, Guid streamId, IReadOnlyList
 {
     if (samplePlaybackUrls.Count == 0)
     {
-        return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+        return "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
     }
 
-    var index = Math.Abs(HashCode.Combine(eventId, streamId)) % samplePlaybackUrls.Count;
+    var index = (int)(unchecked((uint)HashCode.Combine(eventId, streamId)) % (uint)samplePlaybackUrls.Count);
     return samplePlaybackUrls[index];
+}
+
+static bool IsDeprecatedSamplePlaybackUrl(Uri uri)
+{
+    if (string.IsNullOrWhiteSpace(uri.Host))
+    {
+        return false;
+    }
+
+    var host = uri.Host.Trim();
+    var path = uri.AbsolutePath ?? string.Empty;
+
+    return (host.Equals("commondatastorage.googleapis.com", StringComparison.OrdinalIgnoreCase)
+            || host.Equals("storage.googleapis.com", StringComparison.OrdinalIgnoreCase))
+           && path.Contains("/gtv-videos-bucket/sample/", StringComparison.OrdinalIgnoreCase);
 }
 
 static int ScoreSearchHit(string text, string queryLower)
