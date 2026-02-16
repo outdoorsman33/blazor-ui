@@ -40,6 +40,7 @@ var jwtRefreshTokenDays = int.TryParse(builder.Configuration["Jwt:RefreshTokenDa
 var stripeWebhookToleranceSeconds = int.TryParse(builder.Configuration["Payments:WebhookSignatureToleranceSeconds"], out var configuredToleranceSeconds)
     ? configuredToleranceSeconds
     : 300;
+var demoDataResetToken = builder.Configuration["DemoData:ResetToken"]?.Trim();
 var mfaRequiredRoles = ResolveMfaRequiredRoles(builder.Configuration);
 var samplePlaybackUrls = ResolveSamplePlaybackUrls(builder.Configuration);
 var nilOverridesByAthlete = new ConcurrentDictionary<Guid, UpdateAthleteNilProfileRequest>();
@@ -238,6 +239,29 @@ app.MapGet("/healthz", async (WrestlingPlatformDbContext dbContext, Cancellation
 
 var api = app.MapGroup("/api").RequireRateLimiting("api-default");
 app.MapHub<MatchOpsHub>("/hubs/match-ops");
+
+var demo = api.MapGroup("/demo");
+demo.MapPost("/reset-data", async (HttpRequest request, IServiceProvider services, CancellationToken cancellationToken) =>
+{
+    var token = request.Headers["X-Demo-Reset-Token"].FirstOrDefault()
+                ?? request.Query["token"].FirstOrDefault();
+
+    var allowWithoutToken = app.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(demoDataResetToken);
+    var tokenValid = !string.IsNullOrWhiteSpace(demoDataResetToken)
+                     && string.Equals(token, demoDataResetToken, StringComparison.Ordinal);
+
+    if (!allowWithoutToken && !tokenValid)
+    {
+        return Results.Unauthorized();
+    }
+
+    await services.ResetDemoDataAsync(cancellationToken);
+    return Results.Ok(new
+    {
+        Status = "demo-data-reset",
+        Utc = DateTime.UtcNow
+    });
+}).AllowAnonymous();
 
 var auth = api.MapGroup("/auth").RequireRateLimiting("auth-strict");
 

@@ -98,6 +98,16 @@ public static class DependencyInjection
         await SeedDemoDataAsync(dbContext, cancellationToken);
     }
 
+    public static async Task ResetDemoDataAsync(this IServiceProvider serviceProvider, CancellationToken cancellationToken = default)
+    {
+        using var scope = serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<WrestlingPlatformDbContext>();
+
+        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await ClearAllDataAsync(dbContext, cancellationToken);
+        await SeedDemoDataAsync(dbContext, cancellationToken);
+    }
+
     private static async Task SeedDemoDataAsync(WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken)
     {
         var athleteSeeds = new[]
@@ -1121,6 +1131,29 @@ public static class DependencyInjection
             BuildRanking("riley.mitchell@pinpointarena.local", "OK", 1682m, 1));
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task ClearAllDataAsync(WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken)
+    {
+        await dbContext.NotificationMessages.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.NotificationSubscriptions.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.FreeAgentTeamInvites.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.StreamSessions.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.Matches.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.BracketEntries.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.Brackets.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.EventRegistrations.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.TournamentDivisions.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.TournamentEvents.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.CoachAssociations.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.Teams.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.CoachProfiles.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.AthleteStatsSnapshots.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.AthleteRankings.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.AthleteProfiles.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.UserRefreshTokens.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.UserAccounts.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.PaymentWebhookEvents.ExecuteDeleteAsync(cancellationToken);
     }
 
     private static async Task<UserAccount> EnsureUserAsync(

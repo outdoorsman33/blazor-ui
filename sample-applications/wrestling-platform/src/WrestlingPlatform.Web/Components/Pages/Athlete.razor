@@ -1,7 +1,6 @@
 @page "/athlete"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
-@inject NavigationManager Navigation
 
 <PageTitle>Athlete Portal - PinPoint Arena</PageTitle>
 
@@ -199,7 +198,7 @@
                                 <td>
                                     <div class="actions">
                                         <button class="btn ghost" @onclick="() => UseEventForRegistration(tournamentEvent.Id)">Use</button>
-                                        <button class="btn secondary" @onclick="() => OpenEventBrackets(tournamentEvent.Id)">Brackets</button>
+                                        <a class="btn secondary" href="@BracketsRoute(tournamentEvent.Id)">Brackets</a>
                                     </div>
                                 </td>
                             </tr>
@@ -956,12 +955,6 @@
         RegistrationMessage = $"Selected event {eventId.ToString()[..8]} for registration.";
     }
 
-    private void OpenEventBrackets(Guid eventId)
-    {
-        Workflow.EventId = eventId;
-        Navigation.NavigateTo("/brackets");
-    }
-
     private async Task RegisterForEventAsync()
     {
         IsBusy = true;
@@ -1300,6 +1293,8 @@
         NilPolicy = result.Data;
         IsBusy = false;
     }
+
+    private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
 }
 
 

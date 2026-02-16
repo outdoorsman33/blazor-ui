@@ -1,7 +1,6 @@
 @page "/table-worker"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
-@inject NavigationManager Navigation
 
 <PageTitle>Table Worker - PinPoint Arena</PageTitle>
 
@@ -171,7 +170,7 @@
                             <td>
                                 <div class="actions">
                                     <button class="btn ghost" @onclick="() => SetInTheHoleAsync(row.MatchId)" disabled="@IsBusy">In-the-hole</button>
-                                    <button class="btn secondary" @onclick="() => StartScoring(row.MatchId)">Score</button>
+                                    <a class="btn secondary" href="@MatScoringRoute(row.MatchId)" @onclick="@(() => SetWorkflowMatch(row.MatchId))">Score</a>
                                 </div>
                             </td>
                         </tr>
@@ -333,11 +332,12 @@
         }
     }
 
-    private void StartScoring(Guid matchId)
+    private void SetWorkflowMatch(Guid matchId)
     {
         Workflow.MatchId = matchId;
-        Navigation.NavigateTo($"/mat-scoring?matchId={matchId:D}");
     }
 
     private static string Short(Guid id) => id.ToString("N")[..8];
+
+    private static string MatScoringRoute(Guid matchId) => $"/mat-scoring?matchId={matchId:D}";
 }

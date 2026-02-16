@@ -22,7 +22,7 @@
                        @onkeydown="OnSearchKeyDown"
                        placeholder="Search athletes, tournaments, teams, coaches, matches..."
                        aria-label="Global Search" />
-                <button class="global-search-btn" @onclick="RunFullSearchAsync">Search</button>
+                <a class="global-search-btn" href="@FullSearchHref" @onclick="OnSearchLinkClick">Search</a>
 
                 @if (SearchOpen)
                 {
@@ -39,12 +39,12 @@
                         {
                             @foreach (var result in SearchResults)
                             {
-                                <button class="search-item" @onclick="() => OpenSearchResult(result)">
+                                <a class="search-item" href="@SearchResultHref(result)" @onclick="@(() => OnSearchResultClick(result))">
                                     <span class="search-title">@result.Title</span>
                                     <span class="search-meta">@result.Subtitle</span>
-                                </button>
+                                </a>
                             }
-                            <button class="search-more" @onclick="RunFullSearchAsync">Open full search page</button>
+                            <a class="search-more" href="@FullSearchHref" @onclick="OnSearchLinkClick">Open full search page</a>
                         }
                     </div>
                 }
@@ -131,6 +131,7 @@
     private List<GlobalSearchResultItem> SearchResults = [];
     private bool SearchOpen;
     private bool NavMenuOpen;
+    private string FullSearchHref => $"/search?q={Uri.EscapeDataString(SearchText.Trim())}";
 
     private async Task SignInAsync()
     {
@@ -209,32 +210,36 @@
 
     private Task RunFullSearchAsync()
     {
-        var query = Uri.EscapeDataString(SearchText.Trim());
         SearchOpen = false;
         NavMenuOpen = false;
-        Navigation.NavigateTo($"/search?q={query}");
+        Navigation.NavigateTo(FullSearchHref);
         return Task.CompletedTask;
     }
 
-    private void OpenSearchResult(GlobalSearchResultItem result)
+    private Task OnSearchLinkClick()
+    {
+        SearchOpen = false;
+        NavMenuOpen = false;
+        return Task.CompletedTask;
+    }
+
+    private void OnSearchResultClick(GlobalSearchResultItem result)
     {
         SearchOpen = false;
         NavMenuOpen = false;
         ApplyWorkflowFromSearch(result);
-
-        var destination = result.Type switch
-        {
-            GlobalSearchEntityType.Match => $"/mat-scoring?matchId={result.Id}",
-            GlobalSearchEntityType.Tournament => "/brackets",
-            GlobalSearchEntityType.Athlete => "/athlete",
-            GlobalSearchEntityType.Coach => "/coach",
-            GlobalSearchEntityType.Stream => "/live",
-            GlobalSearchEntityType.Team => "/coach",
-            _ => "/search"
-        };
-
-        Navigation.NavigateTo(destination);
     }
+
+    private static string SearchResultHref(GlobalSearchResultItem result) => result.Type switch
+    {
+        GlobalSearchEntityType.Match => $"/mat-scoring?matchId={result.Id:D}",
+        GlobalSearchEntityType.Tournament => $"/brackets?eventId={result.Id:D}",
+        GlobalSearchEntityType.Athlete => "/athlete",
+        GlobalSearchEntityType.Coach => "/coach",
+        GlobalSearchEntityType.Stream => "/live",
+        GlobalSearchEntityType.Team => "/coach",
+        _ => "/search"
+    };
 
     private void ApplyWorkflowFromSearch(GlobalSearchResultItem result)
     {

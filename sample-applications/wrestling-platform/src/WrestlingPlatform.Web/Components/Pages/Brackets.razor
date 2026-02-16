@@ -1,6 +1,8 @@
 @page "/brackets"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <PageTitle>Bracket Center - PinPoint Arena</PageTitle>
 
@@ -222,7 +224,7 @@
             }
             else
             {
-                <div class="bracket-tree-wrap spacer-top">
+                <div class="bracket-tree-wrap spacer-top" @ref="BracketViewportRef">
                     <div class="bracket-stage-canvas" style="@BracketCanvasStyle">
                         <div class="bracket-stage" style="@BracketStageStyle">
                             <svg class="bracket-links" viewBox="@BracketViewBox" preserveAspectRatio="none" aria-hidden="true">
@@ -338,6 +340,9 @@
     private int ZoomPercent = 100;
     private bool HideSmallPools = true;
     private const int MinimumPoolAthletes = 3;
+    private ElementReference BracketViewportRef;
+    private DotNetObjectReference<Brackets>? _viewportDotNetRef;
+    private bool _viewportBound;
 
     private static readonly string[] StatusOptions =
     [
@@ -416,6 +421,28 @@
         if (!string.IsNullOrWhiteSpace(SelectedEventIdText))
         {
             await LoadVisualAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Bundle is null || Bundle.TournamentFormat == TournamentFormat.MadisonPool || ActiveLayout.Nodes.Count == 0)
+        {
+            if (_viewportBound)
+            {
+                await JS.InvokeVoidAsync("PinPointBracketViewport.dispose", BracketViewportRef);
+                _viewportBound = false;
+            }
+
+            return;
+        }
+
+        _viewportDotNetRef ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("PinPointBracketViewport.init", BracketViewportRef, _viewportDotNetRef);
+        if (!_viewportBound)
+        {
+            await JS.InvokeVoidAsync("PinPointBracketViewport.center", BracketViewportRef);
+            _viewportBound = true;
         }
     }
 
@@ -627,6 +654,13 @@
         {
             SelectMatch(match);
         }
+    }
+
+    [JSInvokable]
+    public async Task OnViewportWheelZoom(int delta)
+    {
+        ChangeZoom(delta);
+        await InvokeAsync(StateHasChanged);
     }
 
     private void EnsureDivisionSelection()
@@ -1027,5 +1061,15 @@
 
         public static EliminationLayout Empty { get; } =
             new([], [], [], 480d, 420d);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_viewportBound)
+        {
+            await JS.InvokeVoidAsync("PinPointBracketViewport.dispose", BracketViewportRef);
+        }
+
+        _viewportDotNetRef?.Dispose();
     }
 }

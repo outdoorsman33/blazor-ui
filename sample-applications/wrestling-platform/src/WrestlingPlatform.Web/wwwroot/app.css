@@ -435,6 +435,12 @@ hr.soft {
     border-radius: 14px;
     background: linear-gradient(180deg, #f6f7fb 0%, #f2f4f8 100%);
     padding: 0.65rem;
+    cursor: grab;
+}
+
+.bracket-tree-wrap.is-panning {
+    cursor: grabbing;
+    user-select: none;
 }
 
 .bracket-stage {
