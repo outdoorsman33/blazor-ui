@@ -83,6 +83,12 @@ a {
     min-height: 74px;
     display: flex;
     align-items: center;
+    color: #1f2529;
+}
+
+::deep .topbar.mud-appbar {
+    background: rgba(255, 255, 255, 0.92) !important;
+    color: #1f2529 !important;
 }
 
 ::deep .mud-layout-shell {
@@ -93,10 +99,16 @@ a {
     border: 1px solid #d5cfbf;
     border-radius: 999px;
     color: #2d3a42;
+    background: #fff;
+    min-width: 42px;
 }
 
 ::deep .drawer-toggle:hover {
     background: #f6f1e8;
+}
+
+::deep .drawer-toggle .mud-icon-root {
+    color: #2d3a42 !important;
 }
 
 .topbar-row {
@@ -226,6 +238,7 @@ a {
 
 ::deep .main-drawer {
     width: min(86vw, 320px);
+    z-index: 1400;
 }
 
 .drawer-content {
@@ -235,6 +248,7 @@ a {
     gap: 0.9rem;
     padding: 0.95rem;
     background: linear-gradient(180deg, #fffefb 0%, #f8f2e7 100%);
+    overflow-y: auto;
 }
 
 .drawer-brand {
@@ -261,6 +275,39 @@ a {
 }
 
 ::deep .drawer-nav .mud-nav-link.active {
+    background: #e9f2fb;
+    color: #15557f;
+}
+
+.drawer-mini-rail {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+
+.drawer-mini-nav {
+    width: 100%;
+    display: grid;
+    gap: 0.35rem;
+}
+
+::deep .drawer-mini-nav .mud-nav-link {
+    margin: 0 auto;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    border-radius: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #33434d;
+}
+
+::deep .drawer-mini-nav .mud-nav-link .mud-nav-link-text {
+    display: none;
+}
+
+::deep .drawer-mini-nav .mud-nav-link.active {
     background: #e9f2fb;
     color: #15557f;
 }

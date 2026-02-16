@@ -103,90 +103,116 @@
                    Breakpoint="Breakpoint.Md"
                    Elevation="2"
                    ClipMode="@CurrentDrawerClipMode"
+                   MiniWidth="78px"
+                   OverlayAutoClose="true"
                    Class="main-drawer"
                    @onclick:stopPropagation="true">
             <div class="drawer-content">
-                <div class="drawer-brand">
-                    <span class="brand-badge">Navigation</span>
-                    <div class="item-title">PinPoint Arena</div>
-                </div>
-
-                <MudNavMenu Dense="true" Rounded="true" Class="drawer-nav">
-                    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Command Center</MudNavLink>
-                    <MudNavLink Href="/lab" Icon="@Icons.Material.Filled.Psychology">Operations Lab</MudNavLink>
-                    <MudNavLink Href="/tournaments" Icon="@Icons.Material.Filled.Event">Events</MudNavLink>
-                    <MudNavLink Href="/registration" Icon="@Icons.Material.Filled.HowToReg">Registration</MudNavLink>
-                    <MudNavLink Href="/brackets" Icon="@Icons.Material.Filled.AccountTree">Bracket Center</MudNavLink>
-                    <MudNavLink Href="/bracket-builder" Icon="@Icons.Material.Filled.AutoFixHigh">Bracket Builder</MudNavLink>
-                    <MudNavLink Href="/table-worker" Icon="@Icons.Material.Filled.TableRestaurant">Table Worker</MudNavLink>
-                    <MudNavLink Href="/mat-scoring" Icon="@Icons.Material.Filled.Timer">Mat Scoring</MudNavLink>
-                    <MudNavLink Href="/live" Icon="@Icons.Material.Filled.LiveTv">Live Hub</MudNavLink>
-                    <MudNavLink Href="/athlete" Icon="@Icons.Material.Filled.Person">Athlete Portal</MudNavLink>
-                    <MudNavLink Href="/coach" Icon="@Icons.Material.Filled.Groups">Coach Portal</MudNavLink>
-                    <MudNavLink Href="/recruiting" Icon="@Icons.Material.Filled.School">Recruiting Hub</MudNavLink>
-                    <MudNavLink Href="/admin" Icon="@Icons.Material.Filled.AdminPanelSettings">Event Admin</MudNavLink>
-                    <MudNavLink Href="/support" Icon="@Icons.Material.Filled.SupportAgent">Support</MudNavLink>
-                </MudNavMenu>
-
-                <MudDivider Class="drawer-divider" />
-
-                <section class="drawer-tools">
-                    <label class="drawer-label">Quick Search</label>
-                    <div class="global-search-shell drawer-search-shell">
-                        <input class="global-search-input"
-                               value="@SearchText"
-                               @oninput="OnSearchInputAsync"
-                               @onkeydown="OnSearchKeyDown"
-                               placeholder="athlete, event, team..."
-                               aria-label="Drawer Search" />
-                        <a class="global-search-btn drawer-search-btn" href="@FullSearchHref" @onclick="OnSearchLinkClick">Search</a>
-
-                        @if (SearchOpen)
-                        {
-                            <div class="search-dropdown">
-                                @if (!string.IsNullOrWhiteSpace(SearchStatus))
-                                {
-                                    <div class="search-hint">@SearchStatus</div>
-                                }
-                                else if (SearchResults.Count == 0)
-                                {
-                                    <div class="search-hint">No matches found.</div>
-                                }
-                                else
-                                {
-                                    @foreach (var result in SearchResults)
-                                    {
-                                        <a class="search-item" href="@SearchResultHref(result)" @onclick="@(() => OnSearchResultClick(result))">
-                                            <span class="search-title">@result.Title</span>
-                                            <span class="search-meta">@result.Subtitle</span>
-                                        </a>
-                                    }
-                                    <a class="search-more" href="@FullSearchHref" @onclick="OnSearchLinkClick">Open full search page</a>
-                                }
-                            </div>
-                        }
+                @if (ShowExpandedDrawerContent)
+                {
+                    <div class="drawer-brand">
+                        <span class="brand-badge">Navigation</span>
+                        <div class="item-title">PinPoint Arena</div>
                     </div>
-                </section>
 
-                <MudDivider Class="drawer-divider" />
+                    <MudNavMenu Dense="true" Rounded="true" Class="drawer-nav">
+                        <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Command Center</MudNavLink>
+                        <MudNavLink Href="/lab" Icon="@Icons.Material.Filled.Psychology">Operations Lab</MudNavLink>
+                        <MudNavLink Href="/tournaments" Icon="@Icons.Material.Filled.Event">Events</MudNavLink>
+                        <MudNavLink Href="/registration" Icon="@Icons.Material.Filled.HowToReg">Registration</MudNavLink>
+                        <MudNavLink Href="/brackets" Icon="@Icons.Material.Filled.AccountTree">Bracket Center</MudNavLink>
+                        <MudNavLink Href="/bracket-builder" Icon="@Icons.Material.Filled.AutoFixHigh">Bracket Builder</MudNavLink>
+                        <MudNavLink Href="/table-worker" Icon="@Icons.Material.Filled.TableRestaurant">Table Worker</MudNavLink>
+                        <MudNavLink Href="/mat-scoring" Icon="@Icons.Material.Filled.Timer">Mat Scoring</MudNavLink>
+                        <MudNavLink Href="/live" Icon="@Icons.Material.Filled.LiveTv">Live Hub</MudNavLink>
+                        <MudNavLink Href="/athlete" Icon="@Icons.Material.Filled.Person">Athlete Portal</MudNavLink>
+                        <MudNavLink Href="/coach" Icon="@Icons.Material.Filled.Groups">Coach Portal</MudNavLink>
+                        <MudNavLink Href="/recruiting" Icon="@Icons.Material.Filled.School">Recruiting Hub</MudNavLink>
+                        <MudNavLink Href="/admin" Icon="@Icons.Material.Filled.AdminPanelSettings">Event Admin</MudNavLink>
+                        <MudNavLink Href="/support" Icon="@Icons.Material.Filled.SupportAgent">Support</MudNavLink>
+                    </MudNavMenu>
 
-                <section class="drawer-auth">
-                    <label class="drawer-label">Account</label>
-                    @if (!AuthSession.IsAuthenticated)
-                    {
-                        <input class="mini-input" @bind="Email" placeholder="email" />
-                        <input class="mini-input" @bind="Password" type="password" placeholder="password" />
-                        <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
-                        <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
-                        <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
-                        <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
-                    }
-                    else
-                    {
-                        <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
-                        <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
-                    }
-                </section>
+                    <MudDivider Class="drawer-divider" />
+
+                    <section class="drawer-tools">
+                        <label class="drawer-label">Quick Search</label>
+                        <div class="global-search-shell drawer-search-shell">
+                            <input class="global-search-input"
+                                   value="@SearchText"
+                                   @oninput="OnSearchInputAsync"
+                                   @onkeydown="OnSearchKeyDown"
+                                   placeholder="athlete, event, team..."
+                                   aria-label="Drawer Search" />
+                            <a class="global-search-btn drawer-search-btn" href="@FullSearchHref" @onclick="OnSearchLinkClick">Search</a>
+
+                            @if (SearchOpen)
+                            {
+                                <div class="search-dropdown">
+                                    @if (!string.IsNullOrWhiteSpace(SearchStatus))
+                                    {
+                                        <div class="search-hint">@SearchStatus</div>
+                                    }
+                                    else if (SearchResults.Count == 0)
+                                    {
+                                        <div class="search-hint">No matches found.</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var result in SearchResults)
+                                        {
+                                            <a class="search-item" href="@SearchResultHref(result)" @onclick="@(() => OnSearchResultClick(result))">
+                                                <span class="search-title">@result.Title</span>
+                                                <span class="search-meta">@result.Subtitle</span>
+                                            </a>
+                                        }
+                                        <a class="search-more" href="@FullSearchHref" @onclick="OnSearchLinkClick">Open full search page</a>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </section>
+
+                    <MudDivider Class="drawer-divider" />
+
+                    <section class="drawer-auth">
+                        <label class="drawer-label">Account</label>
+                        @if (!AuthSession.IsAuthenticated)
+                        {
+                            <input class="mini-input" @bind="Email" placeholder="email" />
+                            <input class="mini-input" @bind="Password" type="password" placeholder="password" />
+                            <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
+                            <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
+                            <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
+                            <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
+                        }
+                        else
+                        {
+                            <div class="auth-chip">@AuthSession.Role | @AuthSession.Email</div>
+                            <button class="mini-btn secondary" @onclick="SignOutAsync">Sign Out</button>
+                        }
+                    </section>
+                }
+                else
+                {
+                    <div class="drawer-mini-rail">
+                        <MudNavMenu Dense="true" Class="drawer-mini-nav">
+                            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" />
+                            <MudNavLink Href="/lab" Icon="@Icons.Material.Filled.Psychology" />
+                            <MudNavLink Href="/tournaments" Icon="@Icons.Material.Filled.Event" />
+                            <MudNavLink Href="/registration" Icon="@Icons.Material.Filled.HowToReg" />
+                            <MudNavLink Href="/brackets" Icon="@Icons.Material.Filled.AccountTree" />
+                            <MudNavLink Href="/bracket-builder" Icon="@Icons.Material.Filled.AutoFixHigh" />
+                            <MudNavLink Href="/table-worker" Icon="@Icons.Material.Filled.TableRestaurant" />
+                            <MudNavLink Href="/mat-scoring" Icon="@Icons.Material.Filled.Timer" />
+                            <MudNavLink Href="/live" Icon="@Icons.Material.Filled.LiveTv" />
+                            <MudNavLink Href="/athlete" Icon="@Icons.Material.Filled.Person" />
+                            <MudNavLink Href="/coach" Icon="@Icons.Material.Filled.Groups" />
+                            <MudNavLink Href="/recruiting" Icon="@Icons.Material.Filled.School" />
+                            <MudNavLink Href="/admin" Icon="@Icons.Material.Filled.AdminPanelSettings" />
+                            <MudNavLink Href="/support" Icon="@Icons.Material.Filled.SupportAgent" />
+                        </MudNavMenu>
+                    </div>
+                }
             </div>
         </MudDrawer>
 
@@ -239,16 +265,20 @@
     private bool DrawerOpen;
     private Breakpoint CurrentBreakpoint = Breakpoint.Lg;
     private bool CurrentIsMobile => IsMobileBreakpoint(CurrentBreakpoint);
-    private DrawerVariant CurrentDrawerVariant => CurrentIsMobile ? DrawerVariant.Temporary : DrawerVariant.Responsive;
+    private bool ShowExpandedDrawerContent => CurrentIsMobile || DrawerOpen;
+    private DrawerVariant CurrentDrawerVariant => CurrentIsMobile ? DrawerVariant.Temporary : DrawerVariant.Mini;
     private DrawerClipMode CurrentDrawerClipMode => CurrentIsMobile ? DrawerClipMode.Never : DrawerClipMode.Always;
-    private string DrawerToggleIcon => DrawerOpen ? Icons.Material.Filled.MenuOpen : Icons.Material.Filled.Menu;
-    private string DrawerToggleAriaLabel => DrawerOpen ? "Collapse navigation menu" : "Open navigation menu";
+    private string DrawerToggleIcon => CurrentIsMobile
+        ? (DrawerOpen ? Icons.Material.Filled.Close : Icons.Material.Filled.Menu)
+        : (DrawerOpen ? Icons.Material.Filled.KeyboardDoubleArrowLeft : Icons.Material.Filled.KeyboardDoubleArrowRight);
+    private string DrawerToggleAriaLabel => CurrentIsMobile
+        ? (DrawerOpen ? "Close navigation menu" : "Open navigation menu")
+        : (DrawerOpen ? "Collapse navigation menu" : "Expand navigation menu");
     private string FullSearchHref => $"/search?q={Uri.EscapeDataString(SearchText.Trim())}";
 
     protected override void OnInitialized()
     {
-        // Default to open on desktop; mobile is corrected as soon as the first breakpoint event arrives.
-        DrawerOpen = true;
+        DrawerOpen = false;
         Navigation.LocationChanged += OnLocationChanged;
     }
 
@@ -424,12 +454,10 @@
         CurrentBreakpoint = breakpoint;
         var isMobile = CurrentIsMobile;
 
-        if (wasMobile == isMobile)
+        if (wasMobile != isMobile)
         {
-            return;
+            DrawerOpen = false;
         }
-
-        DrawerOpen = !isMobile;
     }
 
     private static bool IsMobileBreakpoint(Breakpoint breakpoint)
