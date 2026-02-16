@@ -13,14 +13,12 @@
 
     <MudLayout Class="mud-layout-shell">
         <MudAppBar Elevation="2" Class="topbar mud-topbar" @onclick:stopPropagation="true">
-            <MudHidden Breakpoint="Breakpoint.MdAndUp">
-                <MudIconButton Icon="@Icons.Material.Filled.Menu"
-                               Color="Color.Inherit"
-                               Edge="Edge.Start"
-                               Class="drawer-toggle"
-                               aria-label="Open navigation menu"
-                               OnClick="ToggleDrawer" />
-            </MudHidden>
+            <MudIconButton Icon="@DrawerToggleIcon"
+                           Color="Color.Inherit"
+                           Edge="Edge.Start"
+                           Class="drawer-toggle"
+                           aria-label="@DrawerToggleAriaLabel"
+                           OnClick="ToggleDrawer" />
 
             <div class="brand-block">
                 <span class="brand-badge">USA Wrestling Platform</span>
@@ -243,6 +241,8 @@
     private bool CurrentIsMobile => IsMobileBreakpoint(CurrentBreakpoint);
     private DrawerVariant CurrentDrawerVariant => CurrentIsMobile ? DrawerVariant.Temporary : DrawerVariant.Responsive;
     private DrawerClipMode CurrentDrawerClipMode => CurrentIsMobile ? DrawerClipMode.Never : DrawerClipMode.Always;
+    private string DrawerToggleIcon => DrawerOpen ? Icons.Material.Filled.MenuOpen : Icons.Material.Filled.Menu;
+    private string DrawerToggleAriaLabel => DrawerOpen ? "Collapse navigation menu" : "Open navigation menu";
     private string FullSearchHref => $"/search?q={Uri.EscapeDataString(SearchText.Trim())}";
 
     protected override void OnInitialized()
@@ -270,7 +270,10 @@
         {
             Password = string.Empty;
             MfaCode = string.Empty;
-            DrawerOpen = false;
+            if (CurrentIsMobile)
+            {
+                DrawerOpen = false;
+            }
         }
 
         Busy = false;
@@ -295,14 +298,20 @@
         await ApiClient.LogoutAsync();
         AuthOk = true;
         AuthMessage = "Signed out.";
-        DrawerOpen = false;
+        if (CurrentIsMobile)
+        {
+            DrawerOpen = false;
+        }
     }
 
     private void ToggleDrawer() => DrawerOpen = !DrawerOpen;
 
     private Task CloseDrawer()
     {
-        DrawerOpen = false;
+        if (CurrentIsMobile)
+        {
+            DrawerOpen = false;
+        }
         return Task.CompletedTask;
     }
 
@@ -343,7 +352,10 @@
     private Task RunFullSearchAsync()
     {
         SearchOpen = false;
-        DrawerOpen = false;
+        if (CurrentIsMobile)
+        {
+            DrawerOpen = false;
+        }
         Navigation.NavigateTo(FullSearchHref);
         return Task.CompletedTask;
     }
@@ -351,14 +363,20 @@
     private Task OnSearchLinkClick()
     {
         SearchOpen = false;
-        DrawerOpen = false;
+        if (CurrentIsMobile)
+        {
+            DrawerOpen = false;
+        }
         return Task.CompletedTask;
     }
 
     private void OnSearchResultClick(GlobalSearchResultItem result)
     {
         SearchOpen = false;
-        DrawerOpen = false;
+        if (CurrentIsMobile)
+        {
+            DrawerOpen = false;
+        }
         ApplyWorkflowFromSearch(result);
     }
 
