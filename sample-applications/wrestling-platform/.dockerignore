@@ -6,6 +6,15 @@
 **/*.db-shm
 **/*.db-wal
 **/*.log
+**/*.dump
+**/*.zip
+**/*.nupkg
 .git/
 .gitignore
 tests/
+.artifacts/
+docs/
+tools/
+src/WrestlingPlatform.Api/App_Data/
+src/WrestlingPlatform.Api/*.log
+src/WrestlingPlatform.Web/*.log
