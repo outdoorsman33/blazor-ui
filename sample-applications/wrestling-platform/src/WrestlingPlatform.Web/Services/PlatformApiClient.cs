@@ -370,6 +370,84 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         return await ReadResponseAsync<List<NotificationMessage>>(response, cancellationToken);
     }
 
+    public async Task<ApiResult<List<AthleteChatThreadSummary>>> GetAthleteChatThreadsAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync("/api/athlete-chat/threads", cancellationToken);
+        return await ReadResponseAsync<List<AthleteChatThreadSummary>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteChatThreadSummary>> JoinAthleteLoungeAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/athlete-chat/lounge/join", new { }, cancellationToken);
+        return await ReadResponseAsync<AthleteChatThreadSummary>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<AthleteChatDirectoryEntry>>> SearchAthleteChatDirectoryAsync(
+        string? query,
+        int take = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery("/api/athlete-chat/network", new Dictionary<string, string?>
+        {
+            ["q"] = query,
+            ["take"] = take.ToString()
+        });
+
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<List<AthleteChatDirectoryEntry>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteChatThreadSummary>> StartDirectAthleteChatAsync(
+        StartDirectAthleteChatRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/athlete-chat/threads/direct", request, cancellationToken);
+        return await ReadResponseAsync<AthleteChatThreadSummary>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<AthleteChatMessageView>>> GetAthleteChatMessagesAsync(
+        Guid threadId,
+        int take = 80,
+        DateTime? beforeUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery($"/api/athlete-chat/threads/{threadId:D}/messages", new Dictionary<string, string?>
+        {
+            ["take"] = take.ToString(),
+            ["beforeUtc"] = beforeUtc?.ToString("o")
+        });
+
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<List<AthleteChatMessageView>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteChatMessageView>> SendAthleteChatMessageAsync(
+        Guid threadId,
+        SendAthleteChatMessageRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync($"/api/athlete-chat/threads/{threadId:D}/messages", request, cancellationToken);
+        return await ReadResponseAsync<AthleteChatMessageView>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<object>> ReportAthleteChatMessageAsync(
+        Guid messageId,
+        ReportAthleteChatMessageRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync($"/api/athlete-chat/messages/{messageId:D}/report", request, cancellationToken);
+        return await ReadResponseAsync<object>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<object>> MuteAthleteChatThreadAsync(
+        Guid threadId,
+        MuteAthleteChatThreadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync($"/api/athlete-chat/threads/{threadId:D}/mute", request, cancellationToken);
+        return await ReadResponseAsync<object>(response, cancellationToken);
+    }
+
     public async Task<ApiResult<StreamSession>> CreateStreamSessionAsync(
         Guid eventId,
         CreateStreamSessionRequest request,

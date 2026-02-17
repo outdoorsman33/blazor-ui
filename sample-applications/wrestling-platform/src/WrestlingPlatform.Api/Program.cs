@@ -2776,7 +2776,7 @@ api.MapGet("/scoring/rules", (
     var selectedStyle = style ?? WrestlingStyle.Folkstyle;
     var selectedLevel = level ?? CompetitionLevel.HighSchool;
     var selectedPreset = preset ?? ScoringPreset.NfhsHighSchool;
-    var fallbackMatch = new Match
+    var fallbackMatch = new WrestlingPlatform.Domain.Models.Match
     {
         Id = Guid.Empty,
         Status = MatchStatus.Scheduled
@@ -3413,6 +3413,541 @@ notifications.MapGet("/messages/{userId:guid}", async (Guid userId, HttpContext 
         .ToListAsync(cancellationToken);
 
     return Results.Ok(messages);
+});
+
+var athleteChat = api.MapGroup("/athlete-chat").RequireAuthorization();
+athleteChat.MapGet("/threads", async (HttpContext httpContext, WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var athleteExists = await dbContext.AthleteProfiles.AsNoTracking()
+        .AnyAsync(x => x.UserAccountId == currentUserId.Value, cancellationToken);
+    if (!athleteExists)
+    {
+        return Results.BadRequest("Athlete profile is required before using chat.");
+    }
+
+    var summaries = await BuildAthleteChatThreadSummariesAsync(dbContext, currentUserId.Value, null, cancellationToken);
+    return Results.Ok(summaries);
+});
+
+athleteChat.MapPost("/lounge/join", async (HttpContext httpContext, WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var athleteProfile = await dbContext.AthleteProfiles
+        .FirstOrDefaultAsync(x => x.UserAccountId == currentUserId.Value, cancellationToken);
+    if (athleteProfile is null)
+    {
+        return Results.BadRequest("Athlete profile is required before joining chat.");
+    }
+
+    var loungeThread = await dbContext.AthleteChatThreads
+        .FirstOrDefaultAsync(x => x.Kind == AthleteChatThreadKind.Lounge && !x.IsArchived, cancellationToken);
+
+    if (loungeThread is null)
+    {
+        loungeThread = new AthleteChatThread
+        {
+            Name = "Athlete Lounge",
+            Kind = AthleteChatThreadKind.Lounge,
+            CreatedByUserAccountId = currentUserId.Value,
+            LastMessageUtc = DateTime.UtcNow
+        };
+
+        dbContext.AthleteChatThreads.Add(loungeThread);
+    }
+
+    var membership = await dbContext.AthleteChatParticipants
+        .FirstOrDefaultAsync(
+            x => x.ThreadId == loungeThread.Id && x.UserAccountId == currentUserId.Value,
+            cancellationToken);
+
+    if (membership is null)
+    {
+        membership = new AthleteChatParticipant
+        {
+            ThreadId = loungeThread.Id,
+            UserAccountId = currentUserId.Value,
+            AthleteProfileId = athleteProfile.Id,
+            LastReadMessageUtc = DateTime.UtcNow
+        };
+
+        dbContext.AthleteChatParticipants.Add(membership);
+    }
+    else
+    {
+        membership.CanPost = true;
+    }
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    var summaries = await BuildAthleteChatThreadSummariesAsync(dbContext, currentUserId.Value, loungeThread.Id, cancellationToken);
+    return summaries.Count == 0 ? Results.NotFound() : Results.Ok(summaries[0]);
+});
+
+athleteChat.MapGet("/network", async (
+    [FromQuery] string? q,
+    [FromQuery] int? take,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var safeTake = take is null or <= 0 ? 20 : Math.Min(50, take.Value);
+    var normalizedQuery = q?.Trim();
+    var normalizedQueryLower = string.IsNullOrWhiteSpace(normalizedQuery)
+        ? null
+        : normalizedQuery.ToLowerInvariant();
+
+    var query = from athlete in dbContext.AthleteProfiles.AsNoTracking()
+                join user in dbContext.UserAccounts.AsNoTracking() on athlete.UserAccountId equals user.Id
+                where user.IsActive
+                      && user.Role == UserRole.Athlete
+                      && user.Id != currentUserId.Value
+                select new { athlete, user };
+
+    if (normalizedQueryLower is not null)
+    {
+        query = query.Where(x =>
+            (x.athlete.FirstName + " " + x.athlete.LastName).ToLower().Contains(normalizedQueryLower)
+            || x.athlete.City.ToLower().Contains(normalizedQueryLower)
+            || x.athlete.State.ToLower().Contains(normalizedQueryLower)
+            || (x.athlete.SchoolOrClubName ?? string.Empty).ToLower().Contains(normalizedQueryLower));
+    }
+
+    var athletes = await query
+        .OrderBy(x => x.athlete.LastName)
+        .ThenBy(x => x.athlete.FirstName)
+        .Take(safeTake)
+        .Select(x => new AthleteChatDirectoryEntry(
+            x.user.Id,
+            x.athlete.Id,
+            $"{x.athlete.FirstName} {x.athlete.LastName}",
+            x.athlete.Level,
+            x.athlete.State,
+            x.athlete.City,
+            x.athlete.SchoolOrClubName))
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(athletes);
+});
+
+athleteChat.MapPost("/threads/direct", async (
+    StartDirectAthleteChatRequest request,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var currentAthlete = await dbContext.AthleteProfiles
+        .FirstOrDefaultAsync(x => x.UserAccountId == currentUserId.Value, cancellationToken);
+    if (currentAthlete is null)
+    {
+        return Results.BadRequest("Athlete profile is required before creating direct chat threads.");
+    }
+
+    var targetAthlete = await dbContext.AthleteProfiles
+        .FirstOrDefaultAsync(x => x.Id == request.TargetAthleteProfileId, cancellationToken);
+    if (targetAthlete is null)
+    {
+        return Results.NotFound("Target athlete was not found.");
+    }
+
+    if (targetAthlete.Id == currentAthlete.Id)
+    {
+        return Results.BadRequest("You cannot start a direct thread with yourself.");
+    }
+
+    var pairKey = BuildAthleteChatPairKey(currentAthlete.Id, targetAthlete.Id);
+    var directThread = await dbContext.AthleteChatThreads
+        .FirstOrDefaultAsync(
+            x => x.Kind == AthleteChatThreadKind.Direct
+                 && x.DirectPairKey == pairKey
+                 && !x.IsArchived,
+            cancellationToken);
+
+    if (directThread is null)
+    {
+        directThread = new AthleteChatThread
+        {
+            Name = BuildAthleteDirectThreadLabel(currentAthlete, targetAthlete),
+            Kind = AthleteChatThreadKind.Direct,
+            CreatedByUserAccountId = currentUserId.Value,
+            DirectPairKey = pairKey,
+            LastMessageUtc = DateTime.UtcNow
+        };
+
+        dbContext.AthleteChatThreads.Add(directThread);
+    }
+
+    var currentParticipant = await dbContext.AthleteChatParticipants
+        .FirstOrDefaultAsync(
+            x => x.ThreadId == directThread.Id && x.UserAccountId == currentUserId.Value,
+            cancellationToken);
+
+    if (currentParticipant is null)
+    {
+        dbContext.AthleteChatParticipants.Add(new AthleteChatParticipant
+        {
+            ThreadId = directThread.Id,
+            UserAccountId = currentUserId.Value,
+            AthleteProfileId = currentAthlete.Id,
+            LastReadMessageUtc = DateTime.UtcNow
+        });
+    }
+
+    var targetParticipant = await dbContext.AthleteChatParticipants
+        .FirstOrDefaultAsync(
+            x => x.ThreadId == directThread.Id && x.AthleteProfileId == targetAthlete.Id,
+            cancellationToken);
+
+    if (targetParticipant is null)
+    {
+        dbContext.AthleteChatParticipants.Add(new AthleteChatParticipant
+        {
+            ThreadId = directThread.Id,
+            UserAccountId = targetAthlete.UserAccountId,
+            AthleteProfileId = targetAthlete.Id
+        });
+    }
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    var summaries = await BuildAthleteChatThreadSummariesAsync(dbContext, currentUserId.Value, directThread.Id, cancellationToken);
+    return summaries.Count == 0 ? Results.NotFound() : Results.Ok(summaries[0]);
+});
+
+athleteChat.MapGet("/threads/{threadId:guid}/messages", async (
+    Guid threadId,
+    [FromQuery] int? take,
+    [FromQuery] DateTime? beforeUtc,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var membership = await dbContext.AthleteChatParticipants
+        .FirstOrDefaultAsync(
+            x => x.ThreadId == threadId && x.UserAccountId == currentUserId.Value,
+            cancellationToken);
+    if (membership is null)
+    {
+        return Results.Forbid();
+    }
+
+    var safeTake = take is null or <= 0 ? 80 : Math.Min(200, take.Value);
+    var query = dbContext.AthleteChatMessages.AsNoTracking()
+        .Where(x => x.ThreadId == threadId && x.ModerationStatus != AthleteChatMessageModerationStatus.Hidden);
+
+    if (beforeUtc is not null)
+    {
+        query = query.Where(x => x.CreatedUtc < beforeUtc.Value);
+    }
+
+    var messages = await query
+        .OrderByDescending(x => x.CreatedUtc)
+        .Take(safeTake)
+        .ToListAsync(cancellationToken);
+
+    var athleteNames = await (
+            from participant in dbContext.AthleteChatParticipants.AsNoTracking()
+            join athlete in dbContext.AthleteProfiles.AsNoTracking() on participant.AthleteProfileId equals athlete.Id
+            where participant.ThreadId == threadId
+            select new
+            {
+                participant.UserAccountId,
+                Label = $"{athlete.FirstName} {athlete.LastName}"
+            })
+        .ToListAsync(cancellationToken);
+
+    var nameMap = athleteNames
+        .GroupBy(x => x.UserAccountId)
+        .ToDictionary(x => x.Key, x => x.First().Label);
+
+    membership.LastReadMessageUtc = DateTime.UtcNow;
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    var response = messages
+        .OrderBy(x => x.CreatedUtc)
+        .Select(x => new AthleteChatMessageView(
+            x.Id,
+            x.ThreadId,
+            x.UserAccountId,
+            x.AthleteProfileId,
+            nameMap.TryGetValue(x.UserAccountId, out var label) ? label : "Athlete",
+            x.Body,
+            x.ModerationStatus,
+            x.CreatedUtc,
+            x.UserAccountId == currentUserId.Value))
+        .ToList();
+
+    return Results.Ok(response);
+});
+
+athleteChat.MapPost("/threads/{threadId:guid}/messages", async (
+    Guid threadId,
+    SendAthleteChatMessageRequest request,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var membership = await dbContext.AthleteChatParticipants
+        .FirstOrDefaultAsync(
+            x => x.ThreadId == threadId && x.UserAccountId == currentUserId.Value,
+            cancellationToken);
+    if (membership is null)
+    {
+        return Results.Forbid();
+    }
+
+    if (!membership.CanPost)
+    {
+        return Results.Forbid();
+    }
+
+    if (membership.MutedUntilUtc is DateTime mutedUntilUtc && mutedUntilUtc > DateTime.UtcNow)
+    {
+        return Results.Conflict($"Thread muted until {mutedUntilUtc:u}.");
+    }
+
+    var normalizedBody = NormalizeAthleteChatMessage(request.Body);
+    var guardrailFailure = ValidateAthleteChatMessage(normalizedBody);
+    if (!string.IsNullOrWhiteSpace(guardrailFailure))
+    {
+        return Results.BadRequest(guardrailFailure);
+    }
+
+    var oneMinuteAgo = DateTime.UtcNow.AddMinutes(-1);
+    var recentCount = await dbContext.AthleteChatMessages.AsNoTracking()
+        .CountAsync(
+            x => x.UserAccountId == currentUserId.Value
+                 && x.CreatedUtc >= oneMinuteAgo,
+            cancellationToken);
+    if (recentCount >= 8)
+    {
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+    }
+
+    var twentySecondsAgo = DateTime.UtcNow.AddSeconds(-20);
+    var duplicateExists = await dbContext.AthleteChatMessages.AsNoTracking()
+        .AnyAsync(
+            x => x.ThreadId == threadId
+                 && x.UserAccountId == currentUserId.Value
+                 && x.CreatedUtc >= twentySecondsAgo
+                 && x.Body == normalizedBody,
+            cancellationToken);
+    if (duplicateExists)
+    {
+        return Results.Conflict("Duplicate message blocked. Wait a moment before sending the same text.");
+    }
+
+    var thread = await dbContext.AthleteChatThreads.FirstOrDefaultAsync(x => x.Id == threadId, cancellationToken);
+    if (thread is null || thread.IsArchived)
+    {
+        return Results.NotFound("Thread not found.");
+    }
+
+    var message = new AthleteChatMessage
+    {
+        ThreadId = threadId,
+        UserAccountId = currentUserId.Value,
+        AthleteProfileId = membership.AthleteProfileId,
+        Body = normalizedBody
+    };
+
+    dbContext.AthleteChatMessages.Add(message);
+    thread.LastMessageUtc = DateTime.UtcNow;
+    membership.LastReadMessageUtc = DateTime.UtcNow;
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    var athlete = await dbContext.AthleteProfiles.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.Id == membership.AthleteProfileId, cancellationToken);
+
+    var displayName = athlete is null ? "Athlete" : $"{athlete.FirstName} {athlete.LastName}";
+    return Results.Ok(new AthleteChatMessageView(
+        message.Id,
+        message.ThreadId,
+        message.UserAccountId,
+        message.AthleteProfileId,
+        displayName,
+        message.Body,
+        message.ModerationStatus,
+        message.CreatedUtc,
+        IsMine: true));
+});
+
+athleteChat.MapPost("/messages/{messageId:guid}/report", async (
+    Guid messageId,
+    ReportAthleteChatMessageRequest request,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var message = await dbContext.AthleteChatMessages.FirstOrDefaultAsync(x => x.Id == messageId, cancellationToken);
+    if (message is null)
+    {
+        return Results.NotFound("Message not found.");
+    }
+
+    var participant = await dbContext.AthleteChatParticipants.AsNoTracking()
+        .FirstOrDefaultAsync(
+            x => x.ThreadId == message.ThreadId && x.UserAccountId == currentUserId.Value,
+            cancellationToken);
+    if (participant is null)
+    {
+        return Results.Forbid();
+    }
+
+    var reason = string.IsNullOrWhiteSpace(request.Reason)
+        ? "Unsafe or inappropriate content"
+        : request.Reason.Trim();
+
+    var existingReport = await dbContext.AthleteChatMessageReports
+        .FirstOrDefaultAsync(
+            x => x.MessageId == messageId && x.ReportedByUserAccountId == currentUserId.Value,
+            cancellationToken);
+
+    if (existingReport is null)
+    {
+        dbContext.AthleteChatMessageReports.Add(new AthleteChatMessageReport
+        {
+            MessageId = messageId,
+            ReportedByUserAccountId = currentUserId.Value,
+            Reason = reason
+        });
+    }
+    else
+    {
+        existingReport.Reason = reason;
+        existingReport.IsResolved = false;
+        existingReport.ResolvedUtc = null;
+    }
+
+    var activeReports = await dbContext.AthleteChatMessageReports
+        .CountAsync(x => x.MessageId == messageId && !x.IsResolved, cancellationToken);
+
+    message.ModerationStatus = activeReports >= 3
+        ? AthleteChatMessageModerationStatus.Hidden
+        : AthleteChatMessageModerationStatus.Reported;
+
+    message.ContainsRestrictedContent = true;
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new
+    {
+        MessageId = messageId,
+        Status = message.ModerationStatus.ToString()
+    });
+});
+
+athleteChat.MapPost("/threads/{threadId:guid}/mute", async (
+    Guid threadId,
+    MuteAthleteChatThreadRequest request,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var membership = await dbContext.AthleteChatParticipants
+        .FirstOrDefaultAsync(
+            x => x.ThreadId == threadId && x.UserAccountId == currentUserId.Value,
+            cancellationToken);
+    if (membership is null)
+    {
+        return Results.Forbid();
+    }
+
+    var safeMinutes = Math.Clamp(request.Minutes, 5, 720);
+    membership.MutedUntilUtc = DateTime.UtcNow.AddMinutes(safeMinutes);
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new
+    {
+        ThreadId = threadId,
+        MutedUntilUtc = membership.MutedUntilUtc
+    });
 });
 
 var security = api.MapGroup("/security").RequireAuthorization();
@@ -4103,7 +4638,7 @@ static async Task InitializeDemoRuntimeStateAsync(
                 cancellationToken);
 
         const int targetVideosPerAthlete = 6;
-        var completedMatchesByAthleteId = new Dictionary<Guid, List<Match>>();
+        var completedMatchesByAthleteId = new Dictionary<Guid, List<WrestlingPlatform.Domain.Models.Match>>();
         var perAthleteSeededCount = new Dictionary<Guid, int>();
         foreach (var match in completedMatches)
         {
@@ -4440,7 +4975,7 @@ static WrestlingStyle InferDivisionStyle(TournamentDivision division)
     return InferStyleForLevel(division.Level);
 }
 
-static WrestlingStyle InferEventStyle(IReadOnlyCollection<Match> matches, IReadOnlyCollection<Bracket> brackets)
+static WrestlingStyle InferEventStyle(IReadOnlyCollection<WrestlingPlatform.Domain.Models.Match> matches, IReadOnlyCollection<Bracket> brackets)
 {
     if (matches.Any(x => string.Equals(x.ResultMethod, "Greco", StringComparison.OrdinalIgnoreCase)))
     {
@@ -4595,6 +5130,199 @@ static bool IsDemoBootstrapRegistrationRequest(string normalizedEmail, string pa
     return string.Equals(password.Trim(), "DemoPass!123", StringComparison.Ordinal)
            && normalizedEmail.StartsWith("demo.", StringComparison.Ordinal)
            && normalizedEmail.EndsWith("@pinpointarena.local", StringComparison.Ordinal);
+}
+
+static string BuildAthleteChatPairKey(Guid athleteAId, Guid athleteBId)
+{
+    var left = athleteAId.ToString("N");
+    var right = athleteBId.ToString("N");
+    return string.CompareOrdinal(left, right) <= 0 ? $"{left}:{right}" : $"{right}:{left}";
+}
+
+static string BuildAthleteDirectThreadLabel(AthleteProfile athleteA, AthleteProfile athleteB)
+{
+    var left = $"{athleteA.FirstName} {athleteA.LastName}".Trim();
+    var right = $"{athleteB.FirstName} {athleteB.LastName}".Trim();
+    return $"Direct: {left} + {right}";
+}
+
+static string NormalizeAthleteChatMessage(string? message)
+{
+    if (string.IsNullOrWhiteSpace(message))
+    {
+        return string.Empty;
+    }
+
+    var cleaned = new string(
+        message
+            .Where(character => !char.IsControl(character) || character is '\n' or '\r' or '\t')
+            .ToArray());
+
+    cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s+", " ").Trim();
+    return cleaned.Length <= 600 ? cleaned : cleaned[..600];
+}
+
+static string? ValidateAthleteChatMessage(string normalizedMessage)
+{
+    if (string.IsNullOrWhiteSpace(normalizedMessage))
+    {
+        return "Message is required.";
+    }
+
+    if (normalizedMessage.Length < 2)
+    {
+        return "Message is too short.";
+    }
+
+    if (normalizedMessage.Contains("http://", StringComparison.OrdinalIgnoreCase)
+        || normalizedMessage.Contains("https://", StringComparison.OrdinalIgnoreCase)
+        || normalizedMessage.Contains("www.", StringComparison.OrdinalIgnoreCase))
+    {
+        return "Links are blocked in athlete chat for safety.";
+    }
+
+    if (System.Text.RegularExpressions.Regex.IsMatch(
+        normalizedMessage,
+        @"\b[\w\.-]+@[\w\.-]+\.\w{2,}\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+    {
+        return "Sharing email addresses is blocked in athlete chat.";
+    }
+
+    if (System.Text.RegularExpressions.Regex.IsMatch(
+        normalizedMessage,
+        @"\b(?:\+?1[\s\-.]?)?(?:\(?\d{3}\)?[\s\-.]?)\d{3}[\s\-.]?\d{4}\b",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+    {
+        return "Sharing phone numbers is blocked in athlete chat.";
+    }
+
+    var lowered = normalizedMessage.ToLowerInvariant();
+    var blockedTerms = new[]
+    {
+        "kill yourself",
+        "self harm",
+        "sexual content",
+        "drug deal",
+        "nude pic",
+        "hate speech",
+        "racial slur"
+    };
+
+    foreach (var term in blockedTerms)
+    {
+        if (lowered.Contains(term, StringComparison.Ordinal))
+        {
+            return "Message blocked by athlete safety filters.";
+        }
+    }
+
+    return null;
+}
+
+static async Task<List<AthleteChatThreadSummary>> BuildAthleteChatThreadSummariesAsync(
+    WrestlingPlatformDbContext dbContext,
+    Guid userAccountId,
+    Guid? threadIdFilter,
+    CancellationToken cancellationToken)
+{
+    var membershipQuery = dbContext.AthleteChatParticipants.AsNoTracking()
+        .Where(x => x.UserAccountId == userAccountId);
+
+    if (threadIdFilter is Guid filteredThreadId)
+    {
+        membershipQuery = membershipQuery.Where(x => x.ThreadId == filteredThreadId);
+    }
+
+    var memberships = await membershipQuery.ToListAsync(cancellationToken);
+    if (memberships.Count == 0)
+    {
+        return [];
+    }
+
+    var threadIds = memberships.Select(x => x.ThreadId).Distinct().ToList();
+
+    var threadsById = await dbContext.AthleteChatThreads.AsNoTracking()
+        .Where(x => threadIds.Contains(x.Id) && !x.IsArchived)
+        .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+    var participants = await dbContext.AthleteChatParticipants.AsNoTracking()
+        .Where(x => threadIds.Contains(x.ThreadId))
+        .ToListAsync(cancellationToken);
+
+    var athleteIds = participants.Select(x => x.AthleteProfileId).Distinct().ToList();
+    var athletesById = await dbContext.AthleteProfiles.AsNoTracking()
+        .Where(x => athleteIds.Contains(x.Id))
+        .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+    var messages = await dbContext.AthleteChatMessages.AsNoTracking()
+        .Where(x => threadIds.Contains(x.ThreadId) && x.ModerationStatus != AthleteChatMessageModerationStatus.Hidden)
+        .OrderByDescending(x => x.CreatedUtc)
+        .Take(2500)
+        .ToListAsync(cancellationToken);
+
+    var latestByThread = messages
+        .GroupBy(x => x.ThreadId)
+        .ToDictionary(x => x.Key, x => x.First());
+
+    var summaries = new List<AthleteChatThreadSummary>(memberships.Count);
+    foreach (var membership in memberships)
+    {
+        if (!threadsById.TryGetValue(membership.ThreadId, out var thread))
+        {
+            continue;
+        }
+
+        var threadParticipants = participants
+            .Where(x => x.ThreadId == membership.ThreadId)
+            .Select(x =>
+            {
+                if (athletesById.TryGetValue(x.AthleteProfileId, out var athlete))
+                {
+                    return new AthleteChatParticipantSummary(
+                        x.UserAccountId,
+                        x.AthleteProfileId,
+                        $"{athlete.FirstName} {athlete.LastName}",
+                        athlete.Level,
+                        athlete.State,
+                        athlete.City);
+                }
+
+                return new AthleteChatParticipantSummary(
+                    x.UserAccountId,
+                    x.AthleteProfileId,
+                    "Athlete",
+                    CompetitionLevel.HighSchool,
+                    "--",
+                    "--");
+            })
+            .OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        latestByThread.TryGetValue(membership.ThreadId, out var latestMessage);
+        var lastReadUtc = membership.LastReadMessageUtc;
+        var unreadCount = messages.Count(x =>
+            x.ThreadId == membership.ThreadId
+            && x.UserAccountId != userAccountId
+            && (lastReadUtc is null || x.CreatedUtc > lastReadUtc.Value));
+
+        summaries.Add(new AthleteChatThreadSummary(
+            thread.Id,
+            thread.Name,
+            thread.Kind,
+            thread.LastMessageUtc ?? latestMessage?.CreatedUtc,
+            unreadCount,
+            membership.MutedUntilUtc is DateTime mutedUntilUtc && mutedUntilUtc > DateTime.UtcNow,
+            latestMessage is null
+                ? "No messages yet."
+                : (latestMessage.Body.Length <= 120 ? latestMessage.Body : $"{latestMessage.Body[..117]}..."),
+            threadParticipants));
+    }
+
+    return summaries
+        .OrderByDescending(x => x.LastMessageUtc ?? DateTime.MinValue)
+        .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
 }
 
 static int ScoreSearchHit(string text, string queryLower)

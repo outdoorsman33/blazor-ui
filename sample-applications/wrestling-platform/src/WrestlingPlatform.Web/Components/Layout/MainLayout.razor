@@ -161,7 +161,7 @@
                         {
                             <a class="support-article-link"
                                href="@BuildHref("/support", ("faqId", article.Id))"
-                               @onclick="@(() => OpenSupportHub(article.Id))">
+                               @onclick="CloseDrawer">
                                 @article.Title
                             </a>
                         }
@@ -559,7 +559,7 @@
 
             <footer class="app-footer">
                 <span>Built for K-6, Middle School, High School, and College competition workflows.</span>
-                <button type="button" class="footer-link-btn" @onclick="OpenSupportHub">Support + FAQs</button>
+                <a class="footer-link-btn" href="@BuildHref("/support", ("faqId", DefaultSupportArticleId))">Support + FAQs</a>
             </footer>
         </MudMainContent>
     </MudLayout>
@@ -757,6 +757,7 @@
     private string CurrentPath = "/";
 
     private readonly HashSet<Guid> OwnedTournamentIds = [];
+    private readonly SemaphoreSlim AuthActionLock = new(1, 1);
     private bool TournamentCancelled;
     private bool BracketsFinalized;
     private bool TournamentStarted;
@@ -906,7 +907,7 @@
         Navigation.LocationChanged -= OnLocationChanged;
     }
 
-    private async Task SignInAsync()
+    private Task SignInAsync() => ExecuteAuthActionAsync(async () =>
     {
         try
         {
@@ -927,32 +928,22 @@
             AuthOk = false;
             AuthMessage = $"Sign-in failed unexpectedly. {ex.Message}";
         }
-    }
+    });
 
-    private async Task SignInAsDemoAthleteAsync()
-    {
-        await SignInAsDemoUserAsync("demo.athlete@pinpointarena.local", UserRole.Athlete, "Demo Athlete", "+16145550002");
-    }
+    private Task SignInAsDemoAthleteAsync() =>
+        ExecuteAuthActionAsync(() => SignInAsDemoUserAsync("demo.athlete@pinpointarena.local", UserRole.Athlete, "Demo Athlete", "+16145550002"));
 
-    private async Task SignInAsDemoCoachAsync()
-    {
-        await SignInAsDemoUserAsync("demo.coach@pinpointarena.local", UserRole.Coach, "Demo Coach", "+16145550001");
-    }
+    private Task SignInAsDemoCoachAsync() =>
+        ExecuteAuthActionAsync(() => SignInAsDemoUserAsync("demo.coach@pinpointarena.local", UserRole.Coach, "Demo Coach", "+16145550001"));
 
-    private async Task SignInAsDemoParentGuardianAsync()
-    {
-        await SignInAsDemoUserAsync("demo.parent@pinpointarena.local", UserRole.ParentGuardian, "Demo Parent", "+16145550031");
-    }
+    private Task SignInAsDemoParentGuardianAsync() =>
+        ExecuteAuthActionAsync(() => SignInAsDemoUserAsync("demo.parent@pinpointarena.local", UserRole.ParentGuardian, "Demo Parent", "+16145550031"));
 
-    private async Task SignInAsDemoMatWorkerAsync()
-    {
-        await SignInAsDemoUserAsync("demo.matworker@pinpointarena.local", UserRole.MatWorker, "Demo Mat Worker", "+16145550033");
-    }
+    private Task SignInAsDemoMatWorkerAsync() =>
+        ExecuteAuthActionAsync(() => SignInAsDemoUserAsync("demo.matworker@pinpointarena.local", UserRole.MatWorker, "Demo Mat Worker", "+16145550033"));
 
-    private async Task SignInAsDemoDirectorAsync()
-    {
-        await SignInAsDemoUserAsync("demo.director@pinpointarena.local", UserRole.TournamentDirector, "Demo Director", "+16145550030");
-    }
+    private Task SignInAsDemoDirectorAsync() =>
+        ExecuteAuthActionAsync(() => SignInAsDemoUserAsync("demo.director@pinpointarena.local", UserRole.TournamentDirector, "Demo Director", "+16145550030"));
 
     private async Task SignInAsDemoUserAsync(string email, UserRole role, string label, string? phoneNumber)
     {
@@ -1011,7 +1002,6 @@
 
     private async Task<ApiResult<AuthTokenResponse>> ExecuteSignInAttemptAsync()
     {
-        Busy = true;
         try
         {
             return await ApiClient.LoginAsync(new LoginRequest(Email, Password, MfaCode));
@@ -1021,10 +1011,6 @@
             return ApiResult<AuthTokenResponse>.Fail(
                 HttpStatusCode.ServiceUnavailable,
                 $"Unable to complete sign-in right now. {ex.Message}");
-        }
-        finally
-        {
-            Busy = false;
         }
     }
 
@@ -1091,19 +1077,46 @@
         }
     }
 
-    private async Task SignOutAsync()
+    private Task SignOutAsync() => ExecuteAuthActionAsync(async () =>
     {
-        await ApiClient.LogoutAsync();
-        AuthOk = true;
-        AuthMessage = "Signed out.";
-        RolePreview = null;
-        StreamingDelegationEnabled = false;
-        PersonalStreamActive = false;
-        ShowSaveStreamPrompt = false;
-        StreamStatus = "Ready to start.";
-        if (CurrentIsMobile)
+        try
         {
-            DrawerOpen = false;
+            await ApiClient.LogoutAsync();
+            AuthOk = true;
+            AuthMessage = "Signed out.";
+            RolePreview = null;
+            StreamingDelegationEnabled = false;
+            PersonalStreamActive = false;
+            ShowSaveStreamPrompt = false;
+            StreamStatus = "Ready to start.";
+            if (CurrentIsMobile)
+            {
+                DrawerOpen = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            AuthOk = false;
+            AuthMessage = $"Sign-out failed unexpectedly. {ex.Message}";
+        }
+    });
+
+    private async Task ExecuteAuthActionAsync(Func<Task> action)
+    {
+        if (!await AuthActionLock.WaitAsync(0))
+        {
+            return;
+        }
+
+        Busy = true;
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            Busy = false;
+            AuthActionLock.Release();
         }
     }
 
@@ -1307,6 +1320,7 @@
         {
             case PlatformRole.Athlete:
                 links.Add(new("Athlete Profile", "/athlete", Icons.Material.Filled.Person, "Profile"));
+                links.Add(new("Athlete Chat", "/athlete-chat", Icons.Material.Filled.Chat, "Chat"));
                 links.Add(new("My Bouts + Alerts", BuildHref("/live", ("panel", "follow"), ("eventId", ActiveEventIdText)), Icons.Material.Filled.NotificationsActive, "Alerts"));
                 break;
             case PlatformRole.ParentGuardian:
@@ -1740,10 +1754,18 @@
         CurrentPath = uri.AbsolutePath;
 
         var faqId = ReadQueryParam(uri, "faqId");
+        var onSupportPage = CurrentPath.StartsWith("/support", StringComparison.OrdinalIgnoreCase);
+
         if (!string.IsNullOrWhiteSpace(faqId) && SupportArticlesById.ContainsKey(faqId))
         {
             ActiveSupportArticleId = faqId;
-            SupportOverlayOpen = true;
+            SupportOverlayOpen = !onSupportPage;
+            return;
+        }
+
+        if (onSupportPage)
+        {
+            SupportOverlayOpen = false;
         }
     }
 

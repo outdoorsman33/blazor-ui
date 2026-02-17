@@ -140,6 +140,52 @@ public sealed record NotificationDispatchRequest(
 
 public sealed record UpdateStreamStatusRequest(StreamStatus Status);
 
+public sealed record StartDirectAthleteChatRequest(Guid TargetAthleteProfileId);
+
+public sealed record SendAthleteChatMessageRequest(string Body);
+
+public sealed record ReportAthleteChatMessageRequest(string Reason);
+
+public sealed record MuteAthleteChatThreadRequest(int Minutes);
+
+public sealed record AthleteChatParticipantSummary(
+    Guid UserAccountId,
+    Guid AthleteProfileId,
+    string DisplayName,
+    CompetitionLevel Level,
+    string State,
+    string City);
+
+public sealed record AthleteChatThreadSummary(
+    Guid ThreadId,
+    string Name,
+    AthleteChatThreadKind Kind,
+    DateTime? LastMessageUtc,
+    int UnreadCount,
+    bool IsMuted,
+    string? LastMessagePreview,
+    List<AthleteChatParticipantSummary> Participants);
+
+public sealed record AthleteChatMessageView(
+    Guid MessageId,
+    Guid ThreadId,
+    Guid UserAccountId,
+    Guid AthleteProfileId,
+    string DisplayName,
+    string Body,
+    AthleteChatMessageModerationStatus ModerationStatus,
+    DateTime CreatedUtc,
+    bool IsMine);
+
+public sealed record AthleteChatDirectoryEntry(
+    Guid UserAccountId,
+    Guid AthleteProfileId,
+    string DisplayName,
+    CompetitionLevel Level,
+    string State,
+    string City,
+    string? SchoolOrClubName);
+
 public sealed record UpdateTournamentControlSettingsRequest(
     TournamentFormat TournamentFormat,
     BracketReleaseMode BracketReleaseMode,

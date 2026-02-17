@@ -119,6 +119,19 @@ public enum StreamStatus
     Ended
 }
 
+public enum AthleteChatThreadKind
+{
+    Lounge,
+    Direct
+}
+
+public enum AthleteChatMessageModerationStatus
+{
+    Published,
+    Reported,
+    Hidden
+}
+
 public enum WebhookProcessingStatus
 {
     Pending,
@@ -368,4 +381,43 @@ public sealed class PaymentWebhookEvent : Entity
     public int ProcessAttemptCount { get; set; }
     public DateTime? ProcessedUtc { get; set; }
     public string? LastError { get; set; }
+}
+
+public sealed class AthleteChatThread : Entity
+{
+    public string Name { get; set; } = string.Empty;
+    public AthleteChatThreadKind Kind { get; set; } = AthleteChatThreadKind.Lounge;
+    public Guid? CreatedByUserAccountId { get; set; }
+    public string? DirectPairKey { get; set; }
+    public bool IsArchived { get; set; }
+    public DateTime? LastMessageUtc { get; set; }
+}
+
+public sealed class AthleteChatParticipant : Entity
+{
+    public Guid ThreadId { get; set; }
+    public Guid UserAccountId { get; set; }
+    public Guid AthleteProfileId { get; set; }
+    public bool CanPost { get; set; } = true;
+    public DateTime? MutedUntilUtc { get; set; }
+    public DateTime? LastReadMessageUtc { get; set; }
+}
+
+public sealed class AthleteChatMessage : Entity
+{
+    public Guid ThreadId { get; set; }
+    public Guid UserAccountId { get; set; }
+    public Guid AthleteProfileId { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public AthleteChatMessageModerationStatus ModerationStatus { get; set; } = AthleteChatMessageModerationStatus.Published;
+    public bool ContainsRestrictedContent { get; set; }
+}
+
+public sealed class AthleteChatMessageReport : Entity
+{
+    public Guid MessageId { get; set; }
+    public Guid ReportedByUserAccountId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public bool IsResolved { get; set; }
+    public DateTime? ResolvedUtc { get; set; }
 }

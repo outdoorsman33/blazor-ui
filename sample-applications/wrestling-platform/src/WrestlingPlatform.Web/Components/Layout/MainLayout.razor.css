@@ -79,6 +79,8 @@ a {
     gap: 0.55rem;
     align-items: center;
     backdrop-filter: blur(6px);
+    position: relative;
+    z-index: 1505;
 }
 
 ::deep .topbar .mud-toolbar-appbar {
@@ -92,6 +94,7 @@ a {
 ::deep .topbar.mud-appbar {
     background: rgba(255, 255, 255, 0.92) !important;
     color: #1f2529 !important;
+    z-index: 1505 !important;
 }
 
 ::deep .mud-layout-shell {

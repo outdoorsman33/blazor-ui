@@ -151,13 +151,76 @@ public static class DependencyInjection
                     CONSTRAINT "PK_AthleteStreamingPermissions" PRIMARY KEY ("Id")
                 );
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS "AthleteChatThreads"
+                (
+                    "Id" uuid NOT NULL,
+                    "CreatedUtc" timestamp with time zone NOT NULL,
+                    "Name" text NOT NULL,
+                    "Kind" integer NOT NULL,
+                    "CreatedByUserAccountId" uuid NULL,
+                    "DirectPairKey" text NULL,
+                    "IsArchived" boolean NOT NULL,
+                    "LastMessageUtc" timestamp with time zone NULL,
+                    CONSTRAINT "PK_AthleteChatThreads" PRIMARY KEY ("Id")
+                );
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS "AthleteChatParticipants"
+                (
+                    "Id" uuid NOT NULL,
+                    "CreatedUtc" timestamp with time zone NOT NULL,
+                    "ThreadId" uuid NOT NULL,
+                    "UserAccountId" uuid NOT NULL,
+                    "AthleteProfileId" uuid NOT NULL,
+                    "CanPost" boolean NOT NULL,
+                    "MutedUntilUtc" timestamp with time zone NULL,
+                    "LastReadMessageUtc" timestamp with time zone NULL,
+                    CONSTRAINT "PK_AthleteChatParticipants" PRIMARY KEY ("Id")
+                );
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS "AthleteChatMessages"
+                (
+                    "Id" uuid NOT NULL,
+                    "CreatedUtc" timestamp with time zone NOT NULL,
+                    "ThreadId" uuid NOT NULL,
+                    "UserAccountId" uuid NOT NULL,
+                    "AthleteProfileId" uuid NOT NULL,
+                    "Body" text NOT NULL,
+                    "ModerationStatus" integer NOT NULL,
+                    "ContainsRestrictedContent" boolean NOT NULL,
+                    CONSTRAINT "PK_AthleteChatMessages" PRIMARY KEY ("Id")
+                );
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS "AthleteChatMessageReports"
+                (
+                    "Id" uuid NOT NULL,
+                    "CreatedUtc" timestamp with time zone NOT NULL,
+                    "MessageId" uuid NOT NULL,
+                    "ReportedByUserAccountId" uuid NOT NULL,
+                    "Reason" text NOT NULL,
+                    "IsResolved" boolean NOT NULL,
+                    "ResolvedUtc" timestamp with time zone NULL,
+                    CONSTRAINT "PK_AthleteChatMessageReports" PRIMARY KEY ("Id")
+                );
+                """,
                 @"CREATE INDEX IF NOT EXISTS ""IX_TournamentEvents_CreatedByUserAccountId"" ON ""TournamentEvents"" (""CreatedByUserAccountId"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_Matches_BracketId_BoutNumber"" ON ""Matches"" (""BracketId"", ""BoutNumber"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""Status"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_AthleteProfileId_IsPersonalStream_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""AthleteProfileId"", ""IsPersonalStream"", ""Status"");",
                 @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_UserAccountId"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""UserAccountId"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_CanScoreMatches"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""CanScoreMatches"");",
-                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteStreamingPermissions_AthleteProfileId_DelegateUserAccountId"" ON ""AthleteStreamingPermissions"" (""AthleteProfileId"", ""DelegateUserAccountId"");"
+                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteStreamingPermissions_AthleteProfileId_DelegateUserAccountId"" ON ""AthleteStreamingPermissions"" (""AthleteProfileId"", ""DelegateUserAccountId"");",
+                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatThreads_DirectPairKey"" ON ""AthleteChatThreads"" (""DirectPairKey"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatThreads_Kind_LastMessageUtc"" ON ""AthleteChatThreads"" (""Kind"", ""LastMessageUtc"");",
+                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatParticipants_ThreadId_UserAccountId"" ON ""AthleteChatParticipants"" (""ThreadId"", ""UserAccountId"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatParticipants_UserAccountId_LastReadMessageUtc"" ON ""AthleteChatParticipants"" (""UserAccountId"", ""LastReadMessageUtc"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessages_ThreadId_CreatedUtc"" ON ""AthleteChatMessages"" (""ThreadId"", ""CreatedUtc"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessages_UserAccountId_CreatedUtc"" ON ""AthleteChatMessages"" (""UserAccountId"", ""CreatedUtc"");",
+                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_MessageId_ReportedByUserAccountId"" ON ""AthleteChatMessageReports"" (""MessageId"", ""ReportedByUserAccountId"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_IsResolved_CreatedUtc"" ON ""AthleteChatMessageReports"" (""IsResolved"", ""CreatedUtc"");"
             };
 
             foreach (var statement in statements)
@@ -257,13 +320,76 @@ public static class DependencyInjection
                 CONSTRAINT "PK_AthleteStreamingPermissions" PRIMARY KEY ("Id")
             );
             """,
+            """
+            CREATE TABLE IF NOT EXISTS "AthleteChatThreads"
+            (
+                "Id" TEXT NOT NULL,
+                "CreatedUtc" TEXT NOT NULL,
+                "Name" TEXT NOT NULL,
+                "Kind" INTEGER NOT NULL,
+                "CreatedByUserAccountId" TEXT NULL,
+                "DirectPairKey" TEXT NULL,
+                "IsArchived" INTEGER NOT NULL,
+                "LastMessageUtc" TEXT NULL,
+                CONSTRAINT "PK_AthleteChatThreads" PRIMARY KEY ("Id")
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "AthleteChatParticipants"
+            (
+                "Id" TEXT NOT NULL,
+                "CreatedUtc" TEXT NOT NULL,
+                "ThreadId" TEXT NOT NULL,
+                "UserAccountId" TEXT NOT NULL,
+                "AthleteProfileId" TEXT NOT NULL,
+                "CanPost" INTEGER NOT NULL,
+                "MutedUntilUtc" TEXT NULL,
+                "LastReadMessageUtc" TEXT NULL,
+                CONSTRAINT "PK_AthleteChatParticipants" PRIMARY KEY ("Id")
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "AthleteChatMessages"
+            (
+                "Id" TEXT NOT NULL,
+                "CreatedUtc" TEXT NOT NULL,
+                "ThreadId" TEXT NOT NULL,
+                "UserAccountId" TEXT NOT NULL,
+                "AthleteProfileId" TEXT NOT NULL,
+                "Body" TEXT NOT NULL,
+                "ModerationStatus" INTEGER NOT NULL,
+                "ContainsRestrictedContent" INTEGER NOT NULL,
+                CONSTRAINT "PK_AthleteChatMessages" PRIMARY KEY ("Id")
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "AthleteChatMessageReports"
+            (
+                "Id" TEXT NOT NULL,
+                "CreatedUtc" TEXT NOT NULL,
+                "MessageId" TEXT NOT NULL,
+                "ReportedByUserAccountId" TEXT NOT NULL,
+                "Reason" TEXT NOT NULL,
+                "IsResolved" INTEGER NOT NULL,
+                "ResolvedUtc" TEXT NULL,
+                CONSTRAINT "PK_AthleteChatMessageReports" PRIMARY KEY ("Id")
+            );
+            """,
             @"CREATE INDEX IF NOT EXISTS ""IX_TournamentEvents_CreatedByUserAccountId"" ON ""TournamentEvents"" (""CreatedByUserAccountId"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_Matches_BracketId_BoutNumber"" ON ""Matches"" (""BracketId"", ""BoutNumber"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""Status"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_AthleteProfileId_IsPersonalStream_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""AthleteProfileId"", ""IsPersonalStream"", ""Status"");",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_UserAccountId"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""UserAccountId"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_CanScoreMatches"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""CanScoreMatches"");",
-            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteStreamingPermissions_AthleteProfileId_DelegateUserAccountId"" ON ""AthleteStreamingPermissions"" (""AthleteProfileId"", ""DelegateUserAccountId"");"
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteStreamingPermissions_AthleteProfileId_DelegateUserAccountId"" ON ""AthleteStreamingPermissions"" (""AthleteProfileId"", ""DelegateUserAccountId"");",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatThreads_DirectPairKey"" ON ""AthleteChatThreads"" (""DirectPairKey"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatThreads_Kind_LastMessageUtc"" ON ""AthleteChatThreads"" (""Kind"", ""LastMessageUtc"");",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatParticipants_ThreadId_UserAccountId"" ON ""AthleteChatParticipants"" (""ThreadId"", ""UserAccountId"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatParticipants_UserAccountId_LastReadMessageUtc"" ON ""AthleteChatParticipants"" (""UserAccountId"", ""LastReadMessageUtc"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessages_ThreadId_CreatedUtc"" ON ""AthleteChatMessages"" (""ThreadId"", ""CreatedUtc"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessages_UserAccountId_CreatedUtc"" ON ""AthleteChatMessages"" (""UserAccountId"", ""CreatedUtc"");",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_MessageId_ReportedByUserAccountId"" ON ""AthleteChatMessageReports"" (""MessageId"", ""ReportedByUserAccountId"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_IsResolved_CreatedUtc"" ON ""AthleteChatMessageReports"" (""IsResolved"", ""CreatedUtc"");"
         };
 
         foreach (var statement in sqliteStatements)
@@ -2538,6 +2664,12 @@ public static class DependencyInjection
             BuildRanking("avery.reed@pinpointarena.local", "IA", 1668m, 2),
             BuildRanking("dean.walker@pinpointarena.local", "PA", 1652m, 2));
 
+        await SeedAthleteChatDemoDataAsync(
+            dbContext,
+            athleteUsersByEmail,
+            athleteProfilesByEmail,
+            cancellationToken);
+
         await EnsurePaymentWebhookEventAsync(
             dbContext,
             "seed-pmt-success-freestyle-live",
@@ -2633,6 +2765,10 @@ public static class DependencyInjection
 
     private static async Task ClearAllDataAsync(WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken)
     {
+        await dbContext.AthleteChatMessageReports.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.AthleteChatMessages.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.AthleteChatParticipants.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.AthleteChatThreads.ExecuteDeleteAsync(cancellationToken);
         await dbContext.NotificationMessages.ExecuteDeleteAsync(cancellationToken);
         await dbContext.NotificationSubscriptions.ExecuteDeleteAsync(cancellationToken);
         await dbContext.FreeAgentTeamInvites.ExecuteDeleteAsync(cancellationToken);
@@ -3315,6 +3451,420 @@ public static class DependencyInjection
         row.LastError = string.IsNullOrWhiteSpace(lastError) ? null : lastError.Trim();
 
         return row;
+    }
+
+    private static async Task SeedAthleteChatDemoDataAsync(
+        WrestlingPlatformDbContext dbContext,
+        IReadOnlyDictionary<string, UserAccount> athleteUsersByEmail,
+        IReadOnlyDictionary<string, AthleteProfile> athleteProfilesByEmail,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var demoAthleteEmail = "demo.athlete@pinpointarena.local";
+        var noahEmail = "noah.miller@pinpointarena.local";
+        var miaEmail = "mia.garcia@pinpointarena.local";
+        var sophiaEmail = "sophia.patel@pinpointarena.local";
+        var nolanEmail = "nolan.shaw@pinpointarena.local";
+        var gabeEmail = "gabe.soto@pinpointarena.local";
+
+        var loungeThread = await EnsureAthleteChatThreadAsync(
+            dbContext,
+            AthleteChatThreadKind.Lounge,
+            "Athlete Lounge",
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            directPairKey: null,
+            isArchived: false,
+            lastMessageUtc: nowUtc.AddMinutes(-8),
+            cancellationToken);
+
+        var loungeParticipants = new[]
+        {
+            demoAthleteEmail,
+            noahEmail,
+            miaEmail,
+            sophiaEmail,
+            nolanEmail,
+            gabeEmail
+        };
+
+        foreach (var email in loungeParticipants)
+        {
+            await EnsureAthleteChatParticipantAsync(
+                dbContext,
+                loungeThread.Id,
+                athleteUsersByEmail[email].Id,
+                athleteProfilesByEmail[email].Id,
+                canPost: true,
+                mutedUntilUtc: null,
+                lastReadMessageUtc: nowUtc.AddMinutes(-6),
+                cancellationToken);
+        }
+
+        await EnsureAthleteChatMessageAsync(
+            dbContext,
+            loungeThread.Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            athleteProfilesByEmail[demoAthleteEmail].Id,
+            "Anyone traveling to the PinPoint Local Showcase this Saturday?",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-35),
+            cancellationToken);
+
+        await EnsureAthleteChatMessageAsync(
+            dbContext,
+            loungeThread.Id,
+            athleteUsersByEmail[noahEmail].Id,
+            athleteProfilesByEmail[noahEmail].Id,
+            "River Valley bus leaves at 6:15 AM. We can save two seats.",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-33),
+            cancellationToken);
+
+        await EnsureAthleteChatMessageAsync(
+            dbContext,
+            loungeThread.Id,
+            athleteUsersByEmail[miaEmail].Id,
+            athleteProfilesByEmail[miaEmail].Id,
+            "Perfect. I am cutting to 126 and just need a quick warm-up mat.",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-28),
+            cancellationToken);
+
+        var hiddenMessage = await EnsureAthleteChatMessageAsync(
+            dbContext,
+            loungeThread.Id,
+            athleteUsersByEmail[nolanEmail].Id,
+            athleteProfilesByEmail[nolanEmail].Id,
+            "Drop your phone number in chat so we can organize rides.",
+            AthleteChatMessageModerationStatus.Hidden,
+            containsRestrictedContent: true,
+            nowUtc.AddMinutes(-20),
+            cancellationToken);
+
+        await EnsureAthleteChatMessageReportAsync(
+            dbContext,
+            hiddenMessage.Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            "Sharing direct contact details in athlete chat.",
+            isResolved: false,
+            resolvedUtc: null,
+            cancellationToken);
+
+        await EnsureAthleteChatMessageReportAsync(
+            dbContext,
+            hiddenMessage.Id,
+            athleteUsersByEmail[sophiaEmail].Id,
+            "Contact info request should not be in athlete chat.",
+            isResolved: false,
+            resolvedUtc: null,
+            cancellationToken);
+
+        await EnsureAthleteChatMessageReportAsync(
+            dbContext,
+            hiddenMessage.Id,
+            athleteUsersByEmail[gabeEmail].Id,
+            "Unsafe content for athlete-only messaging.",
+            isResolved: false,
+            resolvedUtc: null,
+            cancellationToken);
+
+        var demoNoahThread = await EnsureAthleteChatThreadAsync(
+            dbContext,
+            AthleteChatThreadKind.Direct,
+            "Direct: Eli Turner + Noah Miller",
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            BuildAthleteChatPairKey(
+                athleteProfilesByEmail[demoAthleteEmail].Id,
+                athleteProfilesByEmail[noahEmail].Id),
+            isArchived: false,
+            lastMessageUtc: nowUtc.AddMinutes(-4),
+            cancellationToken);
+
+        await EnsureAthleteChatParticipantAsync(
+            dbContext,
+            demoNoahThread.Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            athleteProfilesByEmail[demoAthleteEmail].Id,
+            canPost: true,
+            mutedUntilUtc: null,
+            lastReadMessageUtc: nowUtc.AddMinutes(-4),
+            cancellationToken);
+
+        await EnsureAthleteChatParticipantAsync(
+            dbContext,
+            demoNoahThread.Id,
+            athleteUsersByEmail[noahEmail].Id,
+            athleteProfilesByEmail[noahEmail].Id,
+            canPost: true,
+            mutedUntilUtc: null,
+            lastReadMessageUtc: nowUtc.AddMinutes(-5),
+            cancellationToken);
+
+        await EnsureAthleteChatMessageAsync(
+            dbContext,
+            demoNoahThread.Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            athleteProfilesByEmail[demoAthleteEmail].Id,
+            "Can you share your hand-fight sequence from last finals?",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-11),
+            cancellationToken);
+
+        await EnsureAthleteChatMessageAsync(
+            dbContext,
+            demoNoahThread.Id,
+            athleteUsersByEmail[noahEmail].Id,
+            athleteProfilesByEmail[noahEmail].Id,
+            "Yes. Two snaps then outside tie before the high-crotch finish.",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-9),
+            cancellationToken);
+
+        await EnsureAthleteChatMessageAsync(
+            dbContext,
+            demoNoahThread.Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            athleteProfilesByEmail[demoAthleteEmail].Id,
+            "That helps. I will drill it in warmups tomorrow.",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-4),
+            cancellationToken);
+
+        var demoSophiaThread = await EnsureAthleteChatThreadAsync(
+            dbContext,
+            AthleteChatThreadKind.Direct,
+            "Direct: Eli Turner + Sophia Patel",
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            BuildAthleteChatPairKey(
+                athleteProfilesByEmail[demoAthleteEmail].Id,
+                athleteProfilesByEmail[sophiaEmail].Id),
+            isArchived: false,
+            lastMessageUtc: nowUtc.AddMinutes(-2),
+            cancellationToken);
+
+        await EnsureAthleteChatParticipantAsync(
+            dbContext,
+            demoSophiaThread.Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            athleteProfilesByEmail[demoAthleteEmail].Id,
+            canPost: true,
+            mutedUntilUtc: null,
+            lastReadMessageUtc: nowUtc.AddMinutes(-2),
+            cancellationToken);
+
+        await EnsureAthleteChatParticipantAsync(
+            dbContext,
+            demoSophiaThread.Id,
+            athleteUsersByEmail[sophiaEmail].Id,
+            athleteProfilesByEmail[sophiaEmail].Id,
+            canPost: true,
+            mutedUntilUtc: nowUtc.AddMinutes(30),
+            lastReadMessageUtc: nowUtc.AddMinutes(-7),
+            cancellationToken);
+
+        await EnsureAthleteChatMessageAsync(
+            dbContext,
+            demoSophiaThread.Id,
+            athleteUsersByEmail[sophiaEmail].Id,
+            athleteProfilesByEmail[sophiaEmail].Id,
+            "Good luck in finals. Keep pressure on the edge and finish clean.",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-7),
+            cancellationToken);
+
+        await EnsureAthleteChatMessageAsync(
+            dbContext,
+            demoSophiaThread.Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            athleteProfilesByEmail[demoAthleteEmail].Id,
+            "Thanks. I am following your quarterfinal too.",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-2),
+            cancellationToken);
+    }
+
+    private static string BuildAthleteChatPairKey(Guid athleteAId, Guid athleteBId)
+    {
+        var left = athleteAId.ToString("N");
+        var right = athleteBId.ToString("N");
+        return string.CompareOrdinal(left, right) <= 0 ? $"{left}:{right}" : $"{right}:{left}";
+    }
+
+    private static async Task<AthleteChatThread> EnsureAthleteChatThreadAsync(
+        WrestlingPlatformDbContext dbContext,
+        AthleteChatThreadKind kind,
+        string name,
+        Guid? createdByUserAccountId,
+        string? directPairKey,
+        bool isArchived,
+        DateTime? lastMessageUtc,
+        CancellationToken cancellationToken)
+    {
+        var normalizedName = name.Trim();
+        var normalizedPairKey = string.IsNullOrWhiteSpace(directPairKey) ? null : directPairKey.Trim().ToLowerInvariant();
+
+        var thread = dbContext.AthleteChatThreads.Local.FirstOrDefault(
+            x => x.Kind == kind
+                 && ((kind == AthleteChatThreadKind.Direct && x.DirectPairKey == normalizedPairKey)
+                     || (kind == AthleteChatThreadKind.Lounge && x.Name == normalizedName)));
+
+        if (thread is null)
+        {
+            thread = kind == AthleteChatThreadKind.Direct
+                ? await dbContext.AthleteChatThreads.FirstOrDefaultAsync(
+                    x => x.Kind == AthleteChatThreadKind.Direct && x.DirectPairKey == normalizedPairKey,
+                    cancellationToken)
+                : await dbContext.AthleteChatThreads.FirstOrDefaultAsync(
+                    x => x.Kind == AthleteChatThreadKind.Lounge && x.Name == normalizedName,
+                    cancellationToken);
+        }
+
+        if (thread is null)
+        {
+            thread = new AthleteChatThread
+            {
+                Kind = kind,
+                Name = normalizedName
+            };
+            dbContext.AthleteChatThreads.Add(thread);
+        }
+
+        thread.Name = normalizedName;
+        thread.Kind = kind;
+        thread.CreatedByUserAccountId = createdByUserAccountId;
+        thread.DirectPairKey = normalizedPairKey;
+        thread.IsArchived = isArchived;
+        thread.LastMessageUtc = lastMessageUtc;
+        return thread;
+    }
+
+    private static async Task<AthleteChatParticipant> EnsureAthleteChatParticipantAsync(
+        WrestlingPlatformDbContext dbContext,
+        Guid threadId,
+        Guid userAccountId,
+        Guid athleteProfileId,
+        bool canPost,
+        DateTime? mutedUntilUtc,
+        DateTime? lastReadMessageUtc,
+        CancellationToken cancellationToken)
+    {
+        var participant = dbContext.AthleteChatParticipants.Local.FirstOrDefault(
+            x => x.ThreadId == threadId && x.UserAccountId == userAccountId);
+
+        if (participant is null)
+        {
+            participant = await dbContext.AthleteChatParticipants.FirstOrDefaultAsync(
+                x => x.ThreadId == threadId && x.UserAccountId == userAccountId,
+                cancellationToken);
+        }
+
+        if (participant is null)
+        {
+            participant = new AthleteChatParticipant
+            {
+                ThreadId = threadId,
+                UserAccountId = userAccountId
+            };
+
+            dbContext.AthleteChatParticipants.Add(participant);
+        }
+
+        participant.AthleteProfileId = athleteProfileId;
+        participant.CanPost = canPost;
+        participant.MutedUntilUtc = mutedUntilUtc;
+        participant.LastReadMessageUtc = lastReadMessageUtc;
+        return participant;
+    }
+
+    private static async Task<AthleteChatMessage> EnsureAthleteChatMessageAsync(
+        WrestlingPlatformDbContext dbContext,
+        Guid threadId,
+        Guid userAccountId,
+        Guid athleteProfileId,
+        string body,
+        AthleteChatMessageModerationStatus moderationStatus,
+        bool containsRestrictedContent,
+        DateTime createdUtc,
+        CancellationToken cancellationToken)
+    {
+        var normalizedBody = body.Trim();
+        var message = dbContext.AthleteChatMessages.Local.FirstOrDefault(
+            x => x.ThreadId == threadId
+                 && x.UserAccountId == userAccountId
+                 && x.Body == normalizedBody);
+
+        if (message is null)
+        {
+            message = await dbContext.AthleteChatMessages.FirstOrDefaultAsync(
+                x => x.ThreadId == threadId
+                     && x.UserAccountId == userAccountId
+                     && x.Body == normalizedBody,
+                cancellationToken);
+        }
+
+        if (message is null)
+        {
+            message = new AthleteChatMessage
+            {
+                ThreadId = threadId,
+                UserAccountId = userAccountId,
+                Body = normalizedBody
+            };
+
+            dbContext.AthleteChatMessages.Add(message);
+        }
+
+        message.AthleteProfileId = athleteProfileId;
+        message.Body = normalizedBody;
+        message.ModerationStatus = moderationStatus;
+        message.ContainsRestrictedContent = containsRestrictedContent;
+        message.CreatedUtc = DateTime.SpecifyKind(createdUtc, DateTimeKind.Utc);
+        return message;
+    }
+
+    private static async Task<AthleteChatMessageReport> EnsureAthleteChatMessageReportAsync(
+        WrestlingPlatformDbContext dbContext,
+        Guid messageId,
+        Guid reportedByUserAccountId,
+        string reason,
+        bool isResolved,
+        DateTime? resolvedUtc,
+        CancellationToken cancellationToken)
+    {
+        var normalizedReason = reason.Trim();
+        var report = dbContext.AthleteChatMessageReports.Local.FirstOrDefault(
+            x => x.MessageId == messageId && x.ReportedByUserAccountId == reportedByUserAccountId);
+
+        if (report is null)
+        {
+            report = await dbContext.AthleteChatMessageReports.FirstOrDefaultAsync(
+                x => x.MessageId == messageId && x.ReportedByUserAccountId == reportedByUserAccountId,
+                cancellationToken);
+        }
+
+        if (report is null)
+        {
+            report = new AthleteChatMessageReport
+            {
+                MessageId = messageId,
+                ReportedByUserAccountId = reportedByUserAccountId
+            };
+
+            dbContext.AthleteChatMessageReports.Add(report);
+        }
+
+        report.Reason = normalizedReason;
+        report.IsResolved = isResolved;
+        report.ResolvedUtc = resolvedUtc;
+        return report;
     }
 
     private static async Task EnsureDemoBracketAndStreamCoverageAsync(

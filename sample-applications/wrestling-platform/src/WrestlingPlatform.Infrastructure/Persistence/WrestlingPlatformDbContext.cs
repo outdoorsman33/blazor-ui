@@ -26,6 +26,10 @@ public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatfor
     public DbSet<TournamentStaffAssignment> TournamentStaffAssignments => Set<TournamentStaffAssignment>();
     public DbSet<AthleteStreamingPermission> AthleteStreamingPermissions => Set<AthleteStreamingPermission>();
     public DbSet<PaymentWebhookEvent> PaymentWebhookEvents => Set<PaymentWebhookEvent>();
+    public DbSet<AthleteChatThread> AthleteChatThreads => Set<AthleteChatThread>();
+    public DbSet<AthleteChatParticipant> AthleteChatParticipants => Set<AthleteChatParticipant>();
+    public DbSet<AthleteChatMessage> AthleteChatMessages => Set<AthleteChatMessage>();
+    public DbSet<AthleteChatMessageReport> AthleteChatMessageReports => Set<AthleteChatMessageReport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,5 +51,13 @@ public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatfor
         modelBuilder.Entity<AthleteStreamingPermission>().HasIndex(x => new { x.AthleteProfileId, x.DelegateUserAccountId }).IsUnique();
         modelBuilder.Entity<PaymentWebhookEvent>().HasIndex(x => new { x.Provider, x.ProviderEventId }).IsUnique();
         modelBuilder.Entity<PaymentWebhookEvent>().HasIndex(x => new { x.ProcessingStatus, x.CreatedUtc });
+        modelBuilder.Entity<AthleteChatThread>().HasIndex(x => x.DirectPairKey).IsUnique();
+        modelBuilder.Entity<AthleteChatThread>().HasIndex(x => new { x.Kind, x.LastMessageUtc });
+        modelBuilder.Entity<AthleteChatParticipant>().HasIndex(x => new { x.ThreadId, x.UserAccountId }).IsUnique();
+        modelBuilder.Entity<AthleteChatParticipant>().HasIndex(x => new { x.UserAccountId, x.LastReadMessageUtc });
+        modelBuilder.Entity<AthleteChatMessage>().HasIndex(x => new { x.ThreadId, x.CreatedUtc });
+        modelBuilder.Entity<AthleteChatMessage>().HasIndex(x => new { x.UserAccountId, x.CreatedUtc });
+        modelBuilder.Entity<AthleteChatMessageReport>().HasIndex(x => new { x.MessageId, x.ReportedByUserAccountId }).IsUnique();
+        modelBuilder.Entity<AthleteChatMessageReport>().HasIndex(x => new { x.IsResolved, x.CreatedUtc });
     }
 }
