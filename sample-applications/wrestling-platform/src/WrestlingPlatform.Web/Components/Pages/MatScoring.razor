@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @using Microsoft.AspNetCore.Http.Connections
 @inject PlatformApiClient ApiClient
+@inject AuthSession AuthSession
 @inject WorkflowState Workflow
 @implements IAsyncDisposable
 
@@ -24,6 +25,19 @@
     <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
 }
 
+@if (!CanUseMatScoringHub)
+{
+    <section class="panel spacer-top">
+        <h2>Mat Scoring Hub Restricted</h2>
+        <p class="helper">Mat scoring is administered by tournament directors. Sign in as a tournament director and open an owned event from the backend ops center.</p>
+        <div class="actions">
+            <a class="btn primary" href="/admin">Open Tournament Director Ops</a>
+            <a class="btn ghost" href="/support?faqId=faq-scoring-02">Open Scoring Access Guide</a>
+        </div>
+    </section>
+}
+else
+{
 <section class="panel">
     <h2>Match Channel</h2>
     <div class="form-grid spacer-top">
@@ -226,6 +240,7 @@
         </table>
     </div>
 </section>
+}
 
 @code {
     [Parameter]
@@ -260,6 +275,8 @@
     private int MaxOvertimePeriods = 3;
     private bool EndOnFirstOvertimeScore;
     private bool StrictRuleEnforcement = true;
+    private bool CanUseMatScoringHub =>
+        AuthSession.IsAuthenticated && AuthSession.Role == UserRole.TournamentDirector;
 
     private CancellationTokenSource? _clockRenderCts;
 
@@ -333,6 +350,11 @@
 
     private async Task ConnectAndLoadAsync()
     {
+        if (!EnsureMatScoringAccess())
+        {
+            return;
+        }
+
         IsBusy = true;
         StatusMessage = null;
 
@@ -379,6 +401,11 @@
 
     private async Task SaveRulesAsync()
     {
+        if (!EnsureMatScoringAccess())
+        {
+            return;
+        }
+
         if (!TryGetMatchId(out var matchId))
         {
             StatusSuccess = false;
@@ -422,6 +449,11 @@
 
     private async Task LoadOnlyAsync()
     {
+        if (!EnsureMatScoringAccess())
+        {
+            return;
+        }
+
         if (!TryGetMatchId(out var matchId))
         {
             StatusSuccess = false;
@@ -457,6 +489,11 @@
 
     private async Task ClockCommandAsync(MatchClockCommand command, int? seconds = null, bool resumeAfterSeek = false)
     {
+        if (!EnsureMatScoringAccess())
+        {
+            return;
+        }
+
         if (!TryGetMatchId(out var matchId))
         {
             StatusSuccess = false;
@@ -502,6 +539,11 @@
 
     private async Task ScoreActionAsync(ScoreCompetitor competitor, ScoringActionCode actionCode)
     {
+        if (!EnsureMatScoringAccess())
+        {
+            return;
+        }
+
         if (!TryGetMatchId(out var matchId))
         {
             StatusSuccess = false;
@@ -548,6 +590,11 @@
 
     private async Task EndByDecisionAsync()
     {
+        if (!EnsureMatScoringAccess())
+        {
+            return;
+        }
+
         if (!TryGetMatchId(out var matchId))
         {
             StatusSuccess = false;
@@ -595,6 +642,11 @@
 
     private async Task ResetBoardAsync()
     {
+        if (!EnsureMatScoringAccess())
+        {
+            return;
+        }
+
         if (!TryGetMatchId(out var matchId))
         {
             StatusSuccess = false;
@@ -725,6 +777,18 @@
             return true;
         }
 
+        return false;
+    }
+
+    private bool EnsureMatScoringAccess()
+    {
+        if (CanUseMatScoringHub)
+        {
+            return true;
+        }
+
+        StatusSuccess = false;
+        StatusMessage = "Mat scoring hub is restricted to tournament directors.";
         return false;
     }
 

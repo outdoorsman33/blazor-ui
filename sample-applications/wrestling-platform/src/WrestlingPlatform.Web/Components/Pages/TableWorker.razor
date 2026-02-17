@@ -170,7 +170,7 @@
                             <td>
                                 <div class="actions">
                                     <button class="btn ghost" @onclick="() => SetInTheHoleAsync(row.MatchId)" disabled="@IsBusy">In-the-hole</button>
-                                    <a class="btn secondary" href="@MatScoringRoute(row.MatchId)" @onclick="@(() => SetWorkflowMatch(row.MatchId))">Score</a>
+                                    <a class="btn secondary" href="@LiveHubRoute(row.MatchId)" @onclick="@(() => SetWorkflowMatch(row.MatchId))">Live Hub</a>
                                 </div>
                             </td>
                         </tr>
@@ -348,5 +348,8 @@
 
     private static string Short(Guid id) => id.ToString("N")[..8];
 
-    private static string MatScoringRoute(Guid matchId) => $"/mat-scoring?matchId={matchId:D}";
+    private string LiveHubRoute(Guid matchId) =>
+        Guid.TryParse(SelectedEventIdText, out var eventId)
+            ? $"/live?eventId={eventId:D}&matchId={matchId:D}"
+            : $"/live?matchId={matchId:D}";
 }

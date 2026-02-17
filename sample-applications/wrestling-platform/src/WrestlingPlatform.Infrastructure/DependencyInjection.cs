@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -112,44 +113,147 @@ public static class DependencyInjection
 
     private static async Task ApplySchemaCompatibilityAsync(WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken)
     {
-        if (!dbContext.Database.IsNpgsql())
+        if (dbContext.Database.IsNpgsql())
+        {
+            var statements = new[]
+            {
+                @"ALTER TABLE ""TournamentEvents"" ADD COLUMN IF NOT EXISTS ""CreatedByUserAccountId"" uuid NULL;",
+                @"ALTER TABLE ""Matches"" ADD COLUMN IF NOT EXISTS ""BoutNumber"" integer NULL;",
+                @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""AthleteProfileId"" uuid NULL;",
+                @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""RequestedByUserAccountId"" uuid NULL;",
+                @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""DelegatedByUserAccountId"" uuid NULL;",
+                @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""IsPersonalStream"" boolean NOT NULL DEFAULT FALSE;",
+                @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""SaveToAthleteProfile"" boolean NOT NULL DEFAULT FALSE;",
+                @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""IsPrivate"" boolean NOT NULL DEFAULT FALSE;",
+                """
+                CREATE TABLE IF NOT EXISTS "TournamentStaffAssignments"
+                (
+                    "Id" uuid NOT NULL,
+                    "CreatedUtc" timestamp with time zone NOT NULL,
+                    "TournamentEventId" uuid NOT NULL,
+                    "UserAccountId" uuid NOT NULL,
+                    "Role" integer NOT NULL,
+                    "CanScoreMatches" boolean NOT NULL,
+                    "CanManageMatches" boolean NOT NULL,
+                    "CanManageStreams" boolean NOT NULL,
+                    CONSTRAINT "PK_TournamentStaffAssignments" PRIMARY KEY ("Id")
+                );
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS "AthleteStreamingPermissions"
+                (
+                    "Id" uuid NOT NULL,
+                    "CreatedUtc" timestamp with time zone NOT NULL,
+                    "AthleteProfileId" uuid NOT NULL,
+                    "ParentGuardianUserAccountId" uuid NOT NULL,
+                    "DelegateUserAccountId" uuid NOT NULL,
+                    "IsActive" boolean NOT NULL,
+                    CONSTRAINT "PK_AthleteStreamingPermissions" PRIMARY KEY ("Id")
+                );
+                """,
+                @"CREATE INDEX IF NOT EXISTS ""IX_TournamentEvents_CreatedByUserAccountId"" ON ""TournamentEvents"" (""CreatedByUserAccountId"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_Matches_BracketId_BoutNumber"" ON ""Matches"" (""BracketId"", ""BoutNumber"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""Status"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_AthleteProfileId_IsPersonalStream_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""AthleteProfileId"", ""IsPersonalStream"", ""Status"");",
+                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_UserAccountId"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""UserAccountId"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_CanScoreMatches"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""CanScoreMatches"");",
+                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteStreamingPermissions_AthleteProfileId_DelegateUserAccountId"" ON ""AthleteStreamingPermissions"" (""AthleteProfileId"", ""DelegateUserAccountId"");"
+            };
+
+            foreach (var statement in statements)
+            {
+                await dbContext.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+            }
+
+            return;
+        }
+
+        if (!dbContext.Database.IsSqlite())
         {
             return;
         }
 
-        var statements = new[]
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "TournamentEvents",
+            columnName: "CreatedByUserAccountId",
+            columnDefinition: "\"CreatedByUserAccountId\" TEXT NULL",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "Matches",
+            columnName: "BoutNumber",
+            columnDefinition: "\"BoutNumber\" INTEGER NULL",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "StreamSessions",
+            columnName: "AthleteProfileId",
+            columnDefinition: "\"AthleteProfileId\" TEXT NULL",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "StreamSessions",
+            columnName: "RequestedByUserAccountId",
+            columnDefinition: "\"RequestedByUserAccountId\" TEXT NULL",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "StreamSessions",
+            columnName: "DelegatedByUserAccountId",
+            columnDefinition: "\"DelegatedByUserAccountId\" TEXT NULL",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "StreamSessions",
+            columnName: "IsPersonalStream",
+            columnDefinition: "\"IsPersonalStream\" INTEGER NOT NULL DEFAULT 0",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "StreamSessions",
+            columnName: "SaveToAthleteProfile",
+            columnDefinition: "\"SaveToAthleteProfile\" INTEGER NOT NULL DEFAULT 0",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "StreamSessions",
+            columnName: "IsPrivate",
+            columnDefinition: "\"IsPrivate\" INTEGER NOT NULL DEFAULT 0",
+            cancellationToken);
+
+        var sqliteStatements = new[]
         {
-            @"ALTER TABLE ""TournamentEvents"" ADD COLUMN IF NOT EXISTS ""CreatedByUserAccountId"" uuid NULL;",
-            @"ALTER TABLE ""Matches"" ADD COLUMN IF NOT EXISTS ""BoutNumber"" integer NULL;",
-            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""AthleteProfileId"" uuid NULL;",
-            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""RequestedByUserAccountId"" uuid NULL;",
-            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""DelegatedByUserAccountId"" uuid NULL;",
-            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""IsPersonalStream"" boolean NOT NULL DEFAULT FALSE;",
-            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""SaveToAthleteProfile"" boolean NOT NULL DEFAULT FALSE;",
-            @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""IsPrivate"" boolean NOT NULL DEFAULT FALSE;",
             """
             CREATE TABLE IF NOT EXISTS "TournamentStaffAssignments"
             (
-                "Id" uuid NOT NULL,
-                "CreatedUtc" timestamp with time zone NOT NULL,
-                "TournamentEventId" uuid NOT NULL,
-                "UserAccountId" uuid NOT NULL,
-                "Role" integer NOT NULL,
-                "CanScoreMatches" boolean NOT NULL,
-                "CanManageMatches" boolean NOT NULL,
-                "CanManageStreams" boolean NOT NULL,
+                "Id" TEXT NOT NULL,
+                "CreatedUtc" TEXT NOT NULL,
+                "TournamentEventId" TEXT NOT NULL,
+                "UserAccountId" TEXT NOT NULL,
+                "Role" INTEGER NOT NULL,
+                "CanScoreMatches" INTEGER NOT NULL,
+                "CanManageMatches" INTEGER NOT NULL,
+                "CanManageStreams" INTEGER NOT NULL,
                 CONSTRAINT "PK_TournamentStaffAssignments" PRIMARY KEY ("Id")
             );
             """,
             """
             CREATE TABLE IF NOT EXISTS "AthleteStreamingPermissions"
             (
-                "Id" uuid NOT NULL,
-                "CreatedUtc" timestamp with time zone NOT NULL,
-                "AthleteProfileId" uuid NOT NULL,
-                "ParentGuardianUserAccountId" uuid NOT NULL,
-                "DelegateUserAccountId" uuid NOT NULL,
-                "IsActive" boolean NOT NULL,
+                "Id" TEXT NOT NULL,
+                "CreatedUtc" TEXT NOT NULL,
+                "AthleteProfileId" TEXT NOT NULL,
+                "ParentGuardianUserAccountId" TEXT NOT NULL,
+                "DelegateUserAccountId" TEXT NOT NULL,
+                "IsActive" INTEGER NOT NULL,
                 CONSTRAINT "PK_AthleteStreamingPermissions" PRIMARY KEY ("Id")
             );
             """,
@@ -162,10 +266,67 @@ public static class DependencyInjection
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteStreamingPermissions_AthleteProfileId_DelegateUserAccountId"" ON ""AthleteStreamingPermissions"" (""AthleteProfileId"", ""DelegateUserAccountId"");"
         };
 
-        foreach (var statement in statements)
+        foreach (var statement in sqliteStatements)
         {
             await dbContext.Database.ExecuteSqlRawAsync(statement, cancellationToken);
         }
+    }
+
+    private static async Task EnsureSqliteColumnAsync(
+        WrestlingPlatformDbContext dbContext,
+        string tableName,
+        string columnName,
+        string columnDefinition,
+        CancellationToken cancellationToken)
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        var opened = connection.State != System.Data.ConnectionState.Open;
+
+        if (opened)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            if (await SqliteColumnExistsAsync(connection, tableName, columnName, cancellationToken))
+            {
+                return;
+            }
+
+            var escapedTableName = tableName.Replace("\"", "\"\"", StringComparison.Ordinal);
+            var alterSql = $"ALTER TABLE \"{escapedTableName}\" ADD COLUMN {columnDefinition};";
+            await dbContext.Database.ExecuteSqlRawAsync(alterSql, cancellationToken);
+        }
+        finally
+        {
+            if (opened)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    private static async Task<bool> SqliteColumnExistsAsync(
+        DbConnection connection,
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        var escapedTableName = tableName.Replace("\"", "\"\"", StringComparison.Ordinal);
+        command.CommandText = $"PRAGMA table_info(\"{escapedTableName}\");";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (string.Equals(reader["name"]?.ToString(), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static async Task SeedDemoDataAsync(WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken)

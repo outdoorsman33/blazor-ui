@@ -164,7 +164,7 @@
                                                             <div class="pool-cell-title">@cell.ResultLabel</div>
                                                             <div class="helper">@cell.OpponentLabel</div>
                                                             <div class="helper">@(cell.Match.Score ?? cell.Match.Status.ToString())</div>
-                                                            <a class="btn ghost pool-cell-btn" href="@MatScoringRoute(cell.Match.MatchId)">Score</a>
+                                                            <a class="btn ghost pool-cell-btn" href="@MatchOpsRoute(cell.Match.MatchId)">Live Hub</a>
                                                         </div>
                                                     }
                                                 </td>
@@ -194,7 +194,7 @@
                                             else
                                             {
                                                 <a class="pool-mobile-cell @(cell.IsWin ? "win" : "loss") @(cell.Match.Status == MatchStatus.OnMat ? "live" : string.Empty)"
-                                                   href="@MatScoringRoute(cell.Match.MatchId)">
+                                                   href="@MatchOpsRoute(cell.Match.MatchId)">
                                                     <span class="item-title">RR @cell.Round | @cell.ResultLabel</span>
                                                     <span class="helper">@cell.OpponentLabel</span>
                                                     <span class="helper">@((cell.Match.Score ?? cell.Match.Status.ToString()))</span>
@@ -300,7 +300,7 @@
                                         <span class="helper">@(node.Match.ResultMethod ?? node.Match.MatNumber ?? "TBD")</span>
                                     </div>
                                     <div class="actions">
-                                        <a class="btn ghost" href="@MatScoringRoute(node.Match.MatchId)">Open Mat Scoring</a>
+                                        <a class="btn ghost" href="@MatchOpsRoute(node.Match.MatchId)">Open Live Hub</a>
                                     </div>
                                 </article>
                             }
@@ -340,7 +340,7 @@
                                             <span class="helper">@(match.ResultMethod ?? match.MatNumber ?? "TBD")</span>
                                         </div>
                                         <div class="actions">
-                                            <a class="btn ghost" href="@MatScoringRoute(match.MatchId)">Open Mat Scoring</a>
+                                            <a class="btn ghost" href="@MatchOpsRoute(match.MatchId)">Open Live Hub</a>
                                         </div>
                                     </article>
                                 }
@@ -388,7 +388,7 @@
                 }
             </div>
             <div class="actions">
-                <a class="btn primary" href="@MatScoringRoute(SelectedMatch.MatchId)">Open Mat Scoring</a>
+                <a class="btn primary" href="@MatchOpsRoute(SelectedMatch.MatchId)">Open Live Hub</a>
                 <button class="btn ghost" @onclick="SelectPreviousMatch" disabled="@(PreviousMatch is null)">Previous Match</button>
                 <button class="btn ghost" @onclick="SelectNextMatch" disabled="@(NextMatch is null)">Next Match</button>
             </div>
@@ -1095,7 +1095,10 @@
     private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
     private static string EventRoute(Guid eventId) => $"/events/{eventId:D}";
 
-    private static string MatScoringRoute(Guid matchId) => $"/mat-scoring?matchId={matchId:D}";
+    private string MatchOpsRoute(Guid matchId) =>
+        Guid.TryParse(SelectedEventIdText, out var eventId)
+            ? $"/live?eventId={eventId:D}&matchId={matchId:D}"
+            : $"/live?matchId={matchId:D}";
 
     private sealed record DivisionOption(string Key, string Label, int MatchCount);
 

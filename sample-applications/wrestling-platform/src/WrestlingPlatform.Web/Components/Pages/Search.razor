@@ -151,7 +151,7 @@
     {
         GlobalSearchEntityType.Athlete => "/athlete",
         GlobalSearchEntityType.Tournament => $"/events/{item.Id:D}",
-        GlobalSearchEntityType.Match => $"/mat-scoring?matchId={item.Id:D}",
+        GlobalSearchEntityType.Match => $"/live?matchId={item.Id:D}",
         GlobalSearchEntityType.Team => "/coach",
         GlobalSearchEntityType.Coach => "/coach",
         GlobalSearchEntityType.Stream => "/live",

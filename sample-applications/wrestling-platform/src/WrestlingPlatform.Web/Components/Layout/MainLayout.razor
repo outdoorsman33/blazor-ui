@@ -146,13 +146,6 @@
                         }
                     </MudNavMenu>
 
-                    @if (ShowMatScoringContextHint)
-                    {
-                        <div class="access-hint">
-                            Mat scoring appears only for coaches, mat workers, and tournament directors with an active event.
-                        </div>
-                    }
-
                     @if (ShowOpsOwnershipHint)
                     {
                         <div class="access-hint">
@@ -166,7 +159,11 @@
                         <span class="drawer-label">Comprehensive FAQ Articles</span>
                         @foreach (var article in FeaturedSupportArticles)
                         {
-                            <button type="button" class="support-article-link" @onclick="@(() => OpenSupportHub(article.Id))">@article.Title</button>
+                            <a class="support-article-link"
+                               href="@BuildHref("/support", ("faqId", article.Id))"
+                               @onclick="@(() => OpenSupportHub(article.Id))">
+                                @article.Title
+                            </a>
                         }
                     </section>
 
@@ -453,12 +450,12 @@
 
                         @if (!CanAccessMatScoring)
                         {
-                            <p class="panel-note">Mat scoring is visible only to coaches, mat workers, and tournament directors with an active tournament context.</p>
+                            <p class="panel-note">Mat scoring hub is administered by the tournament director that owns this event.</p>
                             <button class="mini-btn ghost" type="button" @onclick="OpenMatScoringGuide">Open scoring access guide</button>
                         }
                         else
                         {
-                            <p class="panel-note">Scoring is limited to this tournament event and mat-specific bout assignments.</p>
+                            <p class="panel-note">Scoring is limited to this tournament event and can be managed only through this dedicated hub.</p>
                             <div class="mat-grid">
                                 @foreach (var bout in FilteredLiveBouts)
                                 {
@@ -803,13 +800,11 @@
     private string? ActiveEventIdText => Workflow.EventId?.ToString("D");
     private int? CurrentWorkflowBoutNumber => Workflow.MatchId is null ? null : PredictBoutNumber(Workflow.MatchId.Value);
     private bool HasEventContext => Workflow.EventId is not null;
-    private bool HasScoringRole => CurrentRole is PlatformRole.Coach or PlatformRole.MatWorker or PlatformRole.TournamentDirector;
     private bool IsTournamentDirector => CurrentRole == PlatformRole.TournamentDirector;
     private bool DirectorOwnsActiveEvent => IsTournamentDirector && Workflow.EventId is Guid eventId && OwnedTournamentIds.Contains(eventId);
     private bool CanAccessOpsCenter => AuthSession.IsAuthenticated && DirectorOwnsActiveEvent;
-    private bool CanAccessMatScoring => AuthSession.IsAuthenticated && HasScoringRole && HasEventContext;
+    private bool CanAccessMatScoring => AuthSession.IsAuthenticated && DirectorOwnsActiveEvent && HasEventContext;
     private bool CanUsePersonalStreaming => AuthSession.IsAuthenticated && (CurrentRole == PlatformRole.ParentGuardian || StreamingDelegationEnabled);
-    private bool ShowMatScoringContextHint => AuthSession.IsAuthenticated && HasScoringRole && !HasEventContext;
     private bool ShowOpsOwnershipHint => AuthSession.IsAuthenticated && IsTournamentDirector && !DirectorOwnsActiveEvent;
     private bool ShowOpsCenterPanel => AuthSession.IsAuthenticated && CurrentPath.StartsWith("/admin", StringComparison.OrdinalIgnoreCase);
     private bool ShowLiveHubPanel => AuthSession.IsAuthenticated &&
@@ -831,7 +826,6 @@
         ("panel", "follow"),
         ("notifications", "in-hole,on-deck,mat,results"));
 
-    private string MatScoringHref => BuildHref("/mat-scoring", ("eventId", ActiveEventIdText), ("boutNumber", CurrentWorkflowBoutNumber?.ToString()));
     private string OpsCenterHref => BuildHref("/admin", ("eventId", ActiveEventIdText), ("ops", "center"));
     private string OpsBracketBuilderHref => BuildHref("/bracket-builder", ("eventId", ActiveEventIdText), ("ops", "1"));
     private string CompletedBracketsHref => BuildHref("/brackets", ("eventId", ActiveEventIdText), ("view", "completed"));
@@ -1204,9 +1198,7 @@
 
     private string SearchResultHref(GlobalSearchResultItem result) => result.Type switch
     {
-        GlobalSearchEntityType.Match => CanAccessMatScoring
-            ? BuildHref("/mat-scoring", ("eventId", ActiveEventIdText), ("matchId", result.Id.ToString("D")), ("boutNumber", PredictBoutNumber(result.Id).ToString()))
-            : BuildHref("/live", ("eventId", ActiveEventIdText), ("faqId", "faq-scoring-02")),
+        GlobalSearchEntityType.Match => BuildHref("/live", ("eventId", ActiveEventIdText), ("matchId", result.Id.ToString("D")), ("faqId", "faq-live-04")),
         GlobalSearchEntityType.Tournament => BuildHref($"/events/{result.Id:D}", ("eventId", result.Id.ToString("D"))),
         GlobalSearchEntityType.Athlete => "/athlete",
         GlobalSearchEntityType.Coach => "/coach",
@@ -1337,11 +1329,6 @@
             case PlatformRole.TournamentDirector:
                 links.Add(new("Tournament Director", BuildHref("/admin", ("eventId", ActiveEventIdText)), Icons.Material.Filled.AdminPanelSettings, "Director"));
                 break;
-        }
-
-        if (CanAccessMatScoring)
-        {
-            links.Add(new("Mat Scoring", MatScoringHref, Icons.Material.Filled.Timer, "Score"));
         }
 
         if (CanAccessOpsCenter)
@@ -1880,13 +1867,13 @@
                 "Mat scoring is isolated by event context and permissions to protect bout integrity.",
                 [
                     new SupportSection("1) Access requirements", [
-                        "Sign in with coach, mat worker, or tournament director role.",
-                        "Select an active tournament event.",
-                        "Open mat scoring from role-driven navigation.",
-                        "If access is blocked, verify role assignment and event ownership."
+                        "Sign in as the tournament director for the active event.",
+                        "Create or claim the event in backend ops center first.",
+                        "Open mat scoring only from the dedicated scoring hub.",
+                        "If access is blocked, verify event ownership and active event context."
                     ]),
                     new SupportSection("2) Score a bout", [
-                        "Open assigned mat card and confirm bout number.",
+                        "Open the assigned mat card and confirm bout number.",
                         "Start clock only after referee and table worker confirm athletes.",
                         "Capture scoring events in sequence and verify period transitions.",
                         "Submit final score to publish result to live hub and bracket view."

@@ -288,7 +288,7 @@
                 <button class="btn ghost" @onclick="LoadVisualBundleAsync" disabled="@IsBusy">Refresh Visual Preview</button>
                 <a class="btn secondary" href="@SelectedBracketsHref">Open Bracket Center</a>
                 <a class="btn ghost" href="@SelectedEventDetailsHref">Open Event Details</a>
-                <a class="btn ghost" href="@SelectedMatScoringHref">Open First Match Scoring</a>
+                <a class="btn ghost" href="@SelectedLiveHubHref">Open Live Hub</a>
             </div>
         </article>
     }
@@ -353,12 +353,14 @@
     private string SelectedEventDetailsHref =>
         SelectedEventId is null ? "/tournaments" : $"/events/{SelectedEventId.Value:D}";
 
-    private string SelectedMatScoringHref
+    private string SelectedLiveHubHref
     {
         get
         {
             var firstMatch = VisualBundle?.BracketMatches.OrderBy(match => match.Round).ThenBy(match => match.MatchNumber).FirstOrDefault();
-            return firstMatch is null ? "/mat-scoring" : $"/mat-scoring?matchId={firstMatch.MatchId:D}";
+            return firstMatch is null || SelectedEventId is null
+                ? "/live"
+                : $"/live?eventId={SelectedEventId.Value:D}&matchId={firstMatch.MatchId:D}";
         }
     }
 
