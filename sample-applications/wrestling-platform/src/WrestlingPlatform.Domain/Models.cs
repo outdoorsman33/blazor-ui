@@ -133,6 +133,20 @@ public enum AthleteChatMessageModerationStatus
     Hidden
 }
 
+public enum NoviceCategory
+{
+    NotApplicable,
+    Novice,
+    NonNovice
+}
+
+public enum NoviceDivisionRule
+{
+    Open,
+    NoviceOnly,
+    NonNoviceOnly
+}
+
 public enum WebhookProcessingStatus
 {
     Pending,
@@ -178,6 +192,13 @@ public sealed class AthleteProfile : Entity
     public int Grade { get; set; }
     public decimal WeightClass { get; set; }
     public CompetitionLevel Level { get; set; }
+    public decimal WrestlingExperienceYears { get; set; }
+    public NoviceCategory NoviceCategory { get; set; } = NoviceCategory.NotApplicable;
+    public bool IsChatDiscoverable { get; set; } = true;
+    public bool IsChatAvailable { get; set; } = true;
+    public bool IsChatRestrictedByGuardian { get; set; }
+    public string? ChatRestrictionReason { get; set; }
+    public DateTime? ChatRestrictionUpdatedUtc { get; set; }
 }
 
 public sealed class CoachProfile : Entity
@@ -230,6 +251,7 @@ public sealed class TournamentDivision : Entity
     public CompetitionLevel Level { get; set; }
     public decimal WeightClass { get; set; }
     public string Name { get; set; } = string.Empty;
+    public NoviceDivisionRule NoviceRule { get; set; } = NoviceDivisionRule.Open;
 }
 
 public sealed class EventRegistration : Entity
@@ -440,4 +462,14 @@ public sealed class AthleteChatAthleteLock : Entity
     public bool IsActive { get; set; } = true;
     public DateTime? ReleasedUtc { get; set; }
     public Guid? ReleasedByUserAccountId { get; set; }
+}
+
+public sealed class AthleteChatBlock : Entity
+{
+    public Guid BlockingAthleteProfileId { get; set; }
+    public Guid BlockingUserAccountId { get; set; }
+    public Guid BlockedAthleteProfileId { get; set; }
+    public Guid BlockedUserAccountId { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTime? ReleasedUtc { get; set; }
 }

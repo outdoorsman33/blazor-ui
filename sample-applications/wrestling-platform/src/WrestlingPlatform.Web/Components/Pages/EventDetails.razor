@@ -1,18 +1,20 @@
+
 @page "/events/{EventId:guid}"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
+@using System.Globalization
 
 <PageTitle>Event Details - PinPoint Arena</PageTitle>
 
 <div class="page-head">
     <div>
         <h1 class="page-title">Event Details</h1>
-        <p class="page-subtitle">Event-specific overview for schedule, divisions, rules, overtime policy, brackets, registration, and live viewing.</p>
+        <p class="page-subtitle">Event-specific workspace for live bouts, interactive brackets, teams, team scores, and results.</p>
     </div>
     <div class="tag-row">
         <span class="tag">Event-Centric</span>
-        <span class="tag">Bracket + Registration</span>
-        <span class="tag">Division Filters</span>
+        <span class="tag">Interactive Brackets</span>
+        <span class="tag">Live + Results</span>
     </div>
 </div>
 
@@ -42,210 +44,309 @@ else
             <span class="tag">@Directory.Controls.OvertimeFormat</span>
         </div>
         <div class="actions">
-            <a class="btn primary" href="@EventRegistrationHref">Register for Event</a>
-            <a class="btn secondary" href="@BracketsHref">Open Brackets</a>
-            <a class="btn ghost" href="@LiveHref">Watch Live</a>
-            <a class="btn ghost" href="@TableWorkerHref">Table Worker</a>
-            <button class="btn ghost" @onclick="LoadAsync" disabled="@IsBusy">Reload Event</button>
+            <a class="btn primary" href="@EventRegistrationHref">Register</a>
+            <a class="btn secondary" href="@BracketsHref">Brackets</a>
+            <a class="btn ghost" href="@LiveHref">Live Hub</a>
+            <button class="btn ghost" @onclick="LoadAsync" disabled="@IsBusy">Reload</button>
         </div>
     </section>
 
     <div class="metric-grid spacer-top">
-        <article class="metric-card">
-            <div class="metric-label">Venue</div>
-            <div class="metric-value">@Directory.Venue</div>
-        </article>
-        <article class="metric-card">
-            <div class="metric-label">Start Time</div>
-            <div class="metric-value">@Directory.StartUtc.ToLocalTime().ToString("MMM dd yyyy h:mm tt")</div>
-        </article>
-        <article class="metric-card">
-            <div class="metric-label">End Time</div>
-            <div class="metric-value">@Directory.EndUtc.ToLocalTime().ToString("MMM dd yyyy h:mm tt")</div>
-        </article>
-        <article class="metric-card">
-            <div class="metric-label">Entry Fee</div>
-            <div class="metric-value">$@((Directory.EntryFeeCents / 100m).ToString("0.00"))</div>
-        </article>
-        <article class="metric-card">
-            <div class="metric-label">Registration</div>
-            <div class="metric-value">@RegistrationLabel</div>
-        </article>
-        <article class="metric-card">
-            <div class="metric-label">Bracket Release</div>
-            <div class="metric-value">@BracketReleaseLabel</div>
-        </article>
-    </div>
-
-    <div class="panel-grid two spacer-top">
-        <section class="panel">
-            <h2>Rules, Periods, and Overtime</h2>
-            <ul class="list spacer-top">
-                <li class="list-item">
-                    <div class="item-head">
-                        <span class="item-title">Scoring Preset</span>
-                        <span class="tag">@Directory.Controls.ScoringPreset</span>
-                    </div>
-                    <div class="helper spacer-top">@ScoringPresetSummary(Directory.Controls.ScoringPreset)</div>
-                </li>
-                <li class="list-item">
-                    <div class="item-head">
-                        <span class="item-title">Regulation Period Plan</span>
-                        <span class="tag">@Directory.Controls.OvertimeFormat</span>
-                    </div>
-                    <div class="helper spacer-top">@PeriodPlanLabel(Directory.Controls.ScoringPreset)</div>
-                </li>
-                <li class="list-item">
-                    <div class="item-head">
-                        <span class="item-title">Overtime Configuration</span>
-                        <span class="tag">Max OT: @Directory.Controls.MaxOvertimePeriods</span>
-                    </div>
-                    <div class="helper spacer-top">@OvertimeSummary(Directory.Controls)</div>
-                </li>
-                <li class="list-item">
-                    <div class="item-head">
-                        <span class="item-title">Bracket Generation</span>
-                        <span class="tag">@Directory.Controls.BracketCreationMode</span>
-                    </div>
-                    <div class="helper spacer-top">Use Bracket Builder for random, seeded, AI-seeded, or manual operations per division.</div>
-                </li>
-            </ul>
-        </section>
-
-        <section class="panel">
-            <h2>Bracket Snapshot</h2>
-            @if (VisualBundle is null)
-            {
-                <p class="helper spacer-top">Bracket visual bundle is loading.</p>
-            }
-            else
-            {
-                <div class="metric-grid spacer-top">
-                    <article class="metric-card">
-                        <div class="metric-label">Released</div>
-                        <div class="metric-value">@(VisualBundle.BracketsReleased ? "Yes" : "No")</div>
-                    </article>
-                    <article class="metric-card">
-                        <div class="metric-label">Elimination Matches</div>
-                        <div class="metric-value">@VisualBundle.BracketMatches.Count</div>
-                    </article>
-                    <article class="metric-card">
-                        <div class="metric-label">Pool Groups</div>
-                        <div class="metric-value">@VisualBundle.Pools.Count</div>
-                    </article>
-                </div>
-                <div class="actions">
-                    <a class="btn secondary" href="@BracketsHref">Open Interactive Brackets</a>
-                    <a class="btn ghost" href="@BracketBuilderHref">Open Bracket Builder</a>
-                </div>
-            }
-        </section>
+        <article class="metric-card"><div class="metric-label">Venue</div><div class="metric-value">@Directory.Venue</div></article>
+        <article class="metric-card"><div class="metric-label">Start</div><div class="metric-value">@Directory.StartUtc.ToLocalTime().ToString("MMM dd yyyy h:mm tt")</div></article>
+        <article class="metric-card"><div class="metric-label">End</div><div class="metric-value">@Directory.EndUtc.ToLocalTime().ToString("MMM dd yyyy h:mm tt")</div></article>
+        <article class="metric-card"><div class="metric-label">Entry Fee</div><div class="metric-value">$@((Directory.EntryFeeCents / 100m).ToString("0.00"))</div></article>
+        <article class="metric-card"><div class="metric-label">Registration</div><div class="metric-value">@RegistrationLabel</div></article>
+        <article class="metric-card"><div class="metric-label">Bracket Release</div><div class="metric-value">@BracketReleaseLabel</div></article>
     </div>
 
     <section class="panel spacer-top">
-        <div class="item-head">
-            <h2>Divisions and Weights</h2>
-            <span class="tag">@FilteredDivisions.Count shown / @Directory.Divisions.Count total</span>
-        </div>
-        <div class="form-grid spacer-top">
-            <div class="field">
-                <label>Level</label>
-                <select class="select" @bind="DivisionLevelFilter">
-                    <option value="">All</option>
-                    @foreach (var level in Enum.GetValues<CompetitionLevel>())
-                    {
-                        <option value="@level">@level</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label>Style</label>
-                <select class="select" @bind="StyleFilter">
-                    <option value="">All</option>
-                    @foreach (var style in Enum.GetValues<WrestlingStyle>())
-                    {
-                        <option value="@style">@style</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label>Age Group</label>
-                <input class="input" @bind="AgeGroupFilter" @bind:event="oninput" placeholder="K-6, Middle, HS..." />
-            </div>
-            <div class="field">
-                <label>Weight Min</label>
-                <input class="input" type="number" min="0" @bind="WeightMin" />
-            </div>
-            <div class="field">
-                <label>Weight Max</label>
-                <input class="input" type="number" min="0" @bind="WeightMax" />
-            </div>
-            <div class="field">
-                <label>Sort</label>
-                <select class="select" @bind="SortMode">
-                    <option value="level">Level + Weight</option>
-                    <option value="weight">Weight</option>
-                    <option value="registrants">Registrant Count</option>
-                    <option value="name">Division Name</option>
-                </select>
-            </div>
-        </div>
         <div class="actions">
-            <a class="btn primary" href="@BracketsHref">View Brackets for Event</a>
-            <a class="btn secondary" href="@EventRegistrationHref">Open Event Registration</a>
-            <button class="btn ghost" @onclick="ResetDivisionFilters">Reset Filters</button>
-        </div>
-        <div class="table-wrap spacer-top">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Division</th>
-                        <th>Level</th>
-                        <th>Age Group</th>
-                        <th>Weight</th>
-                        <th>Style</th>
-                        <th>Format</th>
-                        <th>Registrants</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (FilteredDivisions.Count == 0)
-                    {
-                        <tr>
-                            <td colspan="7">No divisions match current filters.</td>
-                        </tr>
-                    }
-                    else
-                    {
-                        @foreach (var division in FilteredDivisions)
-                        {
-                            <tr>
-                                <td>@division.Name</td>
-                                <td>@division.Level</td>
-                                <td>@division.AgeGroup</td>
-                                <td>@division.WeightClass</td>
-                                <td>@division.Style</td>
-                                <td>@division.TournamentFormat</td>
-                                <td>@division.RegistrantCount</td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
+            <button class="btn @(ActiveTab == "info" ? "primary" : "ghost")" @onclick="OpenInfoTabAsync">Information</button>
+            <button class="btn @(ActiveTab == "live" ? "primary" : "ghost")" @onclick="OpenLiveTabAsync">Live Bouts</button>
+            <button class="btn @(ActiveTab == "brackets" ? "primary" : "ghost")" @onclick="OpenBracketsTabAsync">Brackets</button>
+            <button class="btn @(ActiveTab == "teams" ? "primary" : "ghost")" @onclick="OpenTeamsTabAsync">Teams</button>
+            <button class="btn @(ActiveTab == "team-scores" ? "primary" : "ghost")" @onclick="OpenTeamScoresTabAsync">Team Scores</button>
+            <button class="btn @(ActiveTab == "results" ? "primary" : "ghost")" @onclick="OpenResultsTabAsync">Results</button>
         </div>
     </section>
+
+    @if (ActiveTab == "info")
+    {
+        <div class="panel-grid two spacer-top">
+            <section class="panel">
+                <h2>Rules + Overtime</h2>
+                <ul class="list spacer-top">
+                    <li class="list-item"><strong>Scoring:</strong> @Directory.Controls.ScoringPreset</li>
+                    <li class="list-item"><strong>Overtime:</strong> @Directory.Controls.OvertimeFormat (max @Directory.Controls.MaxOvertimePeriods)</li>
+                    <li class="list-item"><strong>Creation:</strong> @Directory.Controls.BracketCreationMode</li>
+                </ul>
+            </section>
+            <section class="panel">
+                <h2>Bracket Snapshot</h2>
+                @if (VisualBundle is null)
+                {
+                    <p class="helper spacer-top">Bracket visual bundle is loading.</p>
+                }
+                else
+                {
+                    <div class="metric-grid spacer-top">
+                        <article class="metric-card"><div class="metric-label">Released</div><div class="metric-value">@(VisualBundle.BracketsReleased ? "Yes" : "No")</div></article>
+                        <article class="metric-card"><div class="metric-label">Matches</div><div class="metric-value">@VisualBundle.BracketMatches.Count</div></article>
+                        <article class="metric-card"><div class="metric-label">Pools</div><div class="metric-value">@VisualBundle.Pools.Count</div></article>
+                    </div>
+                    <div class="actions"><a class="btn secondary" href="@BracketsHref">Open Brackets</a><a class="btn ghost" href="@BracketBuilderHref">Bracket Builder</a></div>
+                }
+            </section>
+        </div>
+
+        <section class="panel spacer-top">
+            <div class="item-head"><h2>Divisions</h2><span class="tag">@FilteredDivisions.Count shown / @Directory.Divisions.Count total</span></div>
+            <div class="form-grid spacer-top">
+                <div class="field"><label>Level</label><select class="select" @bind="DivisionLevelFilter"><option value="">All</option>@foreach (var level in Enum.GetValues<CompetitionLevel>()) { <option value="@level">@level</option> }</select></div>
+                <div class="field"><label>Style</label><select class="select" @bind="StyleFilter"><option value="">All</option>@foreach (var style in Enum.GetValues<WrestlingStyle>()) { <option value="@style">@style</option> }</select></div>
+                <div class="field"><label>Age Group</label><input class="input" @bind="AgeGroupFilter" @bind:event="oninput" /></div>
+                <div class="field"><label>Weight Min</label><input class="input" type="number" min="0" @bind="WeightMin" /></div>
+                <div class="field"><label>Weight Max</label><input class="input" type="number" min="0" @bind="WeightMax" /></div>
+                <div class="field"><label>Sort</label><select class="select" @bind="SortMode"><option value="level">Level + Weight</option><option value="weight">Weight</option><option value="registrants">Registrant Count</option><option value="name">Division Name</option></select></div>
+            </div>
+            <div class="actions"><button class="btn ghost" @onclick="ResetDivisionFilters">Reset</button></div>
+            <div class="table-wrap spacer-top">
+                <table class="table">
+                    <thead><tr><th>Division</th><th>Level</th><th>Age Group</th><th>Weight</th><th>Style</th><th>Format</th><th>Registrants</th></tr></thead>
+                    <tbody>
+                        @if (FilteredDivisions.Count == 0)
+                        {
+                            <tr><td colspan="7">No divisions match current filters.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var division in FilteredDivisions)
+                            {
+                                <tr><td>@division.Name</td><td>@division.Level</td><td>@division.AgeGroup</td><td>@division.WeightClass</td><td>@division.Style</td><td>@division.TournamentFormat</td><td>@division.RegistrantCount</td></tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+    else if (ActiveTab == "live")
+    {
+        <section class="panel spacer-top">
+            <div class="item-head"><h2>Live Tournament Filters</h2><span class="tag">Event Specific</span></div>
+            <div class="form-grid spacer-top">
+                <div class="field"><label>Tournament Date</label><input class="input" type="date" @bind="LiveDate" /></div>
+                <div class="field"><label>Age Group</label><select class="select" @bind="LiveLevelFilter"><option value="">All ages</option>@foreach (var item in AvailableLiveLevels) { <option value="@item">@item</option> }</select></div>
+                <div class="field"><label>Weight</label><select class="select" @bind="LiveWeightFilter"><option value="">All weights</option>@foreach (var item in AvailableLiveWeights) { <option value="@item.ToString(CultureInfo.InvariantCulture)">@item lbs</option> }</select></div>
+                <div class="field"><label>Sort Bouts</label><select class="select" @bind="LiveSortBy"><option value="bout">Bout Number</option><option value="status">Status</option><option value="round">Round</option></select></div>
+                <div class="field"><label>Mat</label><input class="input" @bind="LiveMatFilter" placeholder="Mat 1" /></div>
+            </div>
+            <div class="actions"><button class="btn primary" @onclick="LoadLiveHubAsync" disabled="@IsLiveBusy">Load Live Matches</button><a class="btn secondary" href="@LiveHref">Open Live Hub</a><a class="btn ghost" href="/athlete">Follow Wrestlers</a></div>
+        </section>
+
+        @if (LiveHub is null)
+        {
+            <section class="panel spacer-top"><p class="helper">Load live data for this event.</p></section>
+        }
+        else
+        {
+            <div class="metric-grid spacer-top">
+                <article class="metric-card"><div class="metric-label">Total Bouts</div><div class="metric-value">@LiveHub.TotalBouts</div></article>
+                <article class="metric-card"><div class="metric-label">On Mat</div><div class="metric-value">@LiveHub.OnMat</div></article>
+                <article class="metric-card"><div class="metric-label">Mats</div><div class="metric-value">@LiveHub.Mats.Count</div></article>
+            </div>
+
+            <section class="panel spacer-top">
+                <h2>Live Mats</h2>
+                @if (LiveHub.Mats.Count == 0)
+                {
+                    <p class="helper spacer-top">No bouts match current filters.</p>
+                }
+                else
+                {
+                    @foreach (var mat in LiveHub.Mats)
+                    {
+                        <article class="list-item spacer-top">
+                            <div class="item-head"><span class="item-title">@mat.Mat</span><span class="item-meta">@mat.OnMat on mat | @mat.InTheHole in the hole | @mat.Scheduled scheduled</span></div>
+                            <div class="table-wrap spacer-top">
+                                <table class="table">
+                                    <thead><tr><th>Bout</th><th>Round</th><th>Status</th><th>Athlete A</th><th>Athlete B</th><th>Score</th><th>Action</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var bout in mat.Bouts)
+                                        {
+                                            <tr>
+                                                <td>@bout.BoutNumber</td>
+                                                <td>@bout.Round</td>
+                                                <td>@bout.Status</td>
+                                                <td>@bout.AthleteA</td>
+                                                <td>@bout.AthleteB</td>
+                                                <td>@(bout.Score ?? "-")</td>
+                                                <td><button class="btn ghost" @onclick="() => ViewBoutScoreAsync(bout.MatchId)">Scoring</button></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </article>
+                    }
+                }
+            </section>
+
+            @if (SelectedBoutScoreboard is not null)
+            {
+                <section class="panel spacer-top">
+                    <div class="item-head"><h2>Bout Scoring Breakdown</h2><span class="tag">@Short(SelectedBoutScoreboard.MatchId)</span></div>
+                    <div class="metric-grid spacer-top">
+                        <article class="metric-card"><div class="metric-label">Period</div><div class="metric-value">@SelectedBoutScoreboard.CurrentPeriod</div></article>
+                        <article class="metric-card"><div class="metric-label">Clock</div><div class="metric-value">@FormatClock(SelectedBoutScoreboard.ClockSecondsRemaining)</div></article>
+                        <article class="metric-card"><div class="metric-label">Score</div><div class="metric-value">@SelectedBoutScoreboard.AthleteAScore - @SelectedBoutScoreboard.AthleteBScore</div></article>
+                        <article class="metric-card"><div class="metric-label">Status</div><div class="metric-value">@SelectedBoutScoreboard.Status</div></article>
+                    </div>
+                    <div class="table-wrap spacer-top">
+                        <table class="table">
+                            <thead><tr><th>Time</th><th>Period</th><th>Athlete</th><th>Action</th><th>Points</th><th>Snapshot</th></tr></thead>
+                            <tbody>
+                                @if (SelectedBoutScoreboard.Events.Count == 0)
+                                {
+                                    <tr><td colspan="6">No scoring events recorded.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var scoreEvent in SelectedBoutScoreboard.Events.OrderByDescending(x => x.TimestampUtc))
+                                    {
+                                        <tr><td>@scoreEvent.TimestampUtc.ToLocalTime().ToString("MMM dd h:mm:ss tt")</td><td>@scoreEvent.Period</td><td>@scoreEvent.Competitor</td><td>@scoreEvent.ActionType</td><td>@scoreEvent.Points</td><td>@scoreEvent.AthleteAScore - @scoreEvent.AthleteBScore</td></tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            }
+        }
+    }
+    else if (ActiveTab == "brackets")
+    {
+        <section class="panel spacer-top">
+            <div class="item-head"><h2>Interactive Brackets</h2><span class="tag">Full Event View</span></div>
+            <div class="actions"><a class="btn primary" href="@BracketsHref">Open Fullscreen Brackets</a><a class="btn ghost" href="@BracketBuilderHref">Bracket Builder Wizard</a></div>
+            <iframe src="@BracketsHref" title="Event Brackets" style="width:100%;height:760px;border:1px solid rgba(28,46,69,.18);border-radius:12px;margin-top:.9rem"></iframe>
+        </section>
+    }
+    else if (ActiveTab == "teams" || ActiveTab == "team-scores" || ActiveTab == "results")
+    {
+        <section class="panel spacer-top">
+            <div class="item-head"><h2>Event Insights</h2><span class="tag">Teams + Scores + Results</span></div>
+            <div class="actions"><button class="btn primary" @onclick="LoadInsightsAsync" disabled="@IsInsightsBusy">Refresh Insights</button></div>
+            @if (Insights is null)
+            {
+                <p class="helper spacer-top">Load event insights.</p>
+            }
+            else if (ActiveTab == "teams")
+            {
+                <div class="form-grid spacer-top">
+                    <div class="field"><label>Search Team</label><input class="input" @bind="TeamSearch" @bind:event="oninput" /></div>
+                    <div class="field"><label>Sort Teams</label><select class="select" @bind="TeamSortBy"><option value="points">Team Score</option><option value="wins">Wins</option><option value="pins">Pins</option><option value="techfalls">Tech Falls</option><option value="name">Name</option></select></div>
+                </div>
+                <div class="table-wrap spacer-top">
+                    <table class="table">
+                        <thead><tr><th>Team</th><th>Roster</th><th>Wins</th><th>Losses</th><th>Pins</th><th>Tech</th><th>Score</th></tr></thead>
+                        <tbody>
+                            @if (VisibleTeams.Count == 0)
+                            {
+                                <tr><td colspan="7">No teams match current filters.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var team in VisibleTeams)
+                                {
+                                    <tr><td>@team.TeamName</td><td>@team.RegisteredAthletes</td><td>@team.Wins</td><td>@team.Losses</td><td>@team.Pins</td><td>@team.TechFalls</td><td>@team.TeamScore.ToString("0.##")</td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else if (ActiveTab == "team-scores")
+            {
+                <div class="table-wrap spacer-top">
+                    <table class="table">
+                        <thead><tr><th>Rank</th><th>Team</th><th>Score</th><th>Champions</th><th>Finalists</th><th>Place Winners</th></tr></thead>
+                        <tbody>
+                            @if (Insights.TeamScores.Count == 0)
+                            {
+                                <tr><td colspan="6">No team scores yet.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var row in Insights.TeamScores)
+                                {
+                                    <tr><td>@row.Rank</td><td>@row.TeamName</td><td>@row.TeamScore.ToString("0.##")</td><td>@row.Champions</td><td>@row.Finalists</td><td>@row.PlaceWinners</td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="form-grid spacer-top"><div class="field"><label>Search Results</label><input class="input" @bind="ResultSearch" @bind:event="oninput" /></div></div>
+                <div class="table-wrap spacer-top">
+                    <table class="table">
+                        <thead><tr><th>Division</th><th>Completed</th><th>Live/Pending</th><th>Champion</th><th>Runner-Up</th><th>Final</th></tr></thead>
+                        <tbody>
+                            @if (VisibleResults.Count == 0)
+                            {
+                                <tr><td colspan="6">No results match current filters.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var row in VisibleResults)
+                                {
+                                    <tr><td>@row.DivisionName (@row.WeightClass lbs)</td><td>@row.CompletedBouts</td><td>@row.LiveBouts</td><td>@(row.Champion ?? "-")</td><td>@(row.RunnerUp ?? "-")</td><td>@(row.FinalScore ?? "-")</td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-wrap spacer-top">
+                    <table class="table">
+                        <thead><tr><th>Bout</th><th>Mat</th><th>Status</th><th>Athlete A</th><th>Athlete B</th><th>Score</th><th>Action</th></tr></thead>
+                        <tbody>
+                            @if (Insights.Bouts.Count == 0)
+                            {
+                                <tr><td colspan="7">No bouts available.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var bout in Insights.Bouts.Take(120))
+                                {
+                                    <tr><td>@bout.BoutNumber</td><td>@bout.MatNumber</td><td>@bout.Status</td><td>@bout.AthleteA</td><td>@bout.AthleteB</td><td>@(bout.Score ?? "-")</td><td><button class="btn ghost" @onclick="() => ViewBoutScoreAsync(bout.MatchId)">Scoring</button></td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
 }
 
 @code {
-    [Parameter]
-    public Guid EventId { get; set; }
+    [Parameter] public Guid EventId { get; set; }
 
     private bool IsBusy;
+    private bool IsLiveBusy;
+    private bool IsInsightsBusy;
     private bool StatusSuccess;
     private string? StatusMessage;
     private TournamentDirectoryRow? Directory;
     private TournamentBracketVisualBundle? VisualBundle;
+    private EventLiveHubResponse? LiveHub;
+    private EventInsightsResponse? Insights;
+    private MatScoreboardSnapshot? SelectedBoutScoreboard;
 
+    private string ActiveTab = "info";
     private string DivisionLevelFilter = string.Empty;
     private string StyleFilter = string.Empty;
     private string AgeGroupFilter = string.Empty;
@@ -253,48 +354,34 @@ else
     private decimal? WeightMax;
     private string SortMode = "level";
 
+    private DateTime LiveDate = DateTime.Today;
+    private string LiveLevelFilter = string.Empty;
+    private string LiveWeightFilter = string.Empty;
+    private string LiveMatFilter = string.Empty;
+    private string LiveSortBy = "bout";
+
+    private string TeamSortBy = "points";
+    private string TeamSearch = string.Empty;
+    private string ResultSearch = string.Empty;
+
     private string EventRegistrationHref => $"/events/{EventId:D}/registration";
     private string BracketsHref => $"/brackets?eventId={EventId:D}";
     private string LiveHref => $"/live?eventId={EventId:D}";
-    private string TableWorkerHref => $"/table-worker?eventId={EventId:D}";
-    private string BracketBuilderHref => $"/bracket-builder";
+    private string BracketBuilderHref => "/bracket-builder";
 
-    private string EventLifecycleLabel
-    {
-        get
-        {
-            if (Directory is null)
-            {
-                return "Loading";
-            }
+    private string EventLifecycleLabel => Directory is null
+        ? "Loading"
+        : Directory.StartUtc <= DateTime.UtcNow && Directory.EndUtc >= DateTime.UtcNow
+            ? "Live"
+            : Directory.StartUtc > DateTime.UtcNow
+                ? "Upcoming"
+                : "Archived";
 
-            var now = DateTime.UtcNow;
-            if (Directory.StartUtc <= now && Directory.EndUtc >= now)
-            {
-                return "Live";
-            }
-
-            return Directory.StartUtc > now ? "Upcoming" : "Archived";
-        }
-    }
-
-    private string RegistrationLabel
-    {
-        get
-        {
-            if (Directory is null)
-            {
-                return "-";
-            }
-
-            if (!Directory.Controls.RegistrationCapEnabled || Directory.Controls.RegistrationCap is null)
-            {
-                return "Unlimited";
-            }
-
-            return $"{Directory.Controls.CurrentRegistrantCount}/{Directory.Controls.RegistrationCap}";
-        }
-    }
+    private string RegistrationLabel => Directory is null
+        ? "-"
+        : !Directory.Controls.RegistrationCapEnabled || Directory.Controls.RegistrationCap is null
+            ? "Unlimited"
+            : $"{Directory.Controls.CurrentRegistrantCount}/{Directory.Controls.RegistrationCap}";
 
     private string BracketReleaseLabel =>
         Directory is null
@@ -302,6 +389,16 @@ else
             : Directory.Controls.BracketReleaseMode == BracketReleaseMode.Scheduled && Directory.Controls.BracketReleaseUtc is not null
                 ? $"Scheduled {Directory.Controls.BracketReleaseUtc.Value.ToLocalTime():MMM dd h:mm tt}"
                 : Directory.Controls.BracketReleaseMode.ToString();
+
+    private List<CompetitionLevel> AvailableLiveLevels =>
+        LiveHub?.AvailableLevels.OrderBy(x => x).ToList()
+        ?? Directory?.Divisions.Select(x => x.Level).Distinct().OrderBy(x => x).ToList()
+        ?? [];
+
+    private List<decimal> AvailableLiveWeights =>
+        LiveHub?.AvailableWeights.OrderBy(x => x).ToList()
+        ?? Directory?.Divisions.Select(x => x.WeightClass).Distinct().OrderBy(x => x).ToList()
+        ?? [];
 
     private List<TournamentDivisionDirectoryRow> FilteredDivisions
     {
@@ -313,34 +410,23 @@ else
             }
 
             IEnumerable<TournamentDivisionDirectoryRow> query = Directory.Divisions;
-
-            if (!string.IsNullOrWhiteSpace(DivisionLevelFilter)
-                && Enum.TryParse<CompetitionLevel>(DivisionLevelFilter, out var level))
+            if (!string.IsNullOrWhiteSpace(DivisionLevelFilter) && Enum.TryParse<CompetitionLevel>(DivisionLevelFilter, out var level))
             {
                 query = query.Where(row => row.Level == level);
             }
 
-            if (!string.IsNullOrWhiteSpace(StyleFilter)
-                && Enum.TryParse<WrestlingStyle>(StyleFilter, out var style))
+            if (!string.IsNullOrWhiteSpace(StyleFilter) && Enum.TryParse<WrestlingStyle>(StyleFilter, out var style))
             {
                 query = query.Where(row => row.Style == style);
             }
 
             if (!string.IsNullOrWhiteSpace(AgeGroupFilter))
             {
-                var age = AgeGroupFilter.Trim();
-                query = query.Where(row => row.AgeGroup.Contains(age, StringComparison.OrdinalIgnoreCase));
+                query = query.Where(row => row.AgeGroup.Contains(AgeGroupFilter.Trim(), StringComparison.OrdinalIgnoreCase));
             }
 
-            if (WeightMin is not null)
-            {
-                query = query.Where(row => row.WeightClass >= WeightMin.Value);
-            }
-
-            if (WeightMax is not null)
-            {
-                query = query.Where(row => row.WeightClass <= WeightMax.Value);
-            }
+            if (WeightMin is not null) query = query.Where(row => row.WeightClass >= WeightMin.Value);
+            if (WeightMax is not null) query = query.Where(row => row.WeightClass <= WeightMax.Value);
 
             query = SortMode switch
             {
@@ -353,11 +439,46 @@ else
             return query.ToList();
         }
     }
-
-    protected override async Task OnParametersSetAsync()
+    private List<EventInsightsTeamRow> VisibleTeams
     {
-        await LoadAsync();
+        get
+        {
+            if (Insights is null)
+            {
+                return [];
+            }
+
+            IEnumerable<EventInsightsTeamRow> query = Insights.Teams;
+            if (!string.IsNullOrWhiteSpace(TeamSearch))
+            {
+                query = query.Where(x => x.TeamName.Contains(TeamSearch.Trim(), StringComparison.OrdinalIgnoreCase));
+            }
+
+            query = TeamSortBy switch
+            {
+                "wins" => query.OrderByDescending(x => x.Wins).ThenByDescending(x => x.TeamScore),
+                "pins" => query.OrderByDescending(x => x.Pins).ThenByDescending(x => x.TeamScore),
+                "techfalls" => query.OrderByDescending(x => x.TechFalls).ThenByDescending(x => x.TeamScore),
+                "name" => query.OrderBy(x => x.TeamName),
+                _ => query.OrderByDescending(x => x.TeamScore).ThenByDescending(x => x.Wins)
+            };
+
+            return query.ToList();
+        }
     }
+
+    private List<EventInsightsResultRow> VisibleResults =>
+        Insights is null
+            ? []
+            : string.IsNullOrWhiteSpace(ResultSearch)
+                ? Insights.Results
+                : Insights.Results.Where(x =>
+                        x.DivisionName.Contains(ResultSearch.Trim(), StringComparison.OrdinalIgnoreCase)
+                        || (x.Champion?.Contains(ResultSearch.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)
+                        || (x.RunnerUp?.Contains(ResultSearch.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+                    .ToList();
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
 
     private async Task LoadAsync()
     {
@@ -372,14 +493,12 @@ else
         try
         {
             Workflow.EventId = EventId;
-
             var directoryTask = ApiClient.GetTournamentDirectoryAsync(EventId);
             var visualTask = ApiClient.GetBracketVisualAsync(EventId);
             await Task.WhenAll(directoryTask, visualTask);
 
             var directory = await directoryTask;
             var visual = await visualTask;
-
             if (!directory.Success || directory.Data is null)
             {
                 StatusSuccess = false;
@@ -400,6 +519,114 @@ else
         }
     }
 
+    private async Task OpenInfoTabAsync() => await SetTabAsync("info");
+    private async Task OpenLiveTabAsync() => await SetTabAsync("live");
+    private async Task OpenBracketsTabAsync() => await SetTabAsync("brackets");
+    private async Task OpenTeamsTabAsync() => await SetTabAsync("teams");
+    private async Task OpenTeamScoresTabAsync() => await SetTabAsync("team-scores");
+    private async Task OpenResultsTabAsync() => await SetTabAsync("results");
+
+    private async Task SetTabAsync(string tab)
+    {
+        ActiveTab = tab;
+        if (tab == "live")
+        {
+            if (LiveHub is null)
+            {
+                await LoadLiveHubAsync();
+            }
+        }
+        else if (tab is "teams" or "team-scores" or "results")
+        {
+            if (Insights is null)
+            {
+                await LoadInsightsAsync();
+            }
+        }
+    }
+
+    private async Task LoadLiveHubAsync()
+    {
+        IsLiveBusy = true;
+        try
+        {
+            var level = string.IsNullOrWhiteSpace(LiveLevelFilter) || !Enum.TryParse<CompetitionLevel>(LiveLevelFilter, out var parsedLevel)
+                ? (CompetitionLevel?)null
+                : parsedLevel;
+            decimal? weight = null;
+            if (!string.IsNullOrWhiteSpace(LiveWeightFilter) && decimal.TryParse(LiveWeightFilter, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsedWeight))
+            {
+                weight = parsedWeight;
+            }
+
+            var result = await ApiClient.GetEventLiveHubAsync(EventId, level, weight, string.IsNullOrWhiteSpace(LiveMatFilter) ? null : LiveMatFilter.Trim(), LiveSortBy);
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                LiveHub = null;
+                return;
+            }
+
+            LiveHub = result.Data;
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {LiveHub.TotalBouts} live bouts.";
+        }
+        finally
+        {
+            IsLiveBusy = false;
+        }
+    }
+
+    private async Task LoadInsightsAsync()
+    {
+        IsInsightsBusy = true;
+        try
+        {
+            var level = string.IsNullOrWhiteSpace(LiveLevelFilter) || !Enum.TryParse<CompetitionLevel>(LiveLevelFilter, out var parsedLevel)
+                ? (CompetitionLevel?)null
+                : parsedLevel;
+            decimal? weight = null;
+            if (!string.IsNullOrWhiteSpace(LiveWeightFilter) && decimal.TryParse(LiveWeightFilter, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsedWeight))
+            {
+                weight = parsedWeight;
+            }
+
+            var result = await ApiClient.GetEventInsightsAsync(EventId, level, weight, TeamSortBy);
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Insights = null;
+                return;
+            }
+
+            Insights = result.Data;
+            StatusSuccess = true;
+            StatusMessage = $"Loaded teams ({Insights.Teams.Count}), scores ({Insights.TeamScores.Count}), and results ({Insights.Results.Count}).";
+        }
+        finally
+        {
+            IsInsightsBusy = false;
+        }
+    }
+
+    private async Task ViewBoutScoreAsync(Guid matchId)
+    {
+        var result = await ApiClient.GetMatScoreboardAsync(matchId);
+        if (!result.Success || result.Data is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = result.Message;
+            SelectedBoutScoreboard = null;
+            return;
+        }
+
+        SelectedBoutScoreboard = result.Data;
+        StatusSuccess = true;
+        StatusMessage = $"Loaded scoring breakdown for bout {Short(matchId)}.";
+    }
+
     private void ResetDivisionFilters()
     {
         DivisionLevelFilter = string.Empty;
@@ -410,27 +637,11 @@ else
         SortMode = "level";
     }
 
-    private static string ScoringPresetSummary(ScoringPreset preset) => preset switch
+    private static string FormatClock(int clockSeconds)
     {
-        ScoringPreset.NfhsHighSchool => "NFHS folkstyle rules with high-school point actions and OT policy support.",
-        ScoringPreset.NcaaFolkstyle => "NCAA folkstyle controls with college-level scoring defaults and stricter enforcement options.",
-        ScoringPreset.UwwFreestyle => "UWW freestyle profile with exposure, caution, and criteria-aware outcomes.",
-        ScoringPreset.UwwGrecoRoman => "UWW Greco profile with throw/exposure emphasis and criteria support.",
-        _ => "Custom scoring preset configured for this tournament."
-    };
-
-    private static string PeriodPlanLabel(ScoringPreset preset) => preset switch
-    {
-        ScoringPreset.NfhsHighSchool => "3 regulation periods (2:00 each default).",
-        ScoringPreset.NcaaFolkstyle => "3 regulation periods (3:00 + 2:00 + 2:00 default).",
-        ScoringPreset.UwwFreestyle => "2 regulation periods (3:00 each default).",
-        ScoringPreset.UwwGrecoRoman => "2 regulation periods (3:00 each default).",
-        _ => "Configured at event level in mat scoring rules."
-    };
-
-    private static string OvertimeSummary(TournamentControlSettings controls)
-    {
-        var sudden = controls.EndOnFirstOvertimeScore ? "Sudden score enabled." : "Sudden score disabled.";
-        return $"{controls.OvertimeFormat} with max {controls.MaxOvertimePeriods} overtime periods. {sudden}";
+        var safe = Math.Max(0, clockSeconds);
+        return $"{safe / 60}:{safe % 60:00}";
     }
+
+    private static string Short(Guid id) => id.ToString("N")[..8];
 }

@@ -201,6 +201,17 @@ internal static class ApiSecurityHelpers
             return true;
         }
 
+        if (IsInRole(principal, UserRole.ParentGuardian, UserRole.Parent))
+        {
+            return await dbContext.AthleteStreamingPermissions
+                .AsNoTracking()
+                .AnyAsync(
+                    x => x.AthleteProfileId == athleteProfileId
+                         && x.ParentGuardianUserAccountId == currentUserId.Value
+                         && x.IsActive,
+                    cancellationToken);
+        }
+
         if (!IsInRole(principal, UserRole.Coach))
         {
             return false;

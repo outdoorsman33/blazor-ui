@@ -119,6 +119,18 @@
                     }
                 </select>
             </div>
+            <div class="field">
+                <label>Wrestling Experience (years)</label>
+                <input class="input" type="number" step="0.1" min="0" @bind="WrestlingExperienceYears" />
+            </div>
+            <div class="field">
+                <label>Novice Category</label>
+                <select class="select" @bind="NoviceCategory" disabled="@(Level != CompetitionLevel.ElementaryK6)">
+                    <option value="@NoviceCategory.NotApplicable">Not Applicable</option>
+                    <option value="@NoviceCategory.Novice">Novice (2 years or less)</option>
+                    <option value="@NoviceCategory.NonNovice">Non-Novice (more than 2 years)</option>
+                </select>
+            </div>
         </div>
         <div class="actions">
             <button class="btn secondary" @onclick="CreateProfileAsync" disabled="@IsBusy">Save Athlete Profile</button>
@@ -130,6 +142,32 @@
         @if (CreatedAthleteId is not null)
         {
             <p class="helper spacer-top">Athlete id: <span class="mono">@CreatedAthleteId</span></p>
+        }
+
+        <hr class="soft" />
+
+        <h3>Guardian Chat Controls</h3>
+        <p class="helper">Parent/guardian users can restrict or restore athlete chat access for linked athletes.</p>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Athlete Id</label>
+                <input class="input mono" @bind="GuardianAthleteId" />
+            </div>
+            <div class="field check-row">
+                <input id="restrictChatGuardian" type="checkbox" @bind="RestrictAthleteChat" />
+                <label for="restrictChatGuardian">Restrict athlete chat</label>
+            </div>
+            <div class="field">
+                <label>Reason (optional)</label>
+                <input class="input" @bind="GuardianRestrictionReason" placeholder="Guardian safety hold" />
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn ghost" @onclick="SaveGuardianChatRestrictionAsync" disabled="@IsBusy">Apply Chat Restriction</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(GuardianChatMessage))
+        {
+            <div class="alert @(GuardianChatSuccess ? "success" : "error")">@GuardianChatMessage</div>
         }
     </section>
 
@@ -704,6 +742,7 @@
             StatsAthleteId = Workflow.AthleteProfileId.Value.ToString();
             NotifyAthleteId = Workflow.AthleteProfileId.Value.ToString();
             MediaAthleteId = Workflow.AthleteProfileId.Value.ToString();
+            GuardianAthleteId = Workflow.AthleteProfileId.Value.ToString();
         }
 
         if (Workflow.EventId is not null)
@@ -769,10 +808,17 @@
     private int Grade = 10;
     private decimal WeightClass = 132m;
     private CompetitionLevel Level = CompetitionLevel.HighSchool;
+    private decimal WrestlingExperienceYears = 3.5m;
+    private NoviceCategory NoviceCategory = NoviceCategory.NotApplicable;
     private IReadOnlyList<decimal> ProfileWeightOptions => FormOptions.WeightClassesFor(Level);
     private string? ProfileMessage;
     private bool ProfileSuccess;
     private Guid? CreatedAthleteId;
+    private string GuardianAthleteId = string.Empty;
+    private bool RestrictAthleteChat;
+    private string GuardianRestrictionReason = "Guardian safety hold";
+    private string? GuardianChatMessage;
+    private bool GuardianChatSuccess;
 
     private string SearchState = "OH";
     private string SearchCity = string.Empty;
@@ -880,6 +926,11 @@
             WeightClass = ProfileWeightOptions[0];
         }
 
+        var safeExperienceYears = Math.Max(0m, decimal.Round(WrestlingExperienceYears, 2));
+        var resolvedNoviceCategory = ResolveNoviceCategoryForRequest(Level, safeExperienceYears, NoviceCategory);
+        WrestlingExperienceYears = safeExperienceYears;
+        NoviceCategory = resolvedNoviceCategory;
+
         var request = new CreateAthleteProfileRequest(
             userId,
             FirstName,
@@ -890,7 +941,9 @@
             SchoolClub,
             Grade,
             WeightClass,
-            Level);
+            Level,
+            safeExperienceYears,
+            resolvedNoviceCategory);
 
         var result = await ApiClient.CreateAthleteProfileAsync(request);
         ProfileSuccess = result.Success;
@@ -899,12 +952,40 @@
         if (result.Success && result.Data is not null)
         {
             CreatedAthleteId = result.Data.Id;
+            GuardianAthleteId = result.Data.Id.ToString();
             RegistrationAthleteId = result.Data.Id.ToString();
             StatsAthleteId = result.Data.Id.ToString();
             NotifyAthleteId = result.Data.Id.ToString();
             Workflow.AthleteUserId = userId;
             Workflow.AthleteProfileId = result.Data.Id;
         }
+
+        IsBusy = false;
+    }
+
+    private async Task SaveGuardianChatRestrictionAsync()
+    {
+        IsBusy = true;
+        GuardianChatMessage = null;
+
+        if (!Guid.TryParse(GuardianAthleteId, out var athleteId))
+        {
+            GuardianChatSuccess = false;
+            GuardianChatMessage = "Valid athlete id is required.";
+            IsBusy = false;
+            return;
+        }
+
+        var result = await ApiClient.UpdateAthleteGuardianRestrictionAsync(
+            athleteId,
+            new UpdateAthleteChatGuardianRestrictionRequest(
+                RestrictAthleteChat,
+                string.IsNullOrWhiteSpace(GuardianRestrictionReason) ? null : GuardianRestrictionReason.Trim()));
+
+        GuardianChatSuccess = result.Success;
+        GuardianChatMessage = result.Success
+            ? (RestrictAthleteChat ? "Athlete chat has been restricted." : "Athlete chat restriction removed.")
+            : result.Message;
 
         IsBusy = false;
     }
@@ -1292,6 +1373,20 @@
         MediaMessage = result.Success ? "NIL policy loaded." : result.Message;
         NilPolicy = result.Data;
         IsBusy = false;
+    }
+
+    private static NoviceCategory ResolveNoviceCategoryForRequest(
+        CompetitionLevel level,
+        decimal wrestlingExperienceYears,
+        NoviceCategory requestedCategory)
+    {
+        if (level != CompetitionLevel.ElementaryK6)
+        {
+            return NoviceCategory.NotApplicable;
+        }
+
+        var safeYears = Math.Max(0m, wrestlingExperienceYears);
+        return safeYears <= 2m ? NoviceCategory.Novice : NoviceCategory.NonNovice;
     }
 
     private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";

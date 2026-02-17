@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -22,7 +23,7 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
 
         if (result.Success && result.Data is not null)
         {
-            authSession.Set(result.Data);
+            authSession.Set(result.Data, request.KeepSignedIn);
             ApplyAuthorizationHeader();
         }
 
@@ -52,6 +53,24 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
     {
         var response = await PostAsJsonAsync("/api/users/register", request, cancellationToken);
         return await ReadResponseAsync<UserSummary>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<ForgotUsernameResponse>> ForgotUsernameAsync(ForgotUsernameRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/auth/forgot-username", request, cancellationToken);
+        return await ReadResponseAsync<ForgotUsernameResponse>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<ForgotPasswordResponse>> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/auth/forgot-password", request, cancellationToken);
+        return await ReadResponseAsync<ForgotPasswordResponse>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<object>> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/auth/reset-password", request, cancellationToken);
+        return await ReadResponseAsync<object>(response, cancellationToken);
     }
 
     public async Task<ApiResult<object>> ResetDemoDataAsync(string? token = null, CancellationToken cancellationToken = default)
@@ -244,6 +263,46 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         return await ReadResponseAsync<TournamentBracketVisualBundle>(response, cancellationToken);
     }
 
+    public async Task<ApiResult<EventLiveHubResponse>> GetEventLiveHubAsync(
+        Guid eventId,
+        CompetitionLevel? level = null,
+        decimal? weightClass = null,
+        string? mat = null,
+        string? sortBy = null,
+        CancellationToken cancellationToken = default)
+    {
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["level"] = level?.ToString(),
+            ["weightClass"] = weightClass?.ToString(CultureInfo.InvariantCulture),
+            ["mat"] = mat,
+            ["sortBy"] = sortBy
+        };
+
+        var url = BuildUrlWithQuery($"/api/events/{eventId:D}/live-hub", queryParams);
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<EventLiveHubResponse>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<EventInsightsResponse>> GetEventInsightsAsync(
+        Guid eventId,
+        CompetitionLevel? level = null,
+        decimal? weightClass = null,
+        string? sortTeamsBy = null,
+        CancellationToken cancellationToken = default)
+    {
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["level"] = level?.ToString(),
+            ["weightClass"] = weightClass?.ToString(CultureInfo.InvariantCulture),
+            ["sortTeamsBy"] = sortTeamsBy
+        };
+
+        var url = BuildUrlWithQuery($"/api/events/{eventId:D}/insights", queryParams);
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<EventInsightsResponse>(response, cancellationToken);
+    }
+
     public async Task<ApiResult<RegistrationSubmissionResponse>> RegisterAthleteForEventAsync(
         Guid eventId,
         RegisterForEventRequest request,
@@ -374,6 +433,58 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
     {
         var response = await GetAsync("/api/athlete-chat/threads", cancellationToken);
         return await ReadResponseAsync<List<AthleteChatThreadSummary>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteChatSettingsView>> GetAthleteChatSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync("/api/athlete-chat/settings", cancellationToken);
+        return await ReadResponseAsync<AthleteChatSettingsView>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteChatSettingsView>> UpdateAthleteChatSettingsAsync(
+        UpdateAthleteChatSettingsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PutAsJsonAsync("/api/athlete-chat/settings", request, cancellationToken);
+        return await ReadResponseAsync<AthleteChatSettingsView>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteChatSettingsView>> UpdateAthleteGuardianRestrictionAsync(
+        Guid athleteProfileId,
+        UpdateAthleteChatGuardianRestrictionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PutAsJsonAsync($"/api/athlete-chat/athletes/{athleteProfileId:D}/guardian-restriction", request, cancellationToken);
+        return await ReadResponseAsync<AthleteChatSettingsView>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<AthleteChatBlockView>>> GetAthleteChatBlocksAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync("/api/athlete-chat/blocks", cancellationToken);
+        return await ReadResponseAsync<List<AthleteChatBlockView>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteChatBlockView>> BlockAthleteChatAsync(Guid athleteProfileId, CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync<object>($"/api/athlete-chat/blocks/{athleteProfileId:D}", new { }, cancellationToken);
+        return await ReadResponseAsync<AthleteChatBlockView>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<object>> UnblockAthleteChatAsync(Guid athleteProfileId, CancellationToken cancellationToken = default)
+    {
+        await EnsureAccessTokenAsync(cancellationToken);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await httpClient.DeleteAsync($"/api/athlete-chat/blocks/{athleteProfileId:D}", cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportException(ex))
+        {
+            response = CreateTransportErrorResponse(ex);
+        }
+
+        return await ReadResponseAsync<object>(response, cancellationToken);
     }
 
     public async Task<ApiResult<AthleteChatThreadSummary>> JoinAthleteLoungeAsync(CancellationToken cancellationToken = default)
@@ -854,7 +965,7 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
                 return false;
             }
 
-            authSession.Set(token);
+            authSession.Set(token, authSession.KeepSignedIn);
             return true;
         }
         catch

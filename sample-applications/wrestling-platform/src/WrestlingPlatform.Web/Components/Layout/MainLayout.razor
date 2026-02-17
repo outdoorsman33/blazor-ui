@@ -1,11 +1,13 @@
 @using System.Linq
 @using System.Net
+@using System.Text.Json
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject PlatformApiClient ApiClient
 @inject AuthSession AuthSession
 @inject WorkflowState Workflow
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <div class="app-shell" @onclick="CloseSearchMenu">
     <div class="ambient ambient-left"></div>
@@ -73,7 +75,13 @@
                         <input class="mini-input" @bind="Email" placeholder="email" />
                         <input class="mini-input" @bind="Password" type="password" placeholder="password" />
                         <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
+                        <label class="mini-check-row">
+                            <input type="checkbox" @bind="KeepMeLoggedIn" />
+                            <span>Keep me logged in</span>
+                        </label>
                         <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
+                        <button class="mini-btn ghost" @onclick="ToggleCreateAccountPanel" disabled="@Busy">Create Account</button>
+                        <button class="mini-btn ghost" @onclick="ToggleRecoveryPanel" disabled="@Busy">Forgot Access</button>
                         <button class="mini-btn secondary" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Demo Athlete</button>
                         <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Demo Coach</button>
                         <button class="mini-btn secondary" @onclick="SignInAsDemoParentGuardianAsync" disabled="@Busy">Demo Parent</button>
@@ -241,13 +249,71 @@
                 <section class="signin-gate">
                     <h2>Sign-in required</h2>
                     <p>Event registration, role-driven pages, live tournament tools, scoring, and ops controls require authentication.</p>
+                    <div class="signin-auth-grid">
+                        <input class="mini-input" @bind="Email" placeholder="email" />
+                        <input class="mini-input" @bind="Password" type="password" placeholder="password" />
+                        <input class="mini-input mfa-input" @bind="MfaCode" placeholder="mfa (if required)" />
+                        <label class="mini-check-row">
+                            <input type="checkbox" @bind="KeepMeLoggedIn" />
+                            <span>Keep me logged in</span>
+                        </label>
+                    </div>
+                    <div class="signin-gate-actions">
+                        <button class="mini-btn" @onclick="SignInAsync" disabled="@Busy">Sign In</button>
+                        <button class="mini-btn ghost" @onclick="ToggleCreateAccountPanel" disabled="@Busy">Create Account</button>
+                        <button class="mini-btn ghost" @onclick="ToggleRecoveryPanel" disabled="@Busy">Forgot Username / Password</button>
+                        <button class="mini-btn ghost" type="button" @onclick="OpenRoleGuide">Open role access guide</button>
+                    </div>
+
+                    @if (ShowCreateAccountPanel)
+                    {
+                        <div class="signin-subpanel">
+                            <h3>Create account</h3>
+                            <div class="signin-auth-grid">
+                                <input class="mini-input" @bind="CreateEmail" placeholder="new email" />
+                                <input class="mini-input" type="password" @bind="CreatePassword" placeholder="new password (8+ chars)" />
+                                <input class="mini-input" @bind="CreatePhoneNumber" placeholder="phone (optional)" />
+                                <select class="mini-input" @bind="CreateRole">
+                                    <option value="@UserRole.Athlete">Athlete</option>
+                                    <option value="@UserRole.ParentGuardian">Parent/Guardian</option>
+                                    <option value="@UserRole.Coach">Coach</option>
+                                    <option value="@UserRole.Fan">Fan</option>
+                                    <option value="@UserRole.MatWorker">Mat Worker</option>
+                                    <option value="@UserRole.TournamentDirector">Tournament Director</option>
+                                </select>
+                            </div>
+                            <div class="signin-gate-actions">
+                                <button class="mini-btn secondary" @onclick="CreateAccountAsync" disabled="@Busy">Create Account</button>
+                            </div>
+                        </div>
+                    }
+
+                    @if (ShowRecoveryPanel)
+                    {
+                        <div class="signin-subpanel">
+                            <h3>Account recovery</h3>
+                            <div class="signin-auth-grid">
+                                <input class="mini-input" @bind="ForgotLookup" placeholder="email or phone for username" />
+                                <button class="mini-btn secondary" @onclick="ForgotUsernameAsync" disabled="@Busy">Find Username</button>
+                            </div>
+                            <div class="signin-auth-grid">
+                                <input class="mini-input" @bind="ForgotPasswordEmail" placeholder="email for password reset" />
+                                <button class="mini-btn secondary" @onclick="ForgotPasswordAsync" disabled="@Busy">Get Reset Code</button>
+                            </div>
+                            <div class="signin-auth-grid">
+                                <input class="mini-input" @bind="RecoveryCode" placeholder="recovery code" />
+                                <input class="mini-input" type="password" @bind="NewPassword" placeholder="new password" />
+                                <button class="mini-btn secondary" @onclick="ResetPasswordAsync" disabled="@Busy">Reset Password</button>
+                            </div>
+                        </div>
+                    }
+
                     <div class="signin-gate-actions">
                         <button class="mini-btn" @onclick="SignInAsDemoAthleteAsync" disabled="@Busy">Sign in as Demo Athlete</button>
                         <button class="mini-btn secondary" @onclick="SignInAsDemoCoachAsync" disabled="@Busy">Sign in as Demo Coach</button>
                         <button class="mini-btn secondary" @onclick="SignInAsDemoParentGuardianAsync" disabled="@Busy">Sign in as Demo Parent</button>
                         <button class="mini-btn secondary" @onclick="SignInAsDemoMatWorkerAsync" disabled="@Busy">Sign in as Demo Mat Worker</button>
                         <button class="mini-btn secondary" @onclick="SignInAsDemoDirectorAsync" disabled="@Busy">Sign in as Demo Director</button>
-                        <button class="mini-btn ghost" type="button" @onclick="OpenRoleGuide">Open role access guide</button>
                     </div>
                 </section>
             }
@@ -700,6 +766,7 @@
 
     private const string DefaultSupportArticleId = "faq-ops-03";
     private const string DemoPassword = "DemoPass!123";
+    private const string AuthSessionStorageKey = "pinpointarena.auth.session";
 
     private static readonly IReadOnlyList<PlatformRole> AvailableRoles =
     [
@@ -735,6 +802,18 @@
     private string Email = "";
     private string Password = "";
     private string MfaCode = "";
+    private bool KeepMeLoggedIn = true;
+    private bool SessionRestoreAttempted;
+    private bool ShowCreateAccountPanel;
+    private bool ShowRecoveryPanel;
+    private string CreateEmail = string.Empty;
+    private string CreatePassword = string.Empty;
+    private string CreatePhoneNumber = string.Empty;
+    private UserRole CreateRole = UserRole.Athlete;
+    private string ForgotLookup = string.Empty;
+    private string ForgotPasswordEmail = string.Empty;
+    private string RecoveryCode = string.Empty;
+    private string NewPassword = string.Empty;
     private string? AuthMessage;
     private bool AuthOk;
     private string SearchText = string.Empty;
@@ -911,6 +990,17 @@
         Navigation.LocationChanged += OnLocationChanged;
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || SessionRestoreAttempted)
+        {
+            return;
+        }
+
+        SessionRestoreAttempted = true;
+        await RestoreAuthSessionAsync();
+    }
+
     public void Dispose()
     {
         Navigation.LocationChanged -= OnLocationChanged;
@@ -962,12 +1052,14 @@
             if (AuthSession.IsAuthenticated)
             {
                 await ApiClient.LogoutAsync();
+                await ClearPersistedAuthSessionAsync();
                 RolePreview = null;
             }
 
             Email = email;
             Password = DemoPassword;
             MfaCode = string.Empty;
+            KeepMeLoggedIn = false;
             AuthMessage = null;
 
             var loginResult = await ExecuteSignInAttemptAsync();
@@ -1013,7 +1105,7 @@
     {
         try
         {
-            return await ApiClient.LoginAsync(new LoginRequest(Email, Password, MfaCode));
+            return await ApiClient.LoginAsync(new LoginRequest(Email, Password, MfaCode, KeepMeLoggedIn));
         }
         catch (Exception ex)
         {
@@ -1073,6 +1165,140 @@
         return $"{label} sign-in failed. {details} {actionMessage}";
     }
 
+    private void ToggleCreateAccountPanel()
+    {
+        ShowCreateAccountPanel = !ShowCreateAccountPanel;
+        if (ShowCreateAccountPanel)
+        {
+            ShowRecoveryPanel = false;
+        }
+    }
+
+    private void ToggleRecoveryPanel()
+    {
+        ShowRecoveryPanel = !ShowRecoveryPanel;
+        if (ShowRecoveryPanel)
+        {
+            ShowCreateAccountPanel = false;
+        }
+    }
+
+    private Task CreateAccountAsync() => ExecuteAuthActionAsync(async () =>
+    {
+        var email = CreateEmail.Trim();
+        var password = CreatePassword.Trim();
+
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+        {
+            AuthOk = false;
+            AuthMessage = "Email and password are required to create an account.";
+            return;
+        }
+
+        if (password.Length < 8)
+        {
+            AuthOk = false;
+            AuthMessage = "New account password must be at least 8 characters.";
+            return;
+        }
+
+        var result = await ApiClient.RegisterUserAsync(new RegisterUserRequest(email, password, CreateRole, string.IsNullOrWhiteSpace(CreatePhoneNumber) ? null : CreatePhoneNumber.Trim()));
+        if (!result.Success)
+        {
+            AuthOk = false;
+            AuthMessage = result.Message;
+            return;
+        }
+
+        Email = email;
+        Password = password;
+        MfaCode = string.Empty;
+        ShowCreateAccountPanel = false;
+        AuthOk = true;
+        AuthMessage = $"Account created for {CreateRole}. Sign in to continue.";
+    });
+
+    private Task ForgotUsernameAsync() => ExecuteAuthActionAsync(async () =>
+    {
+        var lookup = ForgotLookup.Trim();
+        if (string.IsNullOrWhiteSpace(lookup))
+        {
+            AuthOk = false;
+            AuthMessage = "Enter an email or phone number to recover username.";
+            return;
+        }
+
+        var result = await ApiClient.ForgotUsernameAsync(new ForgotUsernameRequest(lookup));
+        if (!result.Success || result.Data is null)
+        {
+            AuthOk = false;
+            AuthMessage = result.Message;
+            return;
+        }
+
+        AuthOk = true;
+        AuthMessage = string.IsNullOrWhiteSpace(result.Data.SuggestedUsername)
+            ? result.Data.Message
+            : $"Username lookup: {result.Data.SuggestedUsername}";
+    });
+
+    private Task ForgotPasswordAsync() => ExecuteAuthActionAsync(async () =>
+    {
+        var email = ForgotPasswordEmail.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            AuthOk = false;
+            AuthMessage = "Enter your account email to request a password reset code.";
+            return;
+        }
+
+        var result = await ApiClient.ForgotPasswordAsync(new ForgotPasswordRequest(email));
+        if (!result.Success || result.Data is null)
+        {
+            AuthOk = false;
+            AuthMessage = result.Message;
+            return;
+        }
+
+        Email = email;
+        if (!string.IsNullOrWhiteSpace(result.Data.RecoveryCode))
+        {
+            RecoveryCode = result.Data.RecoveryCode;
+        }
+
+        AuthOk = true;
+        AuthMessage = result.Data.Message;
+    });
+
+    private Task ResetPasswordAsync() => ExecuteAuthActionAsync(async () =>
+    {
+        var email = ForgotPasswordEmail.Trim().ToLowerInvariant();
+        var code = RecoveryCode.Trim();
+        var newPassword = NewPassword.Trim();
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(newPassword))
+        {
+            AuthOk = false;
+            AuthMessage = "Email, recovery code, and new password are required.";
+            return;
+        }
+
+        var result = await ApiClient.ResetPasswordAsync(new ResetPasswordRequest(email, code, newPassword));
+        if (!result.Success)
+        {
+            AuthOk = false;
+            AuthMessage = result.Message;
+            return;
+        }
+
+        Email = email;
+        Password = newPassword;
+        RecoveryCode = string.Empty;
+        NewPassword = string.Empty;
+        ShowRecoveryPanel = false;
+        AuthOk = true;
+        AuthMessage = "Password reset complete. Use Sign In with your updated password.";
+    });
+
     private void ApplySuccessfulSignInState(string successMessage)
     {
         AuthOk = true;
@@ -1080,6 +1306,9 @@
         Password = string.Empty;
         MfaCode = string.Empty;
         RolePreview = ParseRole(AuthSession.Role);
+        ShowCreateAccountPanel = false;
+        ShowRecoveryPanel = false;
+        _ = PersistAuthSessionAsync();
         if (CurrentIsMobile)
         {
             DrawerOpen = false;
@@ -1091,6 +1320,7 @@
         try
         {
             await ApiClient.LogoutAsync();
+            await ClearPersistedAuthSessionAsync();
             AuthOk = true;
             AuthMessage = "Signed out.";
             RolePreview = null;
@@ -1126,6 +1356,73 @@
         {
             Busy = false;
             AuthActionLock.Release();
+        }
+    }
+
+    private async Task RestoreAuthSessionAsync()
+    {
+        try
+        {
+            var payload = await JS.InvokeAsync<string?>("localStorage.getItem", AuthSessionStorageKey);
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                return;
+            }
+
+            var snapshot = JsonSerializer.Deserialize<AuthSessionSnapshot>(payload);
+            if (snapshot is null || !snapshot.KeepSignedIn || !AuthSession.Restore(snapshot))
+            {
+                await ClearPersistedAuthSessionAsync();
+                return;
+            }
+
+            KeepMeLoggedIn = snapshot.KeepSignedIn;
+            RolePreview = ParseRole(AuthSession.Role);
+            AuthOk = true;
+            AuthMessage = $"Restored session for {AuthSession.Email}.";
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            await ClearPersistedAuthSessionAsync();
+        }
+    }
+
+    private async Task PersistAuthSessionAsync()
+    {
+        if (!KeepMeLoggedIn || !AuthSession.IsAuthenticated)
+        {
+            await ClearPersistedAuthSessionAsync();
+            return;
+        }
+
+        var snapshot = AuthSession.CreateSnapshot();
+        if (snapshot is null)
+        {
+            await ClearPersistedAuthSessionAsync();
+            return;
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(snapshot);
+            await JS.InvokeVoidAsync("localStorage.setItem", AuthSessionStorageKey, payload);
+        }
+        catch
+        {
+            // Ignore browser storage failures and continue with in-memory session only.
+        }
+    }
+
+    private async Task ClearPersistedAuthSessionAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.removeItem", AuthSessionStorageKey);
+        }
+        catch
+        {
+            // Ignore browser storage failures.
         }
     }
 

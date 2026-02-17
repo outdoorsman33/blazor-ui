@@ -44,6 +44,7 @@ var demoDataResetToken = builder.Configuration["DemoData:ResetToken"]?.Trim();
 var mfaRequiredRoles = ResolveMfaRequiredRoles(builder.Configuration);
 var samplePlaybackUrls = ResolveSamplePlaybackUrls(builder.Configuration);
 var nilOverridesByAthlete = new ConcurrentDictionary<Guid, UpdateAthleteNilProfileRequest>();
+var passwordRecoveryByEmail = new ConcurrentDictionary<string, PasswordRecoveryState>(StringComparer.OrdinalIgnoreCase);
 
 var signingKeyBytes = Encoding.UTF8.GetBytes(jwtSigningKeyRaw);
 if (signingKeyBytes.Length < 32)
@@ -96,6 +97,13 @@ builder.Services.AddRateLimiter(options =>
     options.AddFixedWindowLimiter("auth-strict", limiter =>
     {
         limiter.PermitLimit = 20;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+    });
+
+    options.AddFixedWindowLimiter("chat-strict", limiter =>
+    {
+        limiter.PermitLimit = 90;
         limiter.Window = TimeSpan.FromMinutes(1);
         limiter.QueueLimit = 0;
     });
@@ -312,7 +320,11 @@ auth.MapPost("/login", async (
         }
     }
 
-    var token = await ApiSecurityHelpers.IssueAuthTokenAsync(user, dbContext, jwtSigningKey, jwtIssuer, jwtAudience, jwtAccessTokenMinutes, jwtRefreshTokenDays, cancellationToken);
+    var refreshDays = request.KeepSignedIn
+        ? jwtRefreshTokenDays
+        : Math.Min(jwtRefreshTokenDays, 2);
+
+    var token = await ApiSecurityHelpers.IssueAuthTokenAsync(user, dbContext, jwtSigningKey, jwtIssuer, jwtAudience, jwtAccessTokenMinutes, refreshDays, cancellationToken);
     return Results.Ok(token);
 }).AllowAnonymous();
 
@@ -337,6 +349,128 @@ auth.MapPost("/refresh", async (
         cancellationToken);
 
     return refreshedToken is null ? Results.Unauthorized() : Results.Ok(refreshedToken);
+}).AllowAnonymous();
+
+auth.MapPost("/forgot-username", async (
+    ForgotUsernameRequest request,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.EmailOrPhone))
+    {
+        return Results.BadRequest("Email or phone is required.");
+    }
+
+    var lookup = request.EmailOrPhone.Trim();
+    var normalizedLookupEmail = lookup.ToLowerInvariant();
+    var normalizedLookupPhone = NormalizePhoneForLookup(lookup);
+
+    var users = await dbContext.UserAccounts
+        .AsNoTracking()
+        .Where(x => x.IsActive)
+        .Select(x => new { x.Email, x.PhoneNumber })
+        .Take(10_000)
+        .ToListAsync(cancellationToken);
+
+    var matched = users.FirstOrDefault(user =>
+        string.Equals(user.Email, normalizedLookupEmail, StringComparison.OrdinalIgnoreCase)
+        || (!string.IsNullOrWhiteSpace(normalizedLookupPhone)
+            && string.Equals(NormalizePhoneForLookup(user.PhoneNumber), normalizedLookupPhone, StringComparison.Ordinal)));
+
+    return Results.Ok(new ForgotUsernameResponse(
+        Delivered: true,
+        Message: "If an account matches the provided details, your username recovery details are now available.",
+        SuggestedUsername: matched?.Email));
+}).AllowAnonymous();
+
+auth.MapPost("/forgot-password", async (
+    ForgotPasswordRequest request,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Email))
+    {
+        return Results.BadRequest("Email is required.");
+    }
+
+    var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+    var userExists = await dbContext.UserAccounts
+        .AsNoTracking()
+        .AnyAsync(x => x.Email == normalizedEmail && x.IsActive, cancellationToken);
+
+    if (!userExists)
+    {
+        return Results.Ok(new ForgotPasswordResponse(
+            Accepted: true,
+            Message: "If an account exists, a password recovery code has been generated for this session."));
+    }
+
+    var code = (RandomNumberGenerator.GetInt32(0, 1_000_000)).ToString("D6");
+    passwordRecoveryByEmail[normalizedEmail] = new PasswordRecoveryState(code, DateTime.UtcNow.AddMinutes(15), 0);
+
+    return Results.Ok(new ForgotPasswordResponse(
+        Accepted: true,
+        Message: "Recovery code generated. Use it to reset your password within 15 minutes.",
+        RecoveryCode: code));
+}).AllowAnonymous();
+
+auth.MapPost("/reset-password", async (
+    ResetPasswordRequest request,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Email)
+        || string.IsNullOrWhiteSpace(request.RecoveryCode)
+        || string.IsNullOrWhiteSpace(request.NewPassword))
+    {
+        return Results.BadRequest("Email, recovery code, and new password are required.");
+    }
+
+    if (request.NewPassword.Trim().Length < 8)
+    {
+        return Results.BadRequest("New password must be at least 8 characters.");
+    }
+
+    var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+    if (!passwordRecoveryByEmail.TryGetValue(normalizedEmail, out var recoveryState))
+    {
+        return Results.BadRequest("Recovery code is invalid or expired.");
+    }
+
+    var nowUtc = DateTime.UtcNow;
+    if (recoveryState.ExpiresUtc <= nowUtc)
+    {
+        passwordRecoveryByEmail.TryRemove(normalizedEmail, out _);
+        return Results.BadRequest("Recovery code expired. Request a new code.");
+    }
+
+    var inputCode = request.RecoveryCode.Trim();
+    if (!string.Equals(recoveryState.Code, inputCode, StringComparison.Ordinal))
+    {
+        var nextAttemptCount = recoveryState.AttemptCount + 1;
+        if (nextAttemptCount >= 5)
+        {
+            passwordRecoveryByEmail.TryRemove(normalizedEmail, out _);
+            return Results.BadRequest("Recovery code invalid. Request a new code.");
+        }
+
+        passwordRecoveryByEmail[normalizedEmail] = recoveryState with { AttemptCount = nextAttemptCount };
+        return Results.BadRequest("Recovery code is invalid.");
+    }
+
+    var user = await dbContext.UserAccounts.FirstOrDefaultAsync(x => x.Email == normalizedEmail && x.IsActive, cancellationToken);
+    if (user is null)
+    {
+        passwordRecoveryByEmail.TryRemove(normalizedEmail, out _);
+        return Results.BadRequest("Account no longer available for password reset.");
+    }
+
+    user.PasswordHash = ApiSecurityHelpers.HashPassword(request.NewPassword.Trim());
+    await ApiSecurityHelpers.RevokeAllRefreshTokensForUserAsync(dbContext, user.Id, "password-reset", cancellationToken);
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    passwordRecoveryByEmail.TryRemove(normalizedEmail, out _);
+    return Results.Ok(new { Reset = true });
 }).AllowAnonymous();
 
 auth.MapPost("/logout", async (
@@ -455,6 +589,15 @@ profiles.MapPost("/athletes", async (
         return Results.Conflict("Athlete profile already exists for this user.");
     }
 
+    var safeExperienceYears = Math.Max(0m, decimal.Round(request.WrestlingExperienceYears, 2));
+    var resolvedNoviceCategory = ResolveNoviceCategory(request.Level, safeExperienceYears, request.NoviceCategory);
+    if (request.Level == CompetitionLevel.ElementaryK6
+        && request.NoviceCategory != NoviceCategory.NotApplicable
+        && request.NoviceCategory != resolvedNoviceCategory)
+    {
+        return Results.BadRequest("Elementary novice classification must align with wrestling experience (2 years or less = Novice).");
+    }
+
     var profile = new AthleteProfile
     {
         UserAccountId = request.UserAccountId,
@@ -466,7 +609,14 @@ profiles.MapPost("/athletes", async (
         SchoolOrClubName = request.SchoolOrClubName?.Trim(),
         Grade = request.Grade,
         WeightClass = request.WeightClass,
-        Level = request.Level
+        Level = request.Level,
+        WrestlingExperienceYears = safeExperienceYears,
+        NoviceCategory = resolvedNoviceCategory,
+        IsChatDiscoverable = true,
+        IsChatAvailable = true,
+        IsChatRestrictedByGuardian = false,
+        ChatRestrictionReason = null,
+        ChatRestrictionUpdatedUtc = null
     };
 
     dbContext.AthleteProfiles.Add(profile);
@@ -673,12 +823,18 @@ events.MapPost("/{eventId:guid}/divisions", async (
         return Results.Forbid();
     }
 
+    if (request.Level != CompetitionLevel.ElementaryK6 && request.NoviceRule != NoviceDivisionRule.Open)
+    {
+        return Results.BadRequest("Novice-only or non-novice-only division rules are limited to elementary divisions.");
+    }
+
     var division = new TournamentDivision
     {
         TournamentEventId = eventId,
         Name = request.Name.Trim(),
         Level = request.Level,
-        WeightClass = request.WeightClass
+        WeightClass = request.WeightClass,
+        NoviceRule = request.NoviceRule
     };
 
     dbContext.TournamentDivisions.Add(division);
@@ -1218,18 +1374,20 @@ events.MapGet("/{eventId:guid}/directory", async (
         var count = registrations.Count(reg =>
             athletesById.TryGetValue(reg.AthleteProfileId, out var athlete)
             && athlete.Level == division.Level
-            && athlete.WeightClass == division.WeightClass);
+            && athlete.WeightClass == division.WeightClass
+            && IsAthleteEligibleForDivisionNoviceRule(athlete, division.NoviceRule));
 
         return new TournamentDivisionDirectoryRow(
             division.Id,
             division.Name,
             division.Level,
-            ResolveAgeGroupLabel(division.Level),
+            ResolveDivisionAgeGroupLabel(division.Level, division.NoviceRule),
             division.WeightClass,
             count,
             controls.RegistrationCapEnabled ? controls.RegistrationCap : null,
             InferDivisionStyle(division),
-            controls.TournamentFormat);
+            controls.TournamentFormat,
+            division.NoviceRule);
     }).ToList();
 
     var row = new TournamentDirectoryRow(
@@ -1914,6 +2072,19 @@ events.MapGet("/{eventId:guid}/live-hub", async (
         .Where(x => bracketIds.Contains(x.BracketId))
         .ToListAsync(cancellationToken);
 
+    var athleteIds = matches
+        .SelectMany(x => new[] { x.AthleteAId, x.AthleteBId })
+        .Where(x => x is not null)
+        .Select(x => x!.Value)
+        .Distinct()
+        .ToList();
+
+    var athletesById = athleteIds.Count == 0
+        ? new Dictionary<Guid, AthleteProfile>()
+        : await dbContext.AthleteProfiles.AsNoTracking()
+            .Where(x => athleteIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
     matches = matches
         .Where(x => level is null || bracketById.GetValueOrDefault(x.BracketId)?.Level == level.Value)
         .Where(x => weightClass is null || bracketById.GetValueOrDefault(x.BracketId)?.WeightClass == weightClass.Value)
@@ -1934,34 +2105,371 @@ events.MapGet("/{eventId:guid}/live-hub", async (
         .GroupBy(x => string.IsNullOrWhiteSpace(x.MatNumber) ? "Unassigned" : x.MatNumber!.Trim())
         .OrderBy(x => x.Key == "Unassigned" ? 1 : 0)
         .ThenBy(x => x.Key)
-        .Select(group => new
-        {
-            Mat = group.Key,
-            OnMat = group.Count(x => x.Status == MatchStatus.OnMat),
-            InTheHole = group.Count(x => x.Status == MatchStatus.InTheHole),
-            Scheduled = group.Count(x => x.Status == MatchStatus.Scheduled),
-            Bouts = group.Select(x => new
+        .Select(group => new EventLiveHubMat(
+            group.Key,
+            group.Count(x => x.Status == MatchStatus.OnMat),
+            group.Count(x => x.Status == MatchStatus.InTheHole),
+            group.Count(x => x.Status == MatchStatus.Scheduled),
+            group.Select(match =>
             {
-                x.Id,
-                BoutNumber = x.BoutNumber ?? x.MatchNumber,
-                x.Round,
-                x.Status,
-                x.Score,
-                x.ResultMethod
-            }).ToList()
+                var bracket = bracketById.GetValueOrDefault(match.BracketId);
+                return new EventLiveHubBout(
+                    match.Id,
+                    match.BoutNumber ?? match.MatchNumber,
+                    match.Round,
+                    match.Status,
+                    BuildAthleteLabel(match.AthleteAId, athletesById),
+                    BuildAthleteLabel(match.AthleteBId, athletesById),
+                    match.Score,
+                    match.ResultMethod,
+                    string.IsNullOrWhiteSpace(match.MatNumber) ? "Unassigned" : match.MatNumber!.Trim(),
+                    bracket?.Level,
+                    bracket?.WeightClass);
+            }).ToList()))
+        .ToList();
+
+    var response = new EventLiveHubResponse(
+        eventId,
+        tournamentEvent.Name,
+        tournamentEvent.StartUtc,
+        tournamentEvent.EndUtc,
+        level,
+        weightClass,
+        string.IsNullOrWhiteSpace(mat) ? null : mat.Trim(),
+        string.IsNullOrWhiteSpace(sortBy) ? null : sortBy.Trim(),
+        brackets.Select(x => x.Level).Distinct().OrderBy(x => x).ToList(),
+        brackets.Select(x => x.WeightClass).Distinct().OrderBy(x => x).ToList(),
+        mats,
+        ordered.Count,
+        ordered.Count(x => x.Status == MatchStatus.OnMat));
+
+    return Results.Ok(response);
+}).AllowAnonymous();
+
+events.MapGet("/{eventId:guid}/insights", async (
+    Guid eventId,
+    [FromQuery] CompetitionLevel? level,
+    [FromQuery] decimal? weightClass,
+    [FromQuery] string? sortTeamsBy,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var tournamentEvent = await dbContext.TournamentEvents.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.Id == eventId, cancellationToken);
+    if (tournamentEvent is null)
+    {
+        return Results.NotFound("Event not found.");
+    }
+
+    var registrationRows = await (
+            from registration in dbContext.EventRegistrations.AsNoTracking()
+            join athlete in dbContext.AthleteProfiles.AsNoTracking() on registration.AthleteProfileId equals athlete.Id
+            join team in dbContext.Teams.AsNoTracking() on registration.TeamId equals team.Id into teamJoin
+            from team in teamJoin.DefaultIfEmpty()
+            where registration.TournamentEventId == eventId
+                  && registration.Status != RegistrationStatus.Cancelled
+            select new
+            {
+                Registration = registration,
+                Athlete = athlete,
+                Team = team
+            })
+        .Where(x => !level.HasValue || x.Athlete.Level == level.Value)
+        .Where(x => !weightClass.HasValue || x.Athlete.WeightClass == weightClass.Value)
+        .ToListAsync(cancellationToken);
+
+    var bracketRows = await dbContext.Brackets.AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId)
+        .Where(x => !level.HasValue || x.Level == level.Value)
+        .Where(x => !weightClass.HasValue || x.WeightClass == weightClass.Value)
+        .OrderBy(x => x.Level)
+        .ThenBy(x => x.WeightClass)
+        .ToListAsync(cancellationToken);
+
+    var bracketIds = bracketRows.Select(x => x.Id).ToHashSet();
+    var bracketById = bracketRows.ToDictionary(x => x.Id);
+
+    var divisionRows = await dbContext.TournamentDivisions.AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId)
+        .ToListAsync(cancellationToken);
+    var divisionById = divisionRows.ToDictionary(x => x.Id);
+
+    var matches = bracketIds.Count == 0
+        ? new List<WrestlingPlatform.Domain.Models.Match>()
+        : await dbContext.Matches.AsNoTracking()
+            .Where(x => bracketIds.Contains(x.BracketId))
+            .ToListAsync(cancellationToken);
+
+    var athleteIds = registrationRows.Select(x => x.Athlete.Id)
+        .Concat(matches.SelectMany(x => new[] { x.AthleteAId, x.AthleteBId, x.WinnerAthleteId }
+            .Where(id => id is not null)
+            .Select(id => id!.Value)))
+        .Distinct()
+        .ToList();
+
+    var athletesById = athleteIds.Count == 0
+        ? new Dictionary<Guid, AthleteProfile>()
+        : await dbContext.AthleteProfiles.AsNoTracking()
+            .Where(x => athleteIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+    var teamNameByAthleteId = registrationRows
+        .GroupBy(x => x.Athlete.Id)
+        .ToDictionary(
+            group => group.Key,
+            group =>
+            {
+                var first = group.First();
+                return first.Team?.Name ?? "Unattached";
+            });
+
+    string ResolveTeamName(Guid? athleteId)
+    {
+        if (athleteId is null)
+        {
+            return "Unassigned";
+        }
+
+        return teamNameByAthleteId.GetValueOrDefault(athleteId.Value, "Unattached");
+    }
+
+    bool MethodContains(string? resultMethod, string token) =>
+        !string.IsNullOrWhiteSpace(resultMethod) && resultMethod.Contains(token, StringComparison.OrdinalIgnoreCase);
+
+    var teamRows = registrationRows
+        .GroupBy(x => new { TeamId = x.Team?.Id, TeamName = x.Team?.Name ?? "Unattached" })
+        .Select(group =>
+        {
+            var athleteRows = group
+                .GroupBy(x => x.Athlete.Id)
+                .Select(x =>
+                {
+                    var athlete = x.First().Athlete;
+                    return new EventInsightsAthleteRow(
+                        athlete.Id,
+                        $"{athlete.FirstName} {athlete.LastName}",
+                        athlete.Level,
+                        athlete.WeightClass,
+                        athlete.State,
+                        athlete.City);
+                })
+                .OrderBy(x => x.Level)
+                .ThenBy(x => x.WeightClass)
+                .ThenBy(x => x.Name)
+                .ToList();
+
+            var athleteSet = athleteRows.Select(x => x.AthleteId).ToHashSet();
+            var teamMatches = matches.Where(match =>
+                    (match.AthleteAId is not null && athleteSet.Contains(match.AthleteAId.Value))
+                    || (match.AthleteBId is not null && athleteSet.Contains(match.AthleteBId.Value)))
+                .ToList();
+
+            var completedMatches = teamMatches
+                .Where(match => match.Status is MatchStatus.Completed or MatchStatus.Forfeit)
+                .ToList();
+
+            var wins = completedMatches.Count(match => match.WinnerAthleteId is not null && athleteSet.Contains(match.WinnerAthleteId.Value));
+            var losses = completedMatches.Count(match =>
+                match.WinnerAthleteId is not null
+                && !athleteSet.Contains(match.WinnerAthleteId.Value)
+                && ((match.AthleteAId is not null && athleteSet.Contains(match.AthleteAId.Value))
+                    || (match.AthleteBId is not null && athleteSet.Contains(match.AthleteBId.Value))));
+
+            var pins = completedMatches.Count(match => MethodContains(match.ResultMethod, "pin") || MethodContains(match.ResultMethod, "fall"));
+            var techFalls = completedMatches.Count(match => MethodContains(match.ResultMethod, "tech"));
+            var majorDecisions = completedMatches.Count(match => MethodContains(match.ResultMethod, "major"));
+            var activeBouts = teamMatches.Count(match => match.Status is MatchStatus.OnMat or MatchStatus.InTheHole);
+            var completedBouts = completedMatches.Count;
+            var teamScore = Math.Round(
+                (wins * 3m)
+                + (pins * 2m)
+                + (techFalls * 1.5m)
+                + (majorDecisions * 1m),
+                2,
+                MidpointRounding.AwayFromZero);
+
+            return new EventInsightsTeamRow(
+                group.Key.TeamId,
+                group.Key.TeamName,
+                athleteRows.Count,
+                activeBouts,
+                completedBouts,
+                wins,
+                losses,
+                pins,
+                techFalls,
+                majorDecisions,
+                teamScore,
+                athleteRows);
         })
         .ToList();
 
-    return Results.Ok(new
+    var championsByTeam = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    var finalistsByTeam = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    var placeWinnersByTeam = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+    var results = new List<EventInsightsResultRow>();
+    foreach (var bracket in bracketRows)
     {
-        Event = new { tournamentEvent.Id, tournamentEvent.Name, tournamentEvent.StartUtc, tournamentEvent.EndUtc },
-        Filters = new { level, weightClass, Mat = mat, SortBy = sortBy },
-        AvailableLevels = brackets.Select(x => x.Level).Distinct().OrderBy(x => x).ToList(),
-        AvailableWeights = brackets.Select(x => x.WeightClass).Distinct().OrderBy(x => x).ToList(),
-        Mats = mats,
-        TotalBouts = ordered.Count,
-        OnMat = ordered.Count(x => x.Status == MatchStatus.OnMat)
-    });
+        var bracketMatches = matches.Where(x => x.BracketId == bracket.Id).ToList();
+        if (bracketMatches.Count == 0)
+        {
+            continue;
+        }
+
+        var completed = bracketMatches
+            .Where(x => x.Status is MatchStatus.Completed or MatchStatus.Forfeit)
+            .OrderBy(x => x.Round)
+            .ThenBy(x => x.BoutNumber ?? x.MatchNumber)
+            .ToList();
+
+        var live = bracketMatches.Count(x => x.Status is MatchStatus.OnMat or MatchStatus.InTheHole or MatchStatus.Scheduled);
+        var finalMatch = completed
+            .OrderByDescending(x => x.Round)
+            .ThenByDescending(x => x.BoutNumber ?? x.MatchNumber)
+            .FirstOrDefault();
+
+        string? champion = null;
+        string? runnerUp = null;
+        int? finalBoutNumber = null;
+        string? finalScore = null;
+        string? resultMethod = null;
+
+        if (finalMatch is not null)
+        {
+            champion = finalMatch.WinnerAthleteId is null ? null : BuildAthleteLabel(finalMatch.WinnerAthleteId, athletesById);
+            finalBoutNumber = finalMatch.BoutNumber ?? finalMatch.MatchNumber;
+            finalScore = finalMatch.Score;
+            resultMethod = finalMatch.ResultMethod;
+
+            Guid? runnerUpAthleteId = null;
+            if (finalMatch.WinnerAthleteId is not null && finalMatch.AthleteAId is not null && finalMatch.AthleteBId is not null)
+            {
+                runnerUpAthleteId = finalMatch.AthleteAId == finalMatch.WinnerAthleteId
+                    ? finalMatch.AthleteBId
+                    : finalMatch.AthleteAId;
+            }
+
+            if (runnerUpAthleteId is not null)
+            {
+                runnerUp = BuildAthleteLabel(runnerUpAthleteId, athletesById);
+            }
+
+            var championTeam = ResolveTeamName(finalMatch.WinnerAthleteId);
+            championsByTeam[championTeam] = championsByTeam.GetValueOrDefault(championTeam) + 1;
+
+            var finalistTeams = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ResolveTeamName(finalMatch.AthleteAId),
+                ResolveTeamName(finalMatch.AthleteBId)
+            };
+
+            foreach (var finalistTeam in finalistTeams)
+            {
+                finalistsByTeam[finalistTeam] = finalistsByTeam.GetValueOrDefault(finalistTeam) + 1;
+            }
+        }
+
+        var winnerTeams = completed
+            .Where(x => x.WinnerAthleteId is not null)
+            .Select(x => ResolveTeamName(x.WinnerAthleteId))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var winnerTeam in winnerTeams)
+        {
+            placeWinnersByTeam[winnerTeam] = placeWinnersByTeam.GetValueOrDefault(winnerTeam) + 1;
+        }
+
+        var divisionName = bracket.TournamentDivisionId is not null && divisionById.TryGetValue(bracket.TournamentDivisionId.Value, out var division)
+            ? division.Name
+            : $"{bracket.Level} {bracket.WeightClass:0.##}";
+
+        results.Add(new EventInsightsResultRow(
+            bracket.Id,
+            bracket.Level,
+            bracket.WeightClass,
+            divisionName,
+            completed.Count,
+            live,
+            champion,
+            runnerUp,
+            finalScore,
+            resultMethod,
+            finalBoutNumber));
+    }
+
+    teamRows = (sortTeamsBy ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        "pins" => teamRows.OrderByDescending(x => x.Pins).ThenByDescending(x => x.TeamScore).ThenBy(x => x.TeamName).ToList(),
+        "techfalls" => teamRows.OrderByDescending(x => x.TechFalls).ThenByDescending(x => x.TeamScore).ThenBy(x => x.TeamName).ToList(),
+        "wins" => teamRows.OrderByDescending(x => x.Wins).ThenByDescending(x => x.TeamScore).ThenBy(x => x.TeamName).ToList(),
+        "name" => teamRows.OrderBy(x => x.TeamName).ToList(),
+        _ => teamRows.OrderByDescending(x => x.TeamScore).ThenByDescending(x => x.Wins).ThenBy(x => x.TeamName).ToList()
+    };
+
+    var teamScoreRows = teamRows
+        .Select((team, index) => new EventInsightsTeamScoreRow(
+            index + 1,
+            team.TeamName,
+            team.TeamScore,
+            championsByTeam.GetValueOrDefault(team.TeamName),
+            finalistsByTeam.GetValueOrDefault(team.TeamName),
+            placeWinnersByTeam.GetValueOrDefault(team.TeamName)))
+        .ToList();
+
+    int StatusRank(MatchStatus status) => status switch
+    {
+        MatchStatus.OnMat => 0,
+        MatchStatus.InTheHole => 1,
+        MatchStatus.Scheduled => 2,
+        MatchStatus.Completed => 3,
+        MatchStatus.Forfeit => 4,
+        _ => 5
+    };
+
+    var boutRows = matches
+        .OrderBy(match => StatusRank(match.Status))
+        .ThenBy(match => string.IsNullOrWhiteSpace(match.MatNumber) ? 1 : 0)
+        .ThenBy(match => match.MatNumber)
+        .ThenBy(match => match.BoutNumber ?? match.MatchNumber)
+        .ThenBy(match => match.Round)
+        .Select(match =>
+        {
+            var bracket = bracketById.GetValueOrDefault(match.BracketId);
+            return new EventInsightsBoutRow(
+                match.Id,
+                match.BoutNumber ?? match.MatchNumber,
+                match.Round,
+                match.Status,
+                string.IsNullOrWhiteSpace(match.MatNumber) ? "Unassigned" : match.MatNumber!.Trim(),
+                BuildAthleteLabel(match.AthleteAId, athletesById),
+                BuildAthleteLabel(match.AthleteBId, athletesById),
+                match.Score,
+                match.ResultMethod,
+                bracket?.Level,
+                bracket?.WeightClass);
+        })
+        .ToList();
+
+    results = results
+        .OrderBy(x => x.Level)
+        .ThenBy(x => x.WeightClass)
+        .ToList();
+
+    var response = new EventInsightsResponse(
+        eventId,
+        tournamentEvent.Name,
+        tournamentEvent.State,
+        tournamentEvent.City,
+        tournamentEvent.Venue,
+        tournamentEvent.StartUtc,
+        tournamentEvent.EndUtc,
+        teamRows,
+        teamScoreRows,
+        results,
+        boutRows);
+
+    return Results.Ok(response);
 }).AllowAnonymous();
 
 events.MapPost("/{eventId:guid}/registrations", async (
@@ -1990,8 +2498,8 @@ events.MapPost("/{eventId:guid}/registrations", async (
         return Results.NotFound("Event not found.");
     }
 
-    var athleteExists = await dbContext.AthleteProfiles.AnyAsync(x => x.Id == request.AthleteProfileId, cancellationToken);
-    if (!athleteExists)
+    var athlete = await dbContext.AthleteProfiles.FirstOrDefaultAsync(x => x.Id == request.AthleteProfileId, cancellationToken);
+    if (athlete is null)
     {
         return Results.BadRequest("Athlete profile not found.");
     }
@@ -2019,6 +2527,19 @@ events.MapPost("/{eventId:guid}/registrations", async (
     if (alreadyRegistered)
     {
         return Results.Conflict("Athlete is already registered for this event.");
+    }
+
+    var divisionRules = await dbContext.TournamentDivisions.AsNoTracking()
+        .Where(x => x.TournamentEventId == eventId
+                    && x.Level == athlete.Level
+                    && x.WeightClass == athlete.WeightClass)
+        .Select(x => x.NoviceRule)
+        .Distinct()
+        .ToListAsync(cancellationToken);
+
+    if (divisionRules.Count > 0 && !divisionRules.Any(rule => IsAthleteEligibleForDivisionNoviceRule(athlete, rule)))
+    {
+        return Results.BadRequest("Athlete does not meet novice/non-novice eligibility for this division.");
     }
 
     var registration = new EventRegistration
@@ -3415,7 +3936,7 @@ notifications.MapGet("/messages/{userId:guid}", async (Guid userId, HttpContext 
     return Results.Ok(messages);
 });
 
-var athleteChat = api.MapGroup("/athlete-chat").RequireAuthorization();
+var athleteChat = api.MapGroup("/athlete-chat").RequireAuthorization().RequireRateLimiting("chat-strict");
 athleteChat.MapGet("/threads", async (HttpContext httpContext, WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken) =>
 {
     var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
@@ -3436,9 +3957,346 @@ athleteChat.MapGet("/threads", async (HttpContext httpContext, WrestlingPlatform
         return Results.BadRequest("Athlete profile is required before using chat.");
     }
 
+    if (athleteProfile.IsChatRestrictedByGuardian)
+    {
+        return Results.Conflict("Chat access is currently restricted by your parent/guardian.");
+    }
+
     await SynchronizeAthleteChatLockStateAsync(dbContext, athleteProfile.Id, currentUserId.Value, cancellationToken);
     var summaries = await BuildAthleteChatThreadSummariesAsync(dbContext, currentUserId.Value, null, cancellationToken);
     return Results.Ok(summaries);
+});
+
+athleteChat.MapGet("/settings", async (
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var athleteProfile = await dbContext.AthleteProfiles.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.UserAccountId == currentUserId.Value, cancellationToken);
+    if (athleteProfile is null)
+    {
+        return Results.BadRequest("Athlete profile is required before using chat.");
+    }
+
+    return Results.Ok(new AthleteChatSettingsView(
+        athleteProfile.Id,
+        athleteProfile.IsChatDiscoverable,
+        athleteProfile.IsChatAvailable,
+        athleteProfile.IsChatRestrictedByGuardian,
+        athleteProfile.ChatRestrictionReason,
+        athleteProfile.ChatRestrictionUpdatedUtc));
+});
+
+athleteChat.MapPut("/settings", async (
+    UpdateAthleteChatSettingsRequest request,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var athleteProfile = await dbContext.AthleteProfiles
+        .FirstOrDefaultAsync(x => x.UserAccountId == currentUserId.Value, cancellationToken);
+    if (athleteProfile is null)
+    {
+        return Results.BadRequest("Athlete profile is required before updating chat settings.");
+    }
+
+    athleteProfile.IsChatDiscoverable = request.IsDiscoverable ?? athleteProfile.IsChatDiscoverable;
+    athleteProfile.IsChatAvailable = request.IsAvailable ?? athleteProfile.IsChatAvailable;
+
+    if (!athleteProfile.IsChatAvailable)
+    {
+        var memberships = await dbContext.AthleteChatParticipants
+            .Where(x => x.AthleteProfileId == athleteProfile.Id && x.UserAccountId == currentUserId.Value)
+            .ToListAsync(cancellationToken);
+
+        foreach (var membership in memberships)
+        {
+            membership.CanPost = false;
+        }
+    }
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new AthleteChatSettingsView(
+        athleteProfile.Id,
+        athleteProfile.IsChatDiscoverable,
+        athleteProfile.IsChatAvailable,
+        athleteProfile.IsChatRestrictedByGuardian,
+        athleteProfile.ChatRestrictionReason,
+        athleteProfile.ChatRestrictionUpdatedUtc));
+});
+
+athleteChat.MapPut("/athletes/{athleteProfileId:guid}/guardian-restriction", async (
+    Guid athleteProfileId,
+    UpdateAthleteChatGuardianRestrictionRequest request,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var isAdmin = ApiSecurityHelpers.IsAdminPrincipal(httpContext.User);
+    var isParentGuardian = ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.ParentGuardian, UserRole.Parent);
+    if (!isAdmin && !isParentGuardian)
+    {
+        return Results.Forbid();
+    }
+
+    var athleteProfile = await dbContext.AthleteProfiles
+        .FirstOrDefaultAsync(x => x.Id == athleteProfileId, cancellationToken);
+    if (athleteProfile is null)
+    {
+        return Results.NotFound("Athlete not found.");
+    }
+
+    if (!isAdmin)
+    {
+        var isLinkedParent = await dbContext.AthleteStreamingPermissions.AsNoTracking()
+            .AnyAsync(
+                x => x.AthleteProfileId == athleteProfileId
+                     && x.ParentGuardianUserAccountId == currentUserId.Value,
+                cancellationToken);
+
+        if (!isLinkedParent)
+        {
+            return Results.Forbid();
+        }
+    }
+
+    athleteProfile.IsChatRestrictedByGuardian = request.RestrictChatAccess;
+    athleteProfile.ChatRestrictionReason = request.RestrictChatAccess
+        ? string.IsNullOrWhiteSpace(request.Reason) ? "Restricted by parent/guardian controls." : request.Reason.Trim()
+        : null;
+    athleteProfile.ChatRestrictionUpdatedUtc = DateTime.UtcNow;
+
+    if (request.RestrictChatAccess)
+    {
+        athleteProfile.IsChatAvailable = false;
+
+        var memberships = await dbContext.AthleteChatParticipants
+            .Where(x => x.AthleteProfileId == athleteProfileId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var membership in memberships)
+        {
+            membership.CanPost = false;
+        }
+    }
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new AthleteChatSettingsView(
+        athleteProfile.Id,
+        athleteProfile.IsChatDiscoverable,
+        athleteProfile.IsChatAvailable,
+        athleteProfile.IsChatRestrictedByGuardian,
+        athleteProfile.ChatRestrictionReason,
+        athleteProfile.ChatRestrictionUpdatedUtc));
+});
+
+athleteChat.MapGet("/blocks", async (
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var athleteProfile = await dbContext.AthleteProfiles.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.UserAccountId == currentUserId.Value, cancellationToken);
+    if (athleteProfile is null)
+    {
+        return Results.BadRequest("Athlete profile is required before using chat.");
+    }
+
+    var blocks = await dbContext.AthleteChatBlocks.AsNoTracking()
+        .Where(x => x.BlockingAthleteProfileId == athleteProfile.Id)
+        .OrderByDescending(x => x.IsActive)
+        .ThenByDescending(x => x.CreatedUtc)
+        .Take(300)
+        .ToListAsync(cancellationToken);
+
+    if (blocks.Count == 0)
+    {
+        return Results.Ok(new List<AthleteChatBlockView>());
+    }
+
+    var blockedIds = blocks.Select(x => x.BlockedAthleteProfileId).Distinct().ToList();
+    var blockedProfiles = await dbContext.AthleteProfiles.AsNoTracking()
+        .Where(x => blockedIds.Contains(x.Id))
+        .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+    var blockViews = blocks.Select(block =>
+    {
+        blockedProfiles.TryGetValue(block.BlockedAthleteProfileId, out var blocked);
+        var blockedName = blocked is null ? "Unknown athlete" : $"{blocked.FirstName} {blocked.LastName}";
+
+        return new AthleteChatBlockView(
+            block.Id,
+            block.BlockingAthleteProfileId,
+            block.BlockedAthleteProfileId,
+            blockedName,
+            blocked?.Level ?? CompetitionLevel.HighSchool,
+            blocked?.State ?? "--",
+            blocked?.City ?? "--",
+            block.IsActive,
+            block.CreatedUtc,
+            block.ReleasedUtc);
+    }).ToList();
+
+    return Results.Ok(blockViews);
+});
+
+athleteChat.MapPost("/blocks/{targetAthleteProfileId:guid}", async (
+    Guid targetAthleteProfileId,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var currentAthlete = await dbContext.AthleteProfiles
+        .FirstOrDefaultAsync(x => x.UserAccountId == currentUserId.Value, cancellationToken);
+    if (currentAthlete is null)
+    {
+        return Results.BadRequest("Athlete profile is required before blocking another athlete.");
+    }
+
+    if (targetAthleteProfileId == currentAthlete.Id)
+    {
+        return Results.BadRequest("You cannot block yourself.");
+    }
+
+    var targetAthlete = await dbContext.AthleteProfiles
+        .FirstOrDefaultAsync(x => x.Id == targetAthleteProfileId, cancellationToken);
+    if (targetAthlete is null)
+    {
+        return Results.NotFound("Athlete not found.");
+    }
+
+    var blockRow = await dbContext.AthleteChatBlocks
+        .FirstOrDefaultAsync(
+            x => x.BlockingAthleteProfileId == currentAthlete.Id
+                 && x.BlockedAthleteProfileId == targetAthleteProfileId,
+            cancellationToken);
+
+    if (blockRow is null)
+    {
+        blockRow = new AthleteChatBlock
+        {
+            BlockingAthleteProfileId = currentAthlete.Id,
+            BlockingUserAccountId = currentUserId.Value,
+            BlockedAthleteProfileId = targetAthleteProfileId,
+            BlockedUserAccountId = targetAthlete.UserAccountId
+        };
+
+        dbContext.AthleteChatBlocks.Add(blockRow);
+    }
+
+    blockRow.BlockingUserAccountId = currentUserId.Value;
+    blockRow.BlockedUserAccountId = targetAthlete.UserAccountId;
+    blockRow.IsActive = true;
+    blockRow.ReleasedUtc = null;
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new AthleteChatBlockView(
+        blockRow.Id,
+        blockRow.BlockingAthleteProfileId,
+        blockRow.BlockedAthleteProfileId,
+        $"{targetAthlete.FirstName} {targetAthlete.LastName}",
+        targetAthlete.Level,
+        targetAthlete.State,
+        targetAthlete.City,
+        blockRow.IsActive,
+        blockRow.CreatedUtc,
+        blockRow.ReleasedUtc));
+});
+
+athleteChat.MapDelete("/blocks/{targetAthleteProfileId:guid}", async (
+    Guid targetAthleteProfileId,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var currentUserId = ApiSecurityHelpers.GetAuthenticatedUserId(httpContext.User);
+    if (currentUserId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!ApiSecurityHelpers.IsInRole(httpContext.User, UserRole.Athlete))
+    {
+        return Results.Forbid();
+    }
+
+    var currentAthlete = await dbContext.AthleteProfiles.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.UserAccountId == currentUserId.Value, cancellationToken);
+    if (currentAthlete is null)
+    {
+        return Results.BadRequest("Athlete profile is required before unblocking.");
+    }
+
+    var blockRow = await dbContext.AthleteChatBlocks
+        .FirstOrDefaultAsync(
+            x => x.BlockingAthleteProfileId == currentAthlete.Id
+                 && x.BlockedAthleteProfileId == targetAthleteProfileId,
+            cancellationToken);
+
+    if (blockRow is null)
+    {
+        return Results.NotFound("No block found for this athlete.");
+    }
+
+    blockRow.IsActive = false;
+    blockRow.ReleasedUtc = DateTime.UtcNow;
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new { Unblocked = true, targetAthleteProfileId });
 });
 
 athleteChat.MapPost("/lounge/join", async (HttpContext httpContext, WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken) =>
@@ -3459,6 +4317,16 @@ athleteChat.MapPost("/lounge/join", async (HttpContext httpContext, WrestlingPla
     if (athleteProfile is null)
     {
         return Results.BadRequest("Athlete profile is required before joining chat.");
+    }
+
+    if (athleteProfile.IsChatRestrictedByGuardian)
+    {
+        return Results.Conflict("Chat access is currently restricted by your parent/guardian.");
+    }
+
+    if (!athleteProfile.IsChatAvailable)
+    {
+        return Results.Conflict("Your athlete chat availability is currently turned off.");
     }
 
     var loungeThread = await dbContext.AthleteChatThreads
@@ -3491,7 +4359,7 @@ athleteChat.MapPost("/lounge/join", async (HttpContext httpContext, WrestlingPla
             ThreadId = loungeThread.Id,
             UserAccountId = currentUserId.Value,
             AthleteProfileId = athleteProfile.Id,
-            CanPost = activeLock is null,
+            CanPost = activeLock is null && athleteProfile.IsChatAvailable,
             LastReadMessageUtc = DateTime.UtcNow
         };
 
@@ -3499,7 +4367,7 @@ athleteChat.MapPost("/lounge/join", async (HttpContext httpContext, WrestlingPla
     }
     else
     {
-        membership.CanPost = activeLock is null;
+        membership.CanPost = activeLock is null && athleteProfile.IsChatAvailable;
     }
 
     await dbContext.SaveChangesAsync(cancellationToken);
@@ -3532,10 +4400,24 @@ athleteChat.MapGet("/network", async (
         ? null
         : normalizedQuery.ToLowerInvariant();
 
+    var currentAthlete = await dbContext.AthleteProfiles.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.UserAccountId == currentUserId.Value, cancellationToken);
+    if (currentAthlete is null)
+    {
+        return Results.BadRequest("Athlete profile is required before searching chat network.");
+    }
+
+    if (currentAthlete.IsChatRestrictedByGuardian)
+    {
+        return Results.Conflict("Chat access is currently restricted by your parent/guardian.");
+    }
+
     var query = from athlete in dbContext.AthleteProfiles.AsNoTracking()
                 join user in dbContext.UserAccounts.AsNoTracking() on athlete.UserAccountId equals user.Id
                 where user.IsActive
                       && user.Role == UserRole.Athlete
+                      && athlete.IsChatDiscoverable
+                      && !athlete.IsChatRestrictedByGuardian
                       && user.Id != currentUserId.Value
                 select new { athlete, user };
 
@@ -3548,19 +4430,58 @@ athleteChat.MapGet("/network", async (
             || (x.athlete.SchoolOrClubName ?? string.Empty).ToLower().Contains(normalizedQueryLower));
     }
 
-    var athletes = await query
+    var athleteRows = await query
         .OrderBy(x => x.athlete.LastName)
         .ThenBy(x => x.athlete.FirstName)
         .Take(safeTake)
-        .Select(x => new AthleteChatDirectoryEntry(
-            x.user.Id,
-            x.athlete.Id,
-            $"{x.athlete.FirstName} {x.athlete.LastName}",
-            x.athlete.Level,
-            x.athlete.State,
-            x.athlete.City,
-            x.athlete.SchoolOrClubName))
         .ToListAsync(cancellationToken);
+
+    var athleteIds = athleteRows.Select(x => x.athlete.Id).ToList();
+    var nowUtc = DateTime.UtcNow;
+
+    var lockedAthleteIds = athleteIds.Count == 0
+        ? new HashSet<Guid>()
+        : (await dbContext.AthleteChatAthleteLocks.AsNoTracking()
+            .Where(x => x.IsActive && x.LockedUntilUtc > nowUtc && athleteIds.Contains(x.AthleteProfileId))
+            .Select(x => x.AthleteProfileId)
+            .ToListAsync(cancellationToken))
+        .ToHashSet();
+
+    var blockedByCurrent = athleteIds.Count == 0
+        ? new HashSet<Guid>()
+        : (await dbContext.AthleteChatBlocks.AsNoTracking()
+            .Where(x => x.IsActive && x.BlockingAthleteProfileId == currentAthlete.Id && athleteIds.Contains(x.BlockedAthleteProfileId))
+            .Select(x => x.BlockedAthleteProfileId)
+            .ToListAsync(cancellationToken))
+        .ToHashSet();
+
+    var blockedCurrentByOthers = athleteIds.Count == 0
+        ? new HashSet<Guid>()
+        : (await dbContext.AthleteChatBlocks.AsNoTracking()
+            .Where(x => x.IsActive && x.BlockedAthleteProfileId == currentAthlete.Id && athleteIds.Contains(x.BlockingAthleteProfileId))
+            .Select(x => x.BlockingAthleteProfileId)
+            .ToListAsync(cancellationToken))
+        .ToHashSet();
+
+    var athletes = athleteRows
+        .Select(row =>
+        {
+            var isBlocked = blockedByCurrent.Contains(row.athlete.Id) || blockedCurrentByOthers.Contains(row.athlete.Id);
+            var isAvailable = row.athlete.IsChatAvailable && !lockedAthleteIds.Contains(row.athlete.Id) && !isBlocked;
+
+            return new AthleteChatDirectoryEntry(
+                row.user.Id,
+                row.athlete.Id,
+                $"{row.athlete.FirstName} {row.athlete.LastName}",
+                row.athlete.Level,
+                row.athlete.State,
+                row.athlete.City,
+                row.athlete.SchoolOrClubName,
+                IsAvailable: isAvailable,
+                IsBlocked: isBlocked,
+                IsDiscoverable: row.athlete.IsChatDiscoverable);
+        })
+        .ToList();
 
     return Results.Ok(athletes);
 });
@@ -3599,6 +4520,36 @@ athleteChat.MapPost("/threads/direct", async (
     if (targetAthlete.Id == currentAthlete.Id)
     {
         return Results.BadRequest("You cannot start a direct thread with yourself.");
+    }
+
+    if (currentAthlete.IsChatRestrictedByGuardian)
+    {
+        return Results.Conflict("Chat access is currently restricted by your parent/guardian.");
+    }
+
+    if (!currentAthlete.IsChatAvailable)
+    {
+        return Results.Conflict("Your athlete chat availability is currently turned off.");
+    }
+
+    if (targetAthlete.IsChatRestrictedByGuardian)
+    {
+        return Results.Conflict("This athlete is currently restricted from chat by parent/guardian controls.");
+    }
+
+    if (!targetAthlete.IsChatAvailable)
+    {
+        return Results.Conflict("This athlete is currently unavailable for chat.");
+    }
+
+    if (!targetAthlete.IsChatDiscoverable)
+    {
+        return Results.Conflict("This athlete cannot be reached through chat discovery right now.");
+    }
+
+    if (await HasActiveAthleteChatBlockAsync(dbContext, currentAthlete.Id, targetAthlete.Id, cancellationToken))
+    {
+        return Results.Conflict("Direct chat is unavailable because one of the athletes has blocked the other.");
     }
 
     var currentAthleteLock = await GetActiveAthleteChatLockAsync(dbContext, currentAthlete.Id, cancellationToken);
@@ -3642,14 +4593,14 @@ athleteChat.MapPost("/threads/direct", async (
             ThreadId = directThread.Id,
             UserAccountId = currentUserId.Value,
             AthleteProfileId = currentAthlete.Id,
-            CanPost = currentAthleteLock is null,
+            CanPost = currentAthleteLock is null && currentAthlete.IsChatAvailable,
             LastReadMessageUtc = DateTime.UtcNow
         });
     }
     else
     {
         currentParticipant.AthleteProfileId = currentAthlete.Id;
-        currentParticipant.CanPost = currentAthleteLock is null;
+        currentParticipant.CanPost = currentAthleteLock is null && currentAthlete.IsChatAvailable;
     }
 
     var targetParticipant = await dbContext.AthleteChatParticipants
@@ -3664,14 +4615,14 @@ athleteChat.MapPost("/threads/direct", async (
             ThreadId = directThread.Id,
             UserAccountId = targetAthlete.UserAccountId,
             AthleteProfileId = targetAthlete.Id,
-            CanPost = targetAthleteLock is null
+            CanPost = targetAthleteLock is null && targetAthlete.IsChatAvailable
         });
     }
     else
     {
         targetParticipant.UserAccountId = targetAthlete.UserAccountId;
         targetParticipant.AthleteProfileId = targetAthlete.Id;
-        targetParticipant.CanPost = targetAthleteLock is null;
+        targetParticipant.CanPost = targetAthleteLock is null && targetAthlete.IsChatAvailable;
     }
 
     var invalidParticipants = await dbContext.AthleteChatParticipants
@@ -3712,6 +4663,16 @@ athleteChat.MapPost("/threads/group", async (
     if (currentAthlete is null)
     {
         return Results.BadRequest("Athlete profile is required before creating group chat.");
+    }
+
+    if (currentAthlete.IsChatRestrictedByGuardian)
+    {
+        return Results.Conflict("Chat access is currently restricted by your parent/guardian.");
+    }
+
+    if (!currentAthlete.IsChatAvailable)
+    {
+        return Results.Conflict("Your athlete chat availability is currently turned off.");
     }
 
     var currentAthleteLock = await GetActiveAthleteChatLockAsync(dbContext, currentAthlete.Id, cancellationToken);
@@ -3759,6 +4720,9 @@ athleteChat.MapPost("/threads/group", async (
             where targetAthleteIds.Contains(athlete.Id)
                   && user.IsActive
                   && user.Role == UserRole.Athlete
+                  && athlete.IsChatAvailable
+                  && athlete.IsChatDiscoverable
+                  && !athlete.IsChatRestrictedByGuardian
             select new
             {
                 athlete.Id,
@@ -3769,6 +4733,24 @@ athleteChat.MapPost("/threads/group", async (
     if (athleteRows.Count != targetAthleteIds.Count)
     {
         return Results.BadRequest("One or more selected athletes are unavailable for group chat.");
+    }
+
+    var selectedTargetAthleteIds = targetAthleteIds.Where(x => x != currentAthlete.Id).ToList();
+    if (selectedTargetAthleteIds.Count > 0)
+    {
+        var hasBlock = await dbContext.AthleteChatBlocks.AsNoTracking()
+            .AnyAsync(
+                x => x.IsActive
+                     && ((x.BlockingAthleteProfileId == currentAthlete.Id
+                          && selectedTargetAthleteIds.Contains(x.BlockedAthleteProfileId))
+                         || (x.BlockedAthleteProfileId == currentAthlete.Id
+                             && selectedTargetAthleteIds.Contains(x.BlockingAthleteProfileId))),
+                cancellationToken);
+
+        if (hasBlock)
+        {
+            return Results.Conflict("One or more selected athletes cannot be added due to block settings.");
+        }
     }
 
     var thread = new AthleteChatThread
@@ -3841,6 +4823,23 @@ athleteChat.MapGet("/threads/{threadId:guid}/messages", async (
     if (thread is null)
     {
         return Results.NotFound("Thread not found.");
+    }
+
+    var currentAthlete = await dbContext.AthleteProfiles.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.Id == membership.AthleteProfileId, cancellationToken);
+    if (currentAthlete is null)
+    {
+        return Results.BadRequest("Athlete profile is required before loading messages.");
+    }
+
+    if (currentAthlete.IsChatRestrictedByGuardian)
+    {
+        return Results.Conflict("Chat access is currently restricted by your parent/guardian.");
+    }
+
+    if (await HasBlockedParticipantInThreadAsync(dbContext, threadId, currentAthlete.Id, cancellationToken))
+    {
+        return Results.Forbid();
     }
 
     var safeTake = take is null or <= 0 ? 80 : Math.Min(200, take.Value);
@@ -3968,6 +4967,11 @@ athleteChat.MapPost("/threads/{threadId:guid}/messages", async (
     if (membership.MutedUntilUtc is DateTime mutedUntilUtc && mutedUntilUtc > DateTime.UtcNow)
     {
         return Results.Conflict($"Thread muted until {mutedUntilUtc:u}.");
+    }
+
+    if (await HasBlockedParticipantInThreadAsync(dbContext, threadId, membership.AthleteProfileId, cancellationToken))
+    {
+        return Results.Forbid();
     }
 
     var normalizedBody = NormalizeAthleteChatMessage(request.Body);
@@ -5692,6 +6696,60 @@ static string ResolveAgeGroupLabel(CompetitionLevel level)
     };
 }
 
+static string ResolveDivisionAgeGroupLabel(CompetitionLevel level, NoviceDivisionRule noviceRule)
+{
+    var baseLabel = ResolveAgeGroupLabel(level);
+    if (level != CompetitionLevel.ElementaryK6)
+    {
+        return baseLabel;
+    }
+
+    return noviceRule switch
+    {
+        NoviceDivisionRule.NoviceOnly => $"{baseLabel} - Novice (<= 2 yrs)",
+        NoviceDivisionRule.NonNoviceOnly => $"{baseLabel} - Non-Novice (> 2 yrs)",
+        _ => baseLabel
+    };
+}
+
+static NoviceCategory ResolveNoviceCategory(CompetitionLevel level, decimal experienceYears, NoviceCategory requestedCategory)
+{
+    if (level != CompetitionLevel.ElementaryK6)
+    {
+        return NoviceCategory.NotApplicable;
+    }
+
+    var safeExperience = Math.Max(0m, experienceYears);
+    return safeExperience <= 2m
+        ? NoviceCategory.Novice
+        : NoviceCategory.NonNovice;
+}
+
+static bool IsAthleteEligibleForDivisionNoviceRule(AthleteProfile athlete, NoviceDivisionRule noviceRule)
+{
+    if (noviceRule == NoviceDivisionRule.Open)
+    {
+        return true;
+    }
+
+    if (athlete.Level != CompetitionLevel.ElementaryK6)
+    {
+        return false;
+    }
+
+    var resolved = ResolveNoviceCategory(
+        athlete.Level,
+        athlete.WrestlingExperienceYears,
+        athlete.NoviceCategory);
+
+    return noviceRule switch
+    {
+        NoviceDivisionRule.NoviceOnly => resolved == NoviceCategory.Novice,
+        NoviceDivisionRule.NonNoviceOnly => resolved == NoviceCategory.NonNovice,
+        _ => true
+    };
+}
+
 static WrestlingStyle InferStyleForLevel(CompetitionLevel level)
 {
     return level switch
@@ -6328,6 +7386,61 @@ static string? NormalizeEmail(string? raw)
     return trimmed.Contains('@', StringComparison.Ordinal) ? trimmed : null;
 }
 
+static string NormalizePhoneForLookup(string? raw)
+{
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+        return string.Empty;
+    }
+
+    var digits = new string(raw.Where(char.IsDigit).ToArray());
+    if (digits.Length == 11 && digits.StartsWith('1'))
+    {
+        digits = digits[1..];
+    }
+
+    return digits;
+}
+
+static async Task<bool> HasActiveAthleteChatBlockAsync(
+    WrestlingPlatformDbContext dbContext,
+    Guid athleteAId,
+    Guid athleteBId,
+    CancellationToken cancellationToken)
+{
+    return await dbContext.AthleteChatBlocks.AsNoTracking()
+        .AnyAsync(
+            x => x.IsActive
+                 && ((x.BlockingAthleteProfileId == athleteAId && x.BlockedAthleteProfileId == athleteBId)
+                     || (x.BlockingAthleteProfileId == athleteBId && x.BlockedAthleteProfileId == athleteAId)),
+            cancellationToken);
+}
+
+static async Task<bool> HasBlockedParticipantInThreadAsync(
+    WrestlingPlatformDbContext dbContext,
+    Guid threadId,
+    Guid athleteProfileId,
+    CancellationToken cancellationToken)
+{
+    var otherAthleteIds = await dbContext.AthleteChatParticipants.AsNoTracking()
+        .Where(x => x.ThreadId == threadId && x.AthleteProfileId != athleteProfileId)
+        .Select(x => x.AthleteProfileId)
+        .Distinct()
+        .ToListAsync(cancellationToken);
+
+    if (otherAthleteIds.Count == 0)
+    {
+        return false;
+    }
+
+    return await dbContext.AthleteChatBlocks.AsNoTracking()
+        .AnyAsync(
+            x => x.IsActive
+                 && ((x.BlockingAthleteProfileId == athleteProfileId && otherAthleteIds.Contains(x.BlockedAthleteProfileId))
+                     || (x.BlockedAthleteProfileId == athleteProfileId && otherAthleteIds.Contains(x.BlockingAthleteProfileId))),
+            cancellationToken);
+}
+
 static NilPolicyResponse BuildNilPolicyResponse()
 {
     return new NilPolicyResponse(
@@ -6637,5 +7750,7 @@ static HashSet<UserRole> ResolveMfaRequiredRoles(IConfiguration configuration)
         ]
         : resolved;
 }
+
+internal sealed record PasswordRecoveryState(string Code, DateTime ExpiresUtc, int AttemptCount);
 
 

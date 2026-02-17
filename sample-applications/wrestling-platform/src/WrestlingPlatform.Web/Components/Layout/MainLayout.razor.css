@@ -448,6 +448,20 @@ a {
     flex-wrap: wrap;
 }
 
+.mini-check-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    color: #42515a;
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.mini-check-row input {
+    margin: 0;
+}
+
 .mini-input {
     border: 1px solid #c8c0ad;
     border-radius: 999px;
@@ -657,6 +671,27 @@ a {
     display: flex;
     flex-wrap: wrap;
     gap: 0.45rem;
+}
+
+.signin-auth-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.signin-subpanel {
+    border: 1px solid #dccfb9;
+    border-radius: 12px;
+    background: #fffdf8;
+    padding: 0.62rem;
+    display: grid;
+    gap: 0.46rem;
+}
+
+.signin-subpanel h3 {
+    margin: 0;
+    font-size: 1rem;
 }
 
 .role-state-strip {
@@ -1098,6 +1133,14 @@ a {
 
     .signin-gate-actions,
     .panel-action-row {
+        width: 100%;
+    }
+
+    .signin-auth-grid {
+        width: 100%;
+    }
+
+    .mini-check-row {
         width: 100%;
     }
 

@@ -2,6 +2,7 @@
 @page "/events/{RouteEventId:guid}/registration"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
+@using WrestlingPlatform.Domain.Models
 
 <PageTitle>Tournament Registration - PinPoint Arena</PageTitle>
 
@@ -53,6 +54,27 @@
                 <label>Max entry fee (cents)</label>
                 <input class="input" type="number" min="0" @bind="MaxFeeCents" />
             </div>
+            <div class="field check-row">
+                <input id="nearMeMode" type="checkbox" @bind="UseNearMe" />
+                <label for="nearMeMode">Use near-me map filtering</label>
+            </div>
+            <div class="field">
+                <label>Home State</label>
+                <select class="select" @bind="HomeState">
+                    @foreach (var state in FormOptions.UsStates)
+                    {
+                        <option value="@state.Code">@state.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Home City</label>
+                <input class="input" @bind="HomeCity" placeholder="Columbus" />
+            </div>
+            <div class="field">
+                <label>Radius (miles)</label>
+                <input class="input" type="number" min="5" max="1000" @bind="RadiusMiles" />
+            </div>
         </div>
         <div class="actions">
             <button class="btn primary" @onclick="SearchAsync" disabled="@IsBusy">Search</button>
@@ -66,13 +88,14 @@
                         <th>Location</th>
                         <th>Date</th>
                         <th>Fee</th>
+                        <th>Distance</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     @if (Events.Count == 0)
                     {
-                        <tr><td colspan="5">No events loaded yet.</td></tr>
+                        <tr><td colspan="6">No events loaded yet.</td></tr>
                     }
                     else
                     {
@@ -83,12 +106,49 @@
                                 <td>@row.State / @row.City</td>
                                 <td>@row.StartUtc.ToLocalTime().ToString("MMM dd yyyy")</td>
                                 <td>$@((row.EntryFeeCents / 100m).ToString("0.00"))</td>
+                                <td>@DistanceLabel(row.Id)</td>
                                 <td><button class="btn secondary" @onclick="() => SelectEventAsync(row.Id)">Select</button></td>
                             </tr>
                         }
                     }
                 </tbody>
             </table>
+        </div>
+
+        <div class="panel-grid two spacer-top">
+            <section class="panel">
+                <h2>Interactive Map</h2>
+                <p class="helper">Map focus: @MapFocusLabel</p>
+                <iframe src="@MapEmbedUrl" title="Tournament Search Map" style="width:100%;height:320px;border:1px solid rgba(28,46,69,.18);border-radius:12px"></iframe>
+                <p class="helper spacer-top">Use near-me filters to show events closest to your home location and click Select on any event card.</p>
+            </section>
+            <section class="panel">
+                <h2>State + City Groups</h2>
+                @if (GroupedSearchResults.Count == 0)
+                {
+                    <p class="helper spacer-top">No grouped results for current filters.</p>
+                }
+                else
+                {
+                    <ul class="list spacer-top">
+                        @foreach (var group in GroupedSearchResults)
+                        {
+                            <li class="list-item">
+                                <div class="item-head">
+                                    <span class="item-title">@group.State / @group.City</span>
+                                    <span class="item-meta">@group.Events.Count event(s)</span>
+                                </div>
+                                <div class="actions spacer-top">
+                                    @foreach (var evt in group.Events.OrderBy(x => x.StartUtc).Take(4))
+                                    {
+                                        <button class="btn ghost" @onclick="() => SelectEventAsync(evt.Id)">@evt.Name</button>
+                                    }
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
         </div>
     </section>
 
@@ -246,6 +306,7 @@
                     <tr>
                         <th>Division</th>
                         <th>Age Group</th>
+                        <th>Novice Rule</th>
                         <th>Weight</th>
                         <th>Style</th>
                         <th>Format</th>
@@ -255,7 +316,7 @@
                 <tbody>
                     @if (Directory is null || Directory.Divisions.Count == 0)
                     {
-                        <tr><td colspan="6">No division directory loaded yet.</td></tr>
+                        <tr><td colspan="7">No division directory loaded yet.</td></tr>
                     }
                     else
                     {
@@ -264,6 +325,7 @@
                             <tr>
                                 <td>@row.Name</td>
                                 <td>@row.AgeGroup</td>
+                                <td>@FormatNoviceRule(row.NoviceRule)</td>
                                 <td>@row.WeightClass</td>
                                 <td>@row.Style</td>
                                 <td>@row.TournamentFormat</td>
@@ -292,7 +354,13 @@
     private string SearchCity = string.Empty;
     private CompetitionLevel? SearchLevel = null;
     private int? MaxFeeCents = 5000;
+    private bool UseNearMe = true;
+    private string HomeState = "OH";
+    private string HomeCity = "Columbus";
+    private int RadiusMiles = 150;
     private List<TournamentEvent> Events = [];
+    private Dictionary<Guid, double> EventDistanceById = new();
+    private List<GroupedEventsResponse> GroupedEvents = [];
 
     private string SelectedEventIdText = string.Empty;
     private TournamentDirectoryRow? Directory;
@@ -316,6 +384,53 @@
 
     private PaymentIntentResult? LastPaymentIntent;
     private string SelectedEventHref => Guid.TryParse(SelectedEventIdText, out var eventId) ? $"/events/{eventId:D}" : "/tournaments";
+    private string MapFocusLabel
+    {
+        get
+        {
+            if (Guid.TryParse(SelectedEventIdText, out var selectedId))
+            {
+                var selectedEvent = Events.FirstOrDefault(x => x.Id == selectedId);
+                if (selectedEvent is not null)
+                {
+                    return $"{selectedEvent.Name}, {selectedEvent.City}, {selectedEvent.State}";
+                }
+            }
+
+            if (UseNearMe)
+            {
+                return $"{HomeCity}, {HomeState}";
+            }
+
+            return string.IsNullOrWhiteSpace(SearchCity)
+                ? SearchState
+                : $"{SearchCity}, {SearchState}";
+        }
+    }
+    private string MapEmbedUrl => $"https://maps.google.com/maps?q={Uri.EscapeDataString(MapFocusLabel)}&z=8&output=embed";
+    private List<GroupedEventsResponse> GroupedSearchResults
+    {
+        get
+        {
+            if (Events.Count == 0 || GroupedEvents.Count == 0)
+            {
+                return [];
+            }
+
+            var eventIds = Events.Select(x => x.Id).ToHashSet();
+            return GroupedEvents
+                .Select(group => new GroupedEventsResponse
+                {
+                    State = group.State,
+                    City = group.City,
+                    Events = group.Events.Where(evt => eventIds.Contains(evt.Id)).ToList()
+                })
+                .Where(group => group.Events.Count > 0)
+                .OrderBy(group => group.State)
+                .ThenBy(group => group.City)
+                .ToList();
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -338,6 +453,7 @@
             RegistrationAthleteIdText = Workflow.AthleteProfileId.Value.ToString();
         }
 
+        await LoadGroupedEventsAsync();
         await SearchAsync();
         if (!string.IsNullOrWhiteSpace(SelectedEventIdText))
         {
@@ -351,8 +467,8 @@
         try
         {
             var result = await ApiClient.SearchEventsAsync(new SearchEventsQuery(
-                SearchState,
-                SearchCity,
+                UseNearMe ? null : SearchState,
+                UseNearMe ? null : SearchCity,
                 SearchLevel,
                 DateTime.UtcNow.AddDays(-1),
                 DateTime.UtcNow.AddDays(180),
@@ -367,8 +483,15 @@
             }
 
             Events = result.Data ?? [];
+            if (GroupedEvents.Count == 0)
+            {
+                await LoadGroupedEventsAsync();
+            }
+            ApplyNearMeFilter();
             StatusSuccess = true;
-            StatusMessage = $"Loaded {Events.Count} events.";
+            StatusMessage = UseNearMe
+                ? $"Loaded {Events.Count} events within {RadiusMiles} miles of {HomeCity}, {HomeState}."
+                : $"Loaded {Events.Count} events.";
         }
         finally
         {
@@ -559,5 +682,119 @@
         {
             RegistrationAthleteIdText = Workflow.AthleteProfileId.Value.ToString();
         }
+    }
+
+    private async Task LoadGroupedEventsAsync()
+    {
+        var grouped = await ApiClient.GetGroupedEventsAsync();
+        GroupedEvents = grouped.Success ? grouped.Data ?? [] : [];
+    }
+
+    private void ApplyNearMeFilter()
+    {
+        EventDistanceById.Clear();
+        if (!UseNearMe || Events.Count == 0)
+        {
+            return;
+        }
+
+        var homeCoordinates = ResolveCoordinates(HomeState, HomeCity);
+        var filtered = Events
+            .Select(evt =>
+            {
+                var eventCoordinates = ResolveCoordinates(evt.State, evt.City);
+                var miles = HaversineMiles(homeCoordinates, eventCoordinates);
+                return new { Event = evt, Miles = miles };
+            })
+            .Where(x => x.Miles <= Math.Max(5, RadiusMiles))
+            .OrderBy(x => x.Miles)
+            .ThenBy(x => x.Event.StartUtc)
+            .ToList();
+
+        foreach (var row in filtered)
+        {
+            EventDistanceById[row.Event.Id] = row.Miles;
+        }
+
+        Events = filtered.Select(x => x.Event).ToList();
+    }
+
+    private string DistanceLabel(Guid eventId)
+    {
+        return EventDistanceById.TryGetValue(eventId, out var miles)
+            ? $"{Math.Round(miles, 1, MidpointRounding.AwayFromZero):0.0} mi"
+            : "-";
+    }
+
+    private static (double Lat, double Lon) ResolveCoordinates(string? state, string? city)
+    {
+        var normalizedState = (state ?? string.Empty).Trim().ToUpperInvariant();
+        var normalizedCity = (city ?? string.Empty).Trim().ToLowerInvariant();
+        var cityKey = string.IsNullOrWhiteSpace(normalizedState) ? normalizedCity : $"{normalizedCity},{normalizedState.ToLowerInvariant()}";
+
+        if (CityCoordinates.TryGetValue(cityKey, out var cityCoordinates))
+        {
+            return cityCoordinates;
+        }
+
+        if (StateCenters.TryGetValue(normalizedState, out var stateCoordinates))
+        {
+            return stateCoordinates;
+        }
+
+        return (39.8283d, -98.5795d);
+    }
+
+    private static double HaversineMiles((double Lat, double Lon) left, (double Lat, double Lon) right)
+    {
+        const double earthRadiusMiles = 3958.8d;
+        var latDelta = DegreesToRadians(right.Lat - left.Lat);
+        var lonDelta = DegreesToRadians(right.Lon - left.Lon);
+        var sinLat = Math.Sin(latDelta / 2d);
+        var sinLon = Math.Sin(lonDelta / 2d);
+
+        var a = (sinLat * sinLat)
+                + (Math.Cos(DegreesToRadians(left.Lat)) * Math.Cos(DegreesToRadians(right.Lat)) * sinLon * sinLon);
+        var c = 2d * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1d - a));
+        return earthRadiusMiles * c;
+    }
+
+    private static double DegreesToRadians(double degrees) => (Math.PI / 180d) * degrees;
+
+    private static readonly Dictionary<string, (double Lat, double Lon)> StateCenters = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["OH"] = (40.4173d, -82.9071d),
+        ["PA"] = (41.2033d, -77.1945d),
+        ["MI"] = (44.3148d, -85.6024d),
+        ["IA"] = (41.8780d, -93.0977d),
+        ["OK"] = (35.4676d, -97.5164d),
+        ["IN"] = (39.7684d, -86.1581d),
+        ["IL"] = (40.6331d, -89.3985d),
+        ["TX"] = (31.9686d, -99.9018d),
+        ["NY"] = (42.9538d, -75.5268d),
+        ["CA"] = (36.7783d, -119.4179d)
+    };
+
+    private static readonly Dictionary<string, (double Lat, double Lon)> CityCoordinates = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["columbus,oh"] = (39.9612d, -82.9988d),
+        ["cleveland,oh"] = (41.4993d, -81.6944d),
+        ["dayton,oh"] = (39.7589d, -84.1916d),
+        ["pittsburgh,pa"] = (40.4406d, -79.9959d),
+        ["detroit,mi"] = (42.3314d, -83.0458d),
+        ["des moines,ia"] = (41.5868d, -93.6250d),
+        ["tulsa,ok"] = (36.1540d, -95.9928d),
+        ["indianapolis,in"] = (39.7684d, -86.1581d),
+        ["chicago,il"] = (41.8781d, -87.6298d)
+    };
+
+    private static string FormatNoviceRule(NoviceDivisionRule noviceRule)
+    {
+        return noviceRule switch
+        {
+            NoviceDivisionRule.NoviceOnly => "Novice only (<= 2 years)",
+            NoviceDivisionRule.NonNoviceOnly => "Non-novice only (> 2 years)",
+            _ => "Open"
+        };
     }
 }

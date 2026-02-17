@@ -9,7 +9,11 @@ public sealed class RequestSecurityPolicyOptions
 {
     public bool EnableResponseSecurityHeaders { get; set; } = true;
 
+    public bool EnableStrictTransportSecurity { get; set; } = true;
+
     public bool EnforceHttpsInProduction { get; set; } = true;
+
+    public string ContentSecurityPolicy { get; set; } = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none';";
 
     public string[] BlockedUserAgentSubstrings { get; set; } = [];
 
@@ -52,7 +56,7 @@ public sealed class RequestSecurityPolicyMiddleware(
 
         if (_options.EnableResponseSecurityHeaders)
         {
-            ApplyHeaders(context.Response.Headers);
+            ApplyHeaders(context.Response.Headers, _options, environment);
         }
 
         await _next(context);
@@ -107,13 +111,25 @@ public sealed class RequestSecurityPolicyMiddleware(
         return true;
     }
 
-    private static void ApplyHeaders(IHeaderDictionary headers)
+    private static void ApplyHeaders(IHeaderDictionary headers, RequestSecurityPolicyOptions options, IWebHostEnvironment environment)
     {
         headers["X-Content-Type-Options"] = "nosniff";
         headers["X-Frame-Options"] = "DENY";
         headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+        headers["Cross-Origin-Opener-Policy"] = "same-origin";
+        headers["Cross-Origin-Resource-Policy"] = "same-site";
         headers["X-Permitted-Cross-Domain-Policies"] = "none";
+
+        if (!string.IsNullOrWhiteSpace(options.ContentSecurityPolicy))
+        {
+            headers["Content-Security-Policy"] = options.ContentSecurityPolicy.Trim();
+        }
+
+        if (options.EnableStrictTransportSecurity && environment.IsProduction())
+        {
+            headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload";
+        }
     }
 
     private static List<CidrRange> ParseCidrs(IEnumerable<string> source)

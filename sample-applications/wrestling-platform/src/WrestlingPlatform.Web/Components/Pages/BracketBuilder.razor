@@ -283,6 +283,56 @@
                     </div>
                 }
             </div>
+            @if (OpsChecklist is not null)
+            {
+                <div class="list spacer-top">
+                    <div class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">Step-by-Step Readiness Guide</span>
+                            <span class="tag">Prerequisites</span>
+                        </div>
+                        <div class="table-wrap spacer-top">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Checklist Step</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Divisions locked</td><td>@ReadyLabel(OpsChecklist.DivisionsLocked)</td></tr>
+                                    <tr><td>Format + rules locked</td><td>@ReadyLabel(OpsChecklist.FormatAndRulesLocked)</td></tr>
+                                    <tr><td>Weigh-ins completed</td><td>@ReadyLabel(OpsChecklist.WeighInsCompleted)</td></tr>
+                                    <tr><td>Scratch list frozen</td><td>@ReadyLabel(OpsChecklist.ScratchListFrozen)</td></tr>
+                                    <tr><td>Require scratch freeze</td><td>@ReadyLabel(OpsChecklist.RequireScratchFreezeForBracketGeneration)</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <details class="spacer-top" open>
+                            <summary class="item-title">Step-by-step guide</summary>
+                            <ol class="list spacer-top">
+                                <li class="list-item">Step 1: Lock divisions and verify registration boundaries in the registration center.</li>
+                                <li class="list-item">Step 2: Confirm format, scoring preset, and overtime controls in wizard step 3.</li>
+                                <li class="list-item">Step 3: Complete weigh-ins and freeze the scratch list before generating.</li>
+                                <li class="list-item">Step 4: Generate brackets and verify bout ordering in the bracket center.</li>
+                                <li class="list-item">Step 5: Open live hub to verify mat assignment visibility and readiness.</li>
+                            </ol>
+                        </details>
+                        <div class="actions">
+                            <button class="btn secondary" @onclick="MarkScratchFrozenAsync" disabled="@IsBusy">Mark Weigh-ins + Freeze Scratch List</button>
+                            <a class="btn ghost" href="@SelectedRegistrationHref">Open Event Registration</a>
+                            <a class="btn ghost" href="@SelectedAdminOpsHref">Open Backend Ops</a>
+                        </div>
+                    </div>
+                </div>
+            }
+            @if (ShowScratchFreezeGuide)
+            {
+                <div class="alert error spacer-top">
+                    Bracket generation is blocked until the scratch list is frozen.
+                    Complete weigh-ins, freeze scratches, then regenerate.
+                </div>
+            }
             <div class="actions">
                 <button class="btn primary" @onclick="GenerateBracketAsync" disabled="@IsBusy">Generate Bracket</button>
                 <button class="btn ghost" @onclick="LoadVisualBundleAsync" disabled="@IsBusy">Refresh Visual Preview</button>
@@ -337,6 +387,8 @@
 
     private BracketGenerationResult? LastGeneration;
     private TournamentBracketVisualBundle? VisualBundle;
+    private EventOpsChecklistState? OpsChecklist;
+    private bool ShowScratchFreezeGuide;
 
     private Guid? SelectedEventId =>
         Guid.TryParse(SelectedEventIdText, out var eventId) ? eventId : null;
@@ -352,6 +404,12 @@
 
     private string SelectedEventDetailsHref =>
         SelectedEventId is null ? "/tournaments" : $"/events/{SelectedEventId.Value:D}";
+
+    private string SelectedRegistrationHref =>
+        SelectedEventId is null ? "/registration" : $"/events/{SelectedEventId.Value:D}/registration";
+
+    private string SelectedAdminOpsHref =>
+        SelectedEventId is null ? "/admin" : $"/admin?eventId={SelectedEventId.Value:D}";
 
     private string SelectedLiveHubHref
     {
@@ -468,8 +526,10 @@
             }
 
             await LoadTournamentControlsAsync(eventId);
+            await LoadOpsChecklistAsync(eventId);
             await LoadVisualBundleAsync();
             ActiveStep = Math.Max(ActiveStep, 2);
+            ShowScratchFreezeGuide = false;
 
             StatusSuccess = true;
             StatusMessage = $"Loaded event context for {Directory.EventName}.";
@@ -585,9 +645,20 @@
             return;
         }
 
+        if (OpsChecklist is not null
+            && OpsChecklist.RequireScratchFreezeForBracketGeneration
+            && !OpsChecklist.ScratchListFrozen)
+        {
+            ShowScratchFreezeGuide = true;
+            StatusSuccess = false;
+            StatusMessage = "Bracket generation is blocked until the scratch list is frozen.";
+            return;
+        }
+
         IsBusy = true;
         try
         {
+            ShowScratchFreezeGuide = false;
             var request = new GenerateBracketRequest(
                 GenerationLevel,
                 GenerationWeightClass,
@@ -597,6 +668,14 @@
             var result = await ApiClient.GenerateBracketAsync(SelectedEventId.Value, request);
             if (!result.Success || result.Data is null)
             {
+                if (!string.IsNullOrWhiteSpace(result.Message)
+                    && result.Message.Contains("scratch list", StringComparison.OrdinalIgnoreCase)
+                    && result.Message.Contains("frozen", StringComparison.OrdinalIgnoreCase))
+                {
+                    ShowScratchFreezeGuide = true;
+                    await LoadOpsChecklistAsync(SelectedEventId.Value);
+                }
+
                 StatusSuccess = false;
                 StatusMessage = result.Message;
                 return;
@@ -604,8 +683,57 @@
 
             LastGeneration = result.Data;
             await LoadVisualBundleAsync();
+            await LoadOpsChecklistAsync(SelectedEventId.Value);
             StatusSuccess = true;
             StatusMessage = $"Bracket generated: {result.Data.MatchCount} matches from {result.Data.EntrantCount} entrants.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task LoadOpsChecklistAsync(Guid eventId)
+    {
+        var result = await ApiClient.GetEventOpsChecklistAsync(eventId);
+        if (!result.Success || result.Data is null)
+        {
+            OpsChecklist = null;
+            return;
+        }
+
+        OpsChecklist = result.Data;
+    }
+
+    private async Task MarkScratchFrozenAsync()
+    {
+        if (SelectedEventId is null)
+        {
+            StatusSuccess = false;
+            StatusMessage = "Select an event first.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.UpdateEventOpsChecklistAsync(
+                SelectedEventId.Value,
+                new UpdateEventOpsChecklistRequest(
+                    WeighInsCompleted: true,
+                    ScratchListFrozen: true));
+
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                return;
+            }
+
+            OpsChecklist = result.Data;
+            ShowScratchFreezeGuide = false;
+            StatusSuccess = true;
+            StatusMessage = "Weigh-ins and scratch list are marked complete. Bracket generation is now available.";
         }
         finally
         {
@@ -684,4 +812,6 @@
     private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
 
     private static string Short(Guid id) => id.ToString()[..8];
+
+    private static string ReadyLabel(bool value) => value ? "Ready" : "Required";
 }

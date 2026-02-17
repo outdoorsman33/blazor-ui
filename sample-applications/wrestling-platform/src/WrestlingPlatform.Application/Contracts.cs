@@ -4,7 +4,7 @@ namespace WrestlingPlatform.Application.Contracts;
 
 public sealed record RegisterUserRequest(string Email, string Password, UserRole Role, string? PhoneNumber);
 
-public sealed record LoginRequest(string Email, string Password, string? MfaCode = null);
+public sealed record LoginRequest(string Email, string Password, string? MfaCode = null, bool KeepSignedIn = false);
 
 public sealed record RefreshTokenRequest(string RefreshToken);
 
@@ -27,7 +27,9 @@ public sealed record CreateAthleteProfileRequest(
     string? SchoolOrClubName,
     int Grade,
     decimal WeightClass,
-    CompetitionLevel Level);
+    CompetitionLevel Level,
+    decimal WrestlingExperienceYears = 0m,
+    NoviceCategory NoviceCategory = NoviceCategory.NotApplicable);
 
 public sealed record CreateCoachProfileRequest(
     Guid UserAccountId,
@@ -53,7 +55,11 @@ public sealed record CreateTournamentEventRequest(
     int EntryFeeCents,
     bool IsPublished);
 
-public sealed record CreateTournamentDivisionRequest(CompetitionLevel Level, decimal WeightClass, string Name);
+public sealed record CreateTournamentDivisionRequest(
+    CompetitionLevel Level,
+    decimal WeightClass,
+    string Name,
+    NoviceDivisionRule NoviceRule = NoviceDivisionRule.Open);
 
 public sealed record SearchEventsQuery(
     string? State,
@@ -64,6 +70,16 @@ public sealed record SearchEventsQuery(
     int? MaxEntryFeeCents);
 
 public sealed record RegisterForEventRequest(Guid AthleteProfileId, Guid? TeamId, bool IsFreeAgent);
+
+public sealed record ForgotUsernameRequest(string EmailOrPhone);
+
+public sealed record ForgotUsernameResponse(bool Delivered, string Message, string? SuggestedUsername = null);
+
+public sealed record ForgotPasswordRequest(string Email);
+
+public sealed record ForgotPasswordResponse(bool Accepted, string Message, string? RecoveryCode = null);
+
+public sealed record ResetPasswordRequest(string Email, string RecoveryCode, string NewPassword);
 
 public sealed record TeamInviteFreeAgentRequest(Guid TeamId, string? Message);
 
@@ -197,7 +213,34 @@ public sealed record AthleteChatDirectoryEntry(
     CompetitionLevel Level,
     string State,
     string City,
-    string? SchoolOrClubName);
+    string? SchoolOrClubName,
+    bool IsAvailable = true,
+    bool IsBlocked = false,
+    bool IsDiscoverable = true);
+
+public sealed record AthleteChatSettingsView(
+    Guid AthleteProfileId,
+    bool IsDiscoverable,
+    bool IsAvailable,
+    bool IsRestrictedByGuardian,
+    string? RestrictionReason = null,
+    DateTime? RestrictionUpdatedUtc = null);
+
+public sealed record UpdateAthleteChatSettingsRequest(bool? IsDiscoverable = null, bool? IsAvailable = null);
+
+public sealed record UpdateAthleteChatGuardianRestrictionRequest(bool RestrictChatAccess, string? Reason = null);
+
+public sealed record AthleteChatBlockView(
+    Guid BlockId,
+    Guid BlockingAthleteProfileId,
+    Guid BlockedAthleteProfileId,
+    string BlockedAthleteName,
+    CompetitionLevel BlockedAthleteLevel,
+    string BlockedAthleteState,
+    string BlockedAthleteCity,
+    bool IsActive,
+    DateTime CreatedUtc,
+    DateTime? ReleasedUtc);
 
 public sealed record UpsertAthleteChatAthleteLockRequest(int Minutes, string Reason);
 
@@ -459,7 +502,8 @@ public sealed record TournamentDivisionDirectoryRow(
     int RegistrantCount,
     int? RegistrantCap,
     WrestlingStyle Style,
-    TournamentFormat TournamentFormat);
+    TournamentFormat TournamentFormat,
+    NoviceDivisionRule NoviceRule = NoviceDivisionRule.Open);
 
 public sealed record TournamentDirectoryRow(
     Guid EventId,
@@ -520,6 +564,110 @@ public sealed record TournamentBracketVisualBundle(
     bool BracketsReleased,
     List<BracketVisualMatch> BracketMatches,
     List<PoolVisualGroup> Pools);
+
+public sealed record EventLiveHubBout(
+    Guid MatchId,
+    int BoutNumber,
+    int Round,
+    MatchStatus Status,
+    string AthleteA,
+    string AthleteB,
+    string? Score,
+    string? ResultMethod,
+    string MatNumber,
+    CompetitionLevel? DivisionLevel,
+    decimal? DivisionWeight);
+
+public sealed record EventLiveHubMat(
+    string Mat,
+    int OnMat,
+    int InTheHole,
+    int Scheduled,
+    List<EventLiveHubBout> Bouts);
+
+public sealed record EventLiveHubResponse(
+    Guid EventId,
+    string EventName,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    CompetitionLevel? LevelFilter,
+    decimal? WeightClassFilter,
+    string? MatFilter,
+    string? SortBy,
+    List<CompetitionLevel> AvailableLevels,
+    List<decimal> AvailableWeights,
+    List<EventLiveHubMat> Mats,
+    int TotalBouts,
+    int OnMat);
+
+public sealed record EventInsightsAthleteRow(
+    Guid AthleteId,
+    string Name,
+    CompetitionLevel Level,
+    decimal WeightClass,
+    string State,
+    string City);
+
+public sealed record EventInsightsTeamRow(
+    Guid? TeamId,
+    string TeamName,
+    int RegisteredAthletes,
+    int ActiveBouts,
+    int CompletedBouts,
+    int Wins,
+    int Losses,
+    int Pins,
+    int TechFalls,
+    int MajorDecisions,
+    decimal TeamScore,
+    List<EventInsightsAthleteRow> Athletes);
+
+public sealed record EventInsightsTeamScoreRow(
+    int Rank,
+    string TeamName,
+    decimal TeamScore,
+    int Champions,
+    int Finalists,
+    int PlaceWinners);
+
+public sealed record EventInsightsResultRow(
+    Guid BracketId,
+    CompetitionLevel Level,
+    decimal WeightClass,
+    string DivisionName,
+    int CompletedBouts,
+    int LiveBouts,
+    string? Champion,
+    string? RunnerUp,
+    string? FinalScore,
+    string? ResultMethod,
+    int? FinalBoutNumber);
+
+public sealed record EventInsightsBoutRow(
+    Guid MatchId,
+    int BoutNumber,
+    int Round,
+    MatchStatus Status,
+    string MatNumber,
+    string AthleteA,
+    string AthleteB,
+    string? Score,
+    string? ResultMethod,
+    CompetitionLevel? DivisionLevel,
+    decimal? DivisionWeight);
+
+public sealed record EventInsightsResponse(
+    Guid EventId,
+    string EventName,
+    string State,
+    string City,
+    string Venue,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    List<EventInsightsTeamRow> Teams,
+    List<EventInsightsTeamScoreRow> TeamScores,
+    List<EventInsightsResultRow> Results,
+    List<EventInsightsBoutRow> Bouts);
 
 public enum VideoPipelineState
 {

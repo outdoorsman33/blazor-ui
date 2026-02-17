@@ -51,9 +51,45 @@ else
                 <button class="btn ghost" type="button" @onclick="ToggleGroupComposer" disabled="@IsBusy">@(ShowGroupComposer ? "Close Group" : "New Group")</button>
             </div>
 
+            @if (ChatSettings is not null)
+            {
+                <div class="panel spacer-top">
+                    <h3>Chat settings</h3>
+                    <div class="field check-row">
+                        <input id="chatDiscoverable" type="checkbox" checked="@ChatSettings.IsDiscoverable" @onchange="ToggleDiscoverableAsync" />
+                        <label for="chatDiscoverable">Discoverable in athlete search</label>
+                    </div>
+                    <div class="field check-row">
+                        <input id="chatAvailable" type="checkbox" checked="@ChatSettings.IsAvailable" @onchange="ToggleAvailableAsync" />
+                        <label for="chatAvailable">Available for chat</label>
+                    </div>
+                    @if (ChatSettings.IsRestrictedByGuardian)
+                    {
+                        <p class="helper">Restricted by parent/guardian: @(string.IsNullOrWhiteSpace(ChatSettings.RestrictionReason) ? "No reason provided." : ChatSettings.RestrictionReason)</p>
+                    }
+                </div>
+            }
+
+            @if (BlockedAthletes.Any(x => x.IsActive))
+            {
+                <div class="panel spacer-top">
+                    <h3>Blocked athletes</h3>
+                    @foreach (var block in BlockedAthletes.Where(x => x.IsActive).OrderBy(x => x.BlockedAthleteName))
+                    {
+                        <div class="chat-network-item">
+                            <div>
+                                <div class="item-title">@block.BlockedAthleteName</div>
+                                <div class="helper">@block.BlockedAthleteLevel | @block.BlockedAthleteState @block.BlockedAthleteCity</div>
+                            </div>
+                            <button class="btn ghost" type="button" @onclick="() => UnblockAthleteAsync(block.BlockedAthleteProfileId)" disabled="@IsBusy">Unblock</button>
+                        </div>
+                    }
+                </div>
+            }
+
             <div class="chat-network-search spacer-top">
                 <input class="input" @bind="NetworkQuery" @bind:event="oninput" placeholder="Find athlete to start 1:1 chat" />
-                <button class="btn ghost" type="button" @onclick="SearchNetworkAsync" disabled="@IsBusy">Search</button>
+                <button class="btn ghost" type="button" @onclick="() => SearchNetworkAsync()" disabled="@IsBusy">Search</button>
             </div>
 
             @if (ShowGroupComposer)
@@ -86,12 +122,27 @@ else
                             <div>
                                 <div class="item-title">@athlete.DisplayName</div>
                                 <div class="helper">@athlete.Level | @athlete.State @athlete.City</div>
+                                <div class="helper">
+                                    @(athlete.IsAvailable ? "Available" : "Unavailable")
+                                    @if (athlete.IsBlocked)
+                                    {
+                                        <span> | Blocked</span>
+                                    }
+                                </div>
                             </div>
                             <div class="chat-network-actions">
-                                <button class="btn secondary" type="button" @onclick="() => StartDirectThreadAsync(athlete)" disabled="@IsBusy">Message</button>
+                                <button class="btn secondary" type="button" @onclick="() => StartDirectThreadAsync(athlete)" disabled="@(!athlete.IsAvailable || athlete.IsBlocked || IsBusy)">Message</button>
+                                @if (IsBlockedByMe(athlete.AthleteProfileId))
+                                {
+                                    <button class="btn ghost" type="button" @onclick="() => UnblockAthleteAsync(athlete.AthleteProfileId)" disabled="@IsBusy">Unblock</button>
+                                }
+                                else
+                                {
+                                    <button class="btn ghost" type="button" @onclick="() => BlockAthleteAsync(athlete.AthleteProfileId)" disabled="@IsBusy">Block</button>
+                                }
                                 @if (ShowGroupComposer)
                                 {
-                                    <button class="btn ghost" type="button" @onclick="() => ToggleGroupMember(athlete)">@GroupMemberButtonLabel(athlete)</button>
+                                    <button class="btn ghost" type="button" @onclick="() => ToggleGroupMember(athlete)" disabled="@(!athlete.IsAvailable || athlete.IsBlocked || IsBusy)">@GroupMemberButtonLabel(athlete)</button>
                                 }
                             </div>
                         </div>
@@ -266,6 +317,8 @@ else
     private List<AthleteChatThreadSummary> Threads = [];
     private List<AthleteChatMessageView> Messages = [];
     private List<AthleteChatDirectoryEntry> NetworkResults = [];
+    private List<AthleteChatBlockView> BlockedAthletes = [];
+    private AthleteChatSettingsView? ChatSettings;
     private readonly HashSet<Guid> SelectedGroupMemberIds = [];
     private readonly Dictionary<Guid, AthleteChatDirectoryEntry> SelectedGroupMembersById = [];
     private Guid? SelectedThreadId;
@@ -286,6 +339,8 @@ else
     {
         if (AuthSession.IsAuthenticated && AuthSession.Role == UserRole.Athlete)
         {
+            await LoadChatSettingsAsync();
+            await LoadBlockedAthletesAsync();
             await LoadThreadsAsync(loadMessages: true);
             if (Threads.Count == 0)
             {
@@ -338,6 +393,86 @@ else
         finally
         {
             IsLoadingThreads = false;
+        }
+    }
+
+    private async Task LoadChatSettingsAsync(bool setStatus = false)
+    {
+        var result = await ApiClient.GetAthleteChatSettingsAsync();
+        if (!result.Success || result.Data is null)
+        {
+            if (setStatus)
+            {
+                SetStatus(false, result.Message);
+            }
+
+            ChatSettings = null;
+            return;
+        }
+
+        ChatSettings = result.Data;
+        if (setStatus)
+        {
+            SetStatus(true, "Chat settings updated.");
+        }
+    }
+
+    private async Task LoadBlockedAthletesAsync(bool setStatus = false)
+    {
+        var result = await ApiClient.GetAthleteChatBlocksAsync();
+        if (!result.Success || result.Data is null)
+        {
+            if (setStatus)
+            {
+                SetStatus(false, result.Message);
+            }
+
+            BlockedAthletes = [];
+            return;
+        }
+
+        BlockedAthletes = result.Data;
+        if (setStatus)
+        {
+            var activeCount = BlockedAthletes.Count(x => x.IsActive);
+            SetStatus(true, activeCount == 0 ? "No athletes are blocked." : $"Loaded {activeCount} blocked athlete(s).");
+        }
+    }
+
+    private async Task ToggleDiscoverableAsync(ChangeEventArgs args)
+    {
+        await UpdateChatSettingsAsync(isDiscoverable: ReadCheckbox(args.Value), isAvailable: null);
+    }
+
+    private async Task ToggleAvailableAsync(ChangeEventArgs args)
+    {
+        await UpdateChatSettingsAsync(isDiscoverable: null, isAvailable: ReadCheckbox(args.Value));
+    }
+
+    private async Task UpdateChatSettingsAsync(bool? isDiscoverable, bool? isAvailable)
+    {
+        IsSubmitting = true;
+        try
+        {
+            var result = await ApiClient.UpdateAthleteChatSettingsAsync(new UpdateAthleteChatSettingsRequest(isDiscoverable, isAvailable));
+            if (!result.Success || result.Data is null)
+            {
+                SetStatus(false, result.Message);
+                return;
+            }
+
+            ChatSettings = result.Data;
+            await LoadThreadsAsync(loadMessages: false);
+            await SearchNetworkAsync(setStatus: false);
+            SetStatus(true, "Chat settings saved.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to update chat settings. {ex.Message}");
+        }
+        finally
+        {
+            IsSubmitting = false;
         }
     }
 
@@ -404,7 +539,7 @@ else
         }
     }
 
-    private async Task SearchNetworkAsync()
+    private async Task SearchNetworkAsync(bool setStatus = true)
     {
         IsSubmitting = true;
         try
@@ -412,17 +547,27 @@ else
             var result = await ApiClient.SearchAthleteChatDirectoryAsync(NetworkQuery, 24);
             if (!result.Success || result.Data is null)
             {
-                SetStatus(false, result.Message);
+                if (setStatus)
+                {
+                    SetStatus(false, result.Message);
+                }
+
                 NetworkResults = [];
                 return;
             }
 
             NetworkResults = result.Data;
-            SetStatus(true, $"Found {NetworkResults.Count} athlete contact(s).");
+            if (setStatus)
+            {
+                SetStatus(true, $"Found {NetworkResults.Count} athlete contact(s).");
+            }
         }
         catch (Exception ex)
         {
-            SetStatus(false, $"Unable to search athlete network. {ex.Message}");
+            if (setStatus)
+            {
+                SetStatus(false, $"Unable to search athlete network. {ex.Message}");
+            }
         }
         finally
         {
@@ -432,6 +577,12 @@ else
 
     private async Task StartDirectThreadAsync(AthleteChatDirectoryEntry athlete)
     {
+        if (!athlete.IsAvailable || athlete.IsBlocked)
+        {
+            SetStatus(false, "This athlete is not currently available for direct chat.");
+            return;
+        }
+
         IsSubmitting = true;
         try
         {
@@ -456,6 +607,63 @@ else
         }
     }
 
+    private bool IsBlockedByMe(Guid athleteProfileId) =>
+        BlockedAthletes.Any(x => x.IsActive && x.BlockedAthleteProfileId == athleteProfileId);
+
+    private async Task BlockAthleteAsync(Guid athleteProfileId)
+    {
+        IsSubmitting = true;
+        try
+        {
+            var result = await ApiClient.BlockAthleteChatAsync(athleteProfileId);
+            if (!result.Success)
+            {
+                SetStatus(false, result.Message);
+                return;
+            }
+
+            await LoadBlockedAthletesAsync();
+            await SearchNetworkAsync(setStatus: false);
+            await LoadThreadsAsync(loadMessages: false);
+            SetStatus(true, "Athlete blocked.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to block athlete. {ex.Message}");
+        }
+        finally
+        {
+            IsSubmitting = false;
+        }
+    }
+
+    private async Task UnblockAthleteAsync(Guid athleteProfileId)
+    {
+        IsSubmitting = true;
+        try
+        {
+            var result = await ApiClient.UnblockAthleteChatAsync(athleteProfileId);
+            if (!result.Success)
+            {
+                SetStatus(false, result.Message);
+                return;
+            }
+
+            await LoadBlockedAthletesAsync();
+            await SearchNetworkAsync(setStatus: false);
+            await LoadThreadsAsync(loadMessages: false);
+            SetStatus(true, "Athlete unblocked.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to unblock athlete. {ex.Message}");
+        }
+        finally
+        {
+            IsSubmitting = false;
+        }
+    }
+
     private void ToggleGroupComposer()
     {
         ShowGroupComposer = !ShowGroupComposer;
@@ -469,6 +677,12 @@ else
 
     private void ToggleGroupMember(AthleteChatDirectoryEntry athlete)
     {
+        if (!athlete.IsAvailable || athlete.IsBlocked)
+        {
+            SetStatus(false, "Only available, unblocked athletes can be added to group chat.");
+            return;
+        }
+
         if (SelectedGroupMemberIds.Contains(athlete.AthleteProfileId))
         {
             SelectedGroupMemberIds.Remove(athlete.AthleteProfileId);
@@ -659,6 +873,16 @@ else
             : $"{ComposeMessage} {emoji}";
 
         ComposeMessage = next.Length <= 600 ? next : next[..600];
+    }
+
+    private static bool ReadCheckbox(object? value)
+    {
+        if (value is bool boolValue)
+        {
+            return boolValue;
+        }
+
+        return bool.TryParse(value?.ToString(), out var parsed) && parsed;
     }
 
     private void SetStatus(bool ok, string? message)

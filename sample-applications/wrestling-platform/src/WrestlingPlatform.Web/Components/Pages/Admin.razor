@@ -129,6 +129,14 @@
                     }
                 </select>
             </div>
+            <div class="field">
+                <label>Elementary Novice Rule</label>
+                <select class="select" @bind="DivisionNoviceRule" disabled="@(DivisionLevel != CompetitionLevel.ElementaryK6)">
+                    <option value="@NoviceDivisionRule.Open">Open</option>
+                    <option value="@NoviceDivisionRule.NoviceOnly">Novice Only (2 years or less)</option>
+                    <option value="@NoviceDivisionRule.NonNoviceOnly">Non-Novice Only (more than 2 years)</option>
+                </select>
+            </div>
         </div>
         <div class="actions">
             <button class="btn secondary" @onclick="CreateDivisionAsync" disabled="@IsBusy">Create Division</button>
@@ -451,6 +459,7 @@
     private string DivisionName = "High School 132";
     private CompetitionLevel DivisionLevel = CompetitionLevel.HighSchool;
     private decimal DivisionWeight = 132m;
+    private NoviceDivisionRule DivisionNoviceRule = NoviceDivisionRule.Open;
     private IReadOnlyList<decimal> DivisionWeightOptions => FormOptions.WeightClassesFor(DivisionLevel);
 
     private string BracketEventId = string.Empty;
@@ -556,7 +565,11 @@
             DivisionWeight = DivisionWeightOptions[0];
         }
 
-        var result = await ApiClient.CreateDivisionAsync(eventId, new CreateTournamentDivisionRequest(DivisionLevel, DivisionWeight, DivisionName));
+        var noviceRule = DivisionLevel == CompetitionLevel.ElementaryK6
+            ? DivisionNoviceRule
+            : NoviceDivisionRule.Open;
+
+        var result = await ApiClient.CreateDivisionAsync(eventId, new CreateTournamentDivisionRequest(DivisionLevel, DivisionWeight, DivisionName, noviceRule));
         BracketSuccess = result.Success;
         BracketMessage = result.Success ? "Division created." : result.Message;
 

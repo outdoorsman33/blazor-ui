@@ -119,6 +119,14 @@ public static class DependencyInjection
             {
                 @"ALTER TABLE ""TournamentEvents"" ADD COLUMN IF NOT EXISTS ""CreatedByUserAccountId"" uuid NULL;",
                 @"ALTER TABLE ""Matches"" ADD COLUMN IF NOT EXISTS ""BoutNumber"" integer NULL;",
+                @"ALTER TABLE ""AthleteProfiles"" ADD COLUMN IF NOT EXISTS ""WrestlingExperienceYears"" numeric NOT NULL DEFAULT 0;",
+                @"ALTER TABLE ""AthleteProfiles"" ADD COLUMN IF NOT EXISTS ""NoviceCategory"" integer NOT NULL DEFAULT 0;",
+                @"ALTER TABLE ""AthleteProfiles"" ADD COLUMN IF NOT EXISTS ""IsChatDiscoverable"" boolean NOT NULL DEFAULT TRUE;",
+                @"ALTER TABLE ""AthleteProfiles"" ADD COLUMN IF NOT EXISTS ""IsChatAvailable"" boolean NOT NULL DEFAULT TRUE;",
+                @"ALTER TABLE ""AthleteProfiles"" ADD COLUMN IF NOT EXISTS ""IsChatRestrictedByGuardian"" boolean NOT NULL DEFAULT FALSE;",
+                @"ALTER TABLE ""AthleteProfiles"" ADD COLUMN IF NOT EXISTS ""ChatRestrictionReason"" text NULL;",
+                @"ALTER TABLE ""AthleteProfiles"" ADD COLUMN IF NOT EXISTS ""ChatRestrictionUpdatedUtc"" timestamp with time zone NULL;",
+                @"ALTER TABLE ""TournamentDivisions"" ADD COLUMN IF NOT EXISTS ""NoviceRule"" integer NOT NULL DEFAULT 0;",
                 @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""AthleteProfileId"" uuid NULL;",
                 @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""RequestedByUserAccountId"" uuid NULL;",
                 @"ALTER TABLE ""StreamSessions"" ADD COLUMN IF NOT EXISTS ""DelegatedByUserAccountId"" uuid NULL;",
@@ -233,8 +241,25 @@ public static class DependencyInjection
                     CONSTRAINT "PK_AthleteChatAthleteLocks" PRIMARY KEY ("Id")
                 );
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS "AthleteChatBlocks"
+                (
+                    "Id" uuid NOT NULL,
+                    "CreatedUtc" timestamp with time zone NOT NULL,
+                    "BlockingAthleteProfileId" uuid NOT NULL,
+                    "BlockingUserAccountId" uuid NOT NULL,
+                    "BlockedAthleteProfileId" uuid NOT NULL,
+                    "BlockedUserAccountId" uuid NOT NULL,
+                    "IsActive" boolean NOT NULL,
+                    "ReleasedUtc" timestamp with time zone NULL,
+                    CONSTRAINT "PK_AthleteChatBlocks" PRIMARY KEY ("Id")
+                );
+                """,
                 @"CREATE INDEX IF NOT EXISTS ""IX_TournamentEvents_CreatedByUserAccountId"" ON ""TournamentEvents"" (""CreatedByUserAccountId"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_Matches_BracketId_BoutNumber"" ON ""Matches"" (""BracketId"", ""BoutNumber"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteProfiles_Level_NoviceCategory_WrestlingExperienceYears"" ON ""AthleteProfiles"" (""Level"", ""NoviceCategory"", ""WrestlingExperienceYears"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteProfiles_IsChatDiscoverable_IsChatAvailable_IsChatRestrictedByGuardian"" ON ""AthleteProfiles"" (""IsChatDiscoverable"", ""IsChatAvailable"", ""IsChatRestrictedByGuardian"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_TournamentDivisions_TournamentEventId_Level_WeightClass_NoviceRule"" ON ""TournamentDivisions"" (""TournamentEventId"", ""Level"", ""WeightClass"", ""NoviceRule"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""Status"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_AthleteProfileId_IsPersonalStream_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""AthleteProfileId"", ""IsPersonalStream"", ""Status"");",
                 @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_UserAccountId"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""UserAccountId"");",
@@ -251,7 +276,9 @@ public static class DependencyInjection
                 @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReactions_MessageId_UserAccountId_Emoji"" ON ""AthleteChatMessageReactions"" (""MessageId"", ""UserAccountId"", ""Emoji"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReactions_MessageId_Emoji"" ON ""AthleteChatMessageReactions"" (""MessageId"", ""Emoji"");",
                 @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_AthleteProfileId"" ON ""AthleteChatAthleteLocks"" (""AthleteProfileId"");",
-                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_UserAccountId_IsActive_LockedUntilUtc"" ON ""AthleteChatAthleteLocks"" (""UserAccountId"", ""IsActive"", ""LockedUntilUtc"");"
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_UserAccountId_IsActive_LockedUntilUtc"" ON ""AthleteChatAthleteLocks"" (""UserAccountId"", ""IsActive"", ""LockedUntilUtc"");",
+                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatBlocks_BlockingAthleteProfileId_BlockedAthleteProfileId"" ON ""AthleteChatBlocks"" (""BlockingAthleteProfileId"", ""BlockedAthleteProfileId"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatBlocks_BlockedAthleteProfileId_IsActive"" ON ""AthleteChatBlocks"" (""BlockedAthleteProfileId"", ""IsActive"");"
             };
 
             foreach (var statement in statements)
@@ -279,6 +306,62 @@ public static class DependencyInjection
             tableName: "Matches",
             columnName: "BoutNumber",
             columnDefinition: "\"BoutNumber\" INTEGER NULL",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "AthleteProfiles",
+            columnName: "WrestlingExperienceYears",
+            columnDefinition: "\"WrestlingExperienceYears\" TEXT NOT NULL DEFAULT '0'",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "AthleteProfiles",
+            columnName: "NoviceCategory",
+            columnDefinition: "\"NoviceCategory\" INTEGER NOT NULL DEFAULT 0",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "AthleteProfiles",
+            columnName: "IsChatDiscoverable",
+            columnDefinition: "\"IsChatDiscoverable\" INTEGER NOT NULL DEFAULT 1",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "AthleteProfiles",
+            columnName: "IsChatAvailable",
+            columnDefinition: "\"IsChatAvailable\" INTEGER NOT NULL DEFAULT 1",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "AthleteProfiles",
+            columnName: "IsChatRestrictedByGuardian",
+            columnDefinition: "\"IsChatRestrictedByGuardian\" INTEGER NOT NULL DEFAULT 0",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "AthleteProfiles",
+            columnName: "ChatRestrictionReason",
+            columnDefinition: "\"ChatRestrictionReason\" TEXT NULL",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "AthleteProfiles",
+            columnName: "ChatRestrictionUpdatedUtc",
+            columnDefinition: "\"ChatRestrictionUpdatedUtc\" TEXT NULL",
+            cancellationToken);
+
+        await EnsureSqliteColumnAsync(
+            dbContext,
+            tableName: "TournamentDivisions",
+            columnName: "NoviceRule",
+            columnDefinition: "\"NoviceRule\" INTEGER NOT NULL DEFAULT 0",
             cancellationToken);
 
         await EnsureSqliteColumnAsync(
@@ -433,8 +516,25 @@ public static class DependencyInjection
                 CONSTRAINT "PK_AthleteChatAthleteLocks" PRIMARY KEY ("Id")
             );
             """,
+            """
+            CREATE TABLE IF NOT EXISTS "AthleteChatBlocks"
+            (
+                "Id" TEXT NOT NULL,
+                "CreatedUtc" TEXT NOT NULL,
+                "BlockingAthleteProfileId" TEXT NOT NULL,
+                "BlockingUserAccountId" TEXT NOT NULL,
+                "BlockedAthleteProfileId" TEXT NOT NULL,
+                "BlockedUserAccountId" TEXT NOT NULL,
+                "IsActive" INTEGER NOT NULL,
+                "ReleasedUtc" TEXT NULL,
+                CONSTRAINT "PK_AthleteChatBlocks" PRIMARY KEY ("Id")
+            );
+            """,
             @"CREATE INDEX IF NOT EXISTS ""IX_TournamentEvents_CreatedByUserAccountId"" ON ""TournamentEvents"" (""CreatedByUserAccountId"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_Matches_BracketId_BoutNumber"" ON ""Matches"" (""BracketId"", ""BoutNumber"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteProfiles_Level_NoviceCategory_WrestlingExperienceYears"" ON ""AthleteProfiles"" (""Level"", ""NoviceCategory"", ""WrestlingExperienceYears"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteProfiles_IsChatDiscoverable_IsChatAvailable_IsChatRestrictedByGuardian"" ON ""AthleteProfiles"" (""IsChatDiscoverable"", ""IsChatAvailable"", ""IsChatRestrictedByGuardian"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_TournamentDivisions_TournamentEventId_Level_WeightClass_NoviceRule"" ON ""TournamentDivisions"" (""TournamentEventId"", ""Level"", ""WeightClass"", ""NoviceRule"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""Status"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_AthleteProfileId_IsPersonalStream_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""AthleteProfileId"", ""IsPersonalStream"", ""Status"");",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TournamentStaffAssignments_TournamentEventId_UserAccountId"" ON ""TournamentStaffAssignments"" (""TournamentEventId"", ""UserAccountId"");",
@@ -451,7 +551,9 @@ public static class DependencyInjection
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReactions_MessageId_UserAccountId_Emoji"" ON ""AthleteChatMessageReactions"" (""MessageId"", ""UserAccountId"", ""Emoji"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReactions_MessageId_Emoji"" ON ""AthleteChatMessageReactions"" (""MessageId"", ""Emoji"");",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_AthleteProfileId"" ON ""AthleteChatAthleteLocks"" (""AthleteProfileId"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_UserAccountId_IsActive_LockedUntilUtc"" ON ""AthleteChatAthleteLocks"" (""UserAccountId"", ""IsActive"", ""LockedUntilUtc"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_UserAccountId_IsActive_LockedUntilUtc"" ON ""AthleteChatAthleteLocks"" (""UserAccountId"", ""IsActive"", ""LockedUntilUtc"");",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatBlocks_BlockingAthleteProfileId_BlockedAthleteProfileId"" ON ""AthleteChatBlocks"" (""BlockingAthleteProfileId"", ""BlockedAthleteProfileId"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatBlocks_BlockedAthleteProfileId_IsActive"" ON ""AthleteChatBlocks"" (""BlockedAthleteProfileId"", ""IsActive"");"
         };
 
         foreach (var statement in sqliteStatements)
@@ -529,9 +631,48 @@ public static class DependencyInjection
             new AthleteSeed("tyler.nguyen@pinpointarena.local", "+16145550007", "Tyler", "Nguyen", 17, "MI", "Detroit", "Motor City Wrestling", 11, 132m, CompetitionLevel.HighSchool),
             new AthleteSeed("ethan.brooks@pinpointarena.local", "+16145550008", "Ethan", "Brooks", 15, "OH", "Columbus", "PinPoint Wrestling Club", 9, 132m, CompetitionLevel.HighSchool),
             new AthleteSeed("ayden.foster@pinpointarena.local", "+16145550009", "Ayden", "Foster", 16, "PA", "Erie", "Steel City Wrestling", 10, 132m, CompetitionLevel.HighSchool),
-            new AthleteSeed("luca.brown@pinpointarena.local", "+16145550010", "Luca", "Brown", 11, "OH", "Columbus", "PinPoint Youth Academy", 5, 75m, CompetitionLevel.ElementaryK6),
-            new AthleteSeed("owen.hill@pinpointarena.local", "+16145550011", "Owen", "Hill", 12, "OH", "Dayton", "Dayton Youth Wrestling", 6, 78m, CompetitionLevel.ElementaryK6),
-            new AthleteSeed("gabe.soto@pinpointarena.local", "+16145550012", "Gabe", "Soto", 14, "OH", "Columbus", "Capital Middle School", 8, 98m, CompetitionLevel.MiddleSchool),
+            new AthleteSeed(
+                "luca.brown@pinpointarena.local",
+                "+16145550010",
+                "Luca",
+                "Brown",
+                11,
+                "OH",
+                "Columbus",
+                "PinPoint Youth Academy",
+                5,
+                75m,
+                CompetitionLevel.ElementaryK6,
+                WrestlingExperienceYears: 1.5m,
+                NoviceCategory: NoviceCategory.Novice),
+            new AthleteSeed(
+                "owen.hill@pinpointarena.local",
+                "+16145550011",
+                "Owen",
+                "Hill",
+                12,
+                "OH",
+                "Dayton",
+                "Dayton Youth Wrestling",
+                6,
+                78m,
+                CompetitionLevel.ElementaryK6,
+                WrestlingExperienceYears: 3.2m,
+                NoviceCategory: NoviceCategory.NonNovice),
+            new AthleteSeed(
+                "gabe.soto@pinpointarena.local",
+                "+16145550012",
+                "Gabe",
+                "Soto",
+                14,
+                "OH",
+                "Columbus",
+                "Capital Middle School",
+                8,
+                98m,
+                CompetitionLevel.MiddleSchool,
+                WrestlingExperienceYears: 4.1m,
+                IsChatAvailable: false),
             new AthleteSeed("isaac.wells@pinpointarena.local", "+16145550013", "Isaac", "Wells", 13, "PA", "Pittsburgh", "Keystone Middle School", 7, 95m, CompetitionLevel.MiddleSchool),
             new AthleteSeed("cooper.james@pinpointarena.local", "+16145550014", "Cooper", "James", 20, "IA", "Ames", "Heartland University", 12, 157m, CompetitionLevel.College),
             new AthleteSeed("riley.mitchell@pinpointarena.local", "+16145550015", "Riley", "Mitchell", 21, "OK", "Tulsa", "Tulsa State University", 12, 165m, CompetitionLevel.College),
@@ -540,9 +681,32 @@ public static class DependencyInjection
             new AthleteSeed("nolan.shaw@pinpointarena.local", "+16145550018", "Nolan", "Shaw", 17, "OH", "Akron", "Akron North High", 11, 138m, CompetitionLevel.HighSchool),
             new AthleteSeed("brady.kim@pinpointarena.local", "+16145550019", "Brady", "Kim", 14, "MI", "Grand Rapids", "West Shore Middle", 8, 106m, CompetitionLevel.MiddleSchool),
             new AthleteSeed("levi.hayes@pinpointarena.local", "+16145550020", "Levi", "Hayes", 13, "OH", "Cleveland", "Cleveland Central MS", 7, 90m, CompetitionLevel.MiddleSchool),
-            new AthleteSeed("zoe.harris@pinpointarena.local", "+16145550021", "Zoe", "Harris", 10, "OH", "Columbus", "PinPoint Youth Academy", 4, 72m, CompetitionLevel.ElementaryK6),
+            new AthleteSeed(
+                "zoe.harris@pinpointarena.local",
+                "+16145550021",
+                "Zoe",
+                "Harris",
+                10,
+                "OH",
+                "Columbus",
+                "PinPoint Youth Academy",
+                4,
+                72m,
+                CompetitionLevel.ElementaryK6,
+                WrestlingExperienceYears: 0.9m,
+                NoviceCategory: NoviceCategory.Novice),
             new AthleteSeed("avery.reed@pinpointarena.local", "+16145550022", "Avery", "Reed", 20, "IA", "Cedar Rapids", "Heartland University", 12, 149m, CompetitionLevel.College),
-            new AthleteSeed("dean.walker@pinpointarena.local", "+16145550023", "Dean", "Walker", 22, "PA", "State College", "Keystone University", 12, 174m, CompetitionLevel.College)
+            new AthleteSeed("dean.walker@pinpointarena.local", "+16145550023", "Dean", "Walker", 22, "PA", "State College", "Keystone University", 12, 174m, CompetitionLevel.College),
+            new AthleteSeed("emma.stone@pinpointarena.local", "+16145550024", "Emma", "Stone", 15, "OH", "Cleveland", "Lake Erie Wrestling", 9, 112m, CompetitionLevel.HighSchool),
+            new AthleteSeed("kai.morgan@pinpointarena.local", "+16145550025", "Kai", "Morgan", 16, "IN", "Indianapolis", "Hoosier Elite", 10, 126m, CompetitionLevel.HighSchool),
+            new AthleteSeed("liam.santos@pinpointarena.local", "+16145550026", "Liam", "Santos", 12, "PA", "Erie", "Keystone Youth Mat Club", 6, 82m, CompetitionLevel.ElementaryK6, WrestlingExperienceYears: 1.8m, NoviceCategory: NoviceCategory.Novice),
+            new AthleteSeed("amaya.rivera@pinpointarena.local", "+16145550027", "Amaya", "Rivera", 13, "OH", "Dayton", "Metro Middle Wrestling", 7, 88m, CompetitionLevel.MiddleSchool),
+            new AthleteSeed("mason.young@pinpointarena.local", "+16145550028", "Mason", "Young", 17, "MI", "Detroit", "Motor City Wrestling", 11, 144m, CompetitionLevel.HighSchool),
+            new AthleteSeed("hazel.king@pinpointarena.local", "+16145550029", "Hazel", "King", 11, "OH", "Toledo", "Toledo Youth Wrestling", 5, 74m, CompetitionLevel.ElementaryK6, WrestlingExperienceYears: 2.2m, NoviceCategory: NoviceCategory.NonNovice),
+            new AthleteSeed("owen.fisher@pinpointarena.local", "+16145550039", "Owen", "Fisher", 14, "TX", "Austin", "Lone Star Wrestling", 8, 102m, CompetitionLevel.MiddleSchool),
+            new AthleteSeed("savannah.wright@pinpointarena.local", "+16145550040", "Savannah", "Wright", 19, "IA", "Des Moines", "Heartland University", 12, 136m, CompetitionLevel.College),
+            new AthleteSeed("brooklyn.lopez@pinpointarena.local", "+16145550041", "Brooklyn", "Lopez", 18, "NY", "Buffalo", "Northeast Grapplers", 12, 120m, CompetitionLevel.HighSchool),
+            new AthleteSeed("hudson.carter@pinpointarena.local", "+16145550042", "Hudson", "Carter", 17, "CA", "San Jose", "West Coast Grapplers", 11, 132m, CompetitionLevel.HighSchool)
         };
 
         var athleteUsersByEmail = new Dictionary<string, UserAccount>(StringComparer.OrdinalIgnoreCase);
@@ -570,6 +734,13 @@ public static class DependencyInjection
                 seed.Grade,
                 seed.WeightClass,
                 seed.Level,
+                seed.WrestlingExperienceYears,
+                seed.NoviceCategory,
+                seed.IsChatDiscoverable,
+                seed.IsChatAvailable,
+                seed.IsChatRestrictedByGuardian,
+                seed.ChatRestrictionReason,
+                seed.ChatRestrictionUpdatedUtc,
                 cancellationToken);
 
             athleteUsersByEmail[seed.Email] = athleteUser;
@@ -706,6 +877,22 @@ public static class DependencyInjection
             TeamType.School,
             "IA",
             "Des Moines",
+            cancellationToken);
+
+        var northeastTeam = await EnsureTeamAsync(
+            dbContext,
+            "Northeast Grapplers",
+            TeamType.Club,
+            "NY",
+            "Buffalo",
+            cancellationToken);
+
+        var westCoastTeam = await EnsureTeamAsync(
+            dbContext,
+            "West Coast Grapplers",
+            TeamType.Club,
+            "CA",
+            "San Jose",
             cancellationToken);
 
         await EnsureCoachAssociationAsync(
@@ -932,6 +1119,51 @@ public static class DependencyInjection
             eventAdminUser.Id,
             cancellationToken);
 
+        var northeastClassicEvent = await EnsureEventAsync(
+            dbContext,
+            "Northeast Winter Classic",
+            OrganizerType.Club,
+            northeastTeam.Id,
+            "NY",
+            "Buffalo",
+            "Empire State Fieldhouse",
+            todayUtc.AddDays(63).AddHours(13),
+            todayUtc.AddDays(64).AddHours(1),
+            2700,
+            true,
+            backupDirectorUser.Id,
+            cancellationToken);
+
+        var westCoastOpenEvent = await EnsureEventAsync(
+            dbContext,
+            "West Coast Open Mat Festival",
+            OrganizerType.Club,
+            westCoastTeam.Id,
+            "CA",
+            "San Jose",
+            "Bay Area Sports Pavilion",
+            todayUtc.AddDays(70).AddHours(14),
+            todayUtc.AddDays(71).AddHours(2),
+            3200,
+            true,
+            backupDirectorUser.Id,
+            cancellationToken);
+
+        var hoosierChallengeEvent = await EnsureEventAsync(
+            dbContext,
+            "Hoosier Folkstyle Challenge",
+            OrganizerType.School,
+            secondaryTeam.Id,
+            "IN",
+            "Indianapolis",
+            "Crossroads Wrestling Center",
+            todayUtc.AddDays(42).AddHours(12),
+            todayUtc.AddDays(43).AddHours(0),
+            2100,
+            true,
+            eventAdminUser.Id,
+            cancellationToken);
+
         await EnsureTournamentStaffAssignmentAsync(
             dbContext,
             showcaseEvent.Id,
@@ -976,6 +1208,36 @@ public static class DependencyInjection
             dbContext,
             showcaseEvent.Id,
             backupMatWorkerUser.Id,
+            UserRole.MatWorker,
+            canScoreMatches: true,
+            canManageMatches: false,
+            canManageStreams: false,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            northeastClassicEvent.Id,
+            backupDirectorUser.Id,
+            UserRole.TournamentDirector,
+            canScoreMatches: true,
+            canManageMatches: true,
+            canManageStreams: true,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            westCoastOpenEvent.Id,
+            backupDirectorUser.Id,
+            UserRole.TournamentDirector,
+            canScoreMatches: true,
+            canManageMatches: true,
+            canManageStreams: true,
+            cancellationToken);
+
+        await EnsureTournamentStaffAssignmentAsync(
+            dbContext,
+            hoosierChallengeEvent.Id,
+            matWorkerUser.Id,
             UserRole.MatWorker,
             canScoreMatches: true,
             canManageMatches: false,
@@ -1076,7 +1338,17 @@ public static class DependencyInjection
             "Elementary 75",
             CompetitionLevel.ElementaryK6,
             75m,
-            cancellationToken);
+            cancellationToken,
+            NoviceDivisionRule.NoviceOnly);
+
+        await EnsureDivisionAsync(
+            dbContext,
+            youthPreviewEvent.Id,
+            "Elementary 78 Non-Novice",
+            CompetitionLevel.ElementaryK6,
+            78m,
+            cancellationToken,
+            NoviceDivisionRule.NonNoviceOnly);
 
         var youthPoolDivision = await EnsureDivisionAsync(
             dbContext,
@@ -1116,7 +1388,8 @@ public static class DependencyInjection
             "Elementary 78",
             CompetitionLevel.ElementaryK6,
             78m,
-            cancellationToken);
+            cancellationToken,
+            NoviceDivisionRule.NoviceOnly);
 
         var directorSandboxHighDivision = await EnsureDivisionAsync(
             dbContext,
@@ -2829,6 +3102,7 @@ public static class DependencyInjection
     {
         await dbContext.AthleteChatMessageReactions.ExecuteDeleteAsync(cancellationToken);
         await dbContext.AthleteChatMessageReports.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.AthleteChatBlocks.ExecuteDeleteAsync(cancellationToken);
         await dbContext.AthleteChatAthleteLocks.ExecuteDeleteAsync(cancellationToken);
         await dbContext.AthleteChatMessages.ExecuteDeleteAsync(cancellationToken);
         await dbContext.AthleteChatParticipants.ExecuteDeleteAsync(cancellationToken);
@@ -2900,6 +3174,13 @@ public static class DependencyInjection
         int grade,
         decimal weightClass,
         CompetitionLevel level,
+        decimal wrestlingExperienceYears,
+        NoviceCategory noviceCategory,
+        bool isChatDiscoverable,
+        bool isChatAvailable,
+        bool isChatRestrictedByGuardian,
+        string? chatRestrictionReason,
+        DateTime? chatRestrictionUpdatedUtc,
         CancellationToken cancellationToken)
     {
         var profile = await dbContext.AthleteProfiles
@@ -2924,6 +3205,13 @@ public static class DependencyInjection
         profile.Grade = grade;
         profile.WeightClass = weightClass;
         profile.Level = level;
+        profile.WrestlingExperienceYears = Math.Max(0m, decimal.Round(wrestlingExperienceYears, 2));
+        profile.NoviceCategory = noviceCategory;
+        profile.IsChatDiscoverable = isChatDiscoverable;
+        profile.IsChatAvailable = isChatAvailable;
+        profile.IsChatRestrictedByGuardian = isChatRestrictedByGuardian;
+        profile.ChatRestrictionReason = string.IsNullOrWhiteSpace(chatRestrictionReason) ? null : chatRestrictionReason.Trim();
+        profile.ChatRestrictionUpdatedUtc = chatRestrictionUpdatedUtc;
         return profile;
     }
 
@@ -3070,7 +3358,8 @@ public static class DependencyInjection
         string name,
         CompetitionLevel level,
         decimal weightClass,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NoviceDivisionRule noviceRule = NoviceDivisionRule.Open)
     {
         var normalizedName = name.Trim();
         var division = await dbContext.TournamentDivisions
@@ -3089,6 +3378,7 @@ public static class DependencyInjection
 
         division.Level = level;
         division.WeightClass = weightClass;
+        division.NoviceRule = noviceRule;
         return division;
     }
 
@@ -3842,6 +4132,16 @@ public static class DependencyInjection
             "\uD83C\uDFA5",
             cancellationToken);
 
+        await EnsureAthleteChatBlockAsync(
+            dbContext,
+            athleteProfilesByEmail[sophiaEmail].Id,
+            athleteUsersByEmail[sophiaEmail].Id,
+            athleteProfilesByEmail[noahEmail].Id,
+            athleteUsersByEmail[noahEmail].Id,
+            isActive: true,
+            releasedUtc: null,
+            cancellationToken);
+
         await EnsureAthleteChatAthleteLockAsync(
             dbContext,
             athleteProfilesByEmail[nolanEmail].Id,
@@ -4109,6 +4409,48 @@ public static class DependencyInjection
         lockRow.ReleasedUtc = releasedUtc;
         lockRow.ReleasedByUserAccountId = releasedByUserAccountId;
         return lockRow;
+    }
+
+    private static async Task<AthleteChatBlock> EnsureAthleteChatBlockAsync(
+        WrestlingPlatformDbContext dbContext,
+        Guid blockingAthleteProfileId,
+        Guid blockingUserAccountId,
+        Guid blockedAthleteProfileId,
+        Guid blockedUserAccountId,
+        bool isActive,
+        DateTime? releasedUtc,
+        CancellationToken cancellationToken)
+    {
+        var blockRow = dbContext.AthleteChatBlocks.Local.FirstOrDefault(
+            x => x.BlockingAthleteProfileId == blockingAthleteProfileId
+                 && x.BlockedAthleteProfileId == blockedAthleteProfileId);
+
+        if (blockRow is null)
+        {
+            blockRow = await dbContext.AthleteChatBlocks.FirstOrDefaultAsync(
+                x => x.BlockingAthleteProfileId == blockingAthleteProfileId
+                     && x.BlockedAthleteProfileId == blockedAthleteProfileId,
+                cancellationToken);
+        }
+
+        if (blockRow is null)
+        {
+            blockRow = new AthleteChatBlock
+            {
+                BlockingAthleteProfileId = blockingAthleteProfileId,
+                BlockedAthleteProfileId = blockedAthleteProfileId
+            };
+
+            dbContext.AthleteChatBlocks.Add(blockRow);
+        }
+
+        blockRow.BlockingAthleteProfileId = blockingAthleteProfileId;
+        blockRow.BlockingUserAccountId = blockingUserAccountId;
+        blockRow.BlockedAthleteProfileId = blockedAthleteProfileId;
+        blockRow.BlockedUserAccountId = blockedUserAccountId;
+        blockRow.IsActive = isActive;
+        blockRow.ReleasedUtc = releasedUtc;
+        return blockRow;
     }
 
     private static async Task EnsureDemoBracketAndStreamCoverageAsync(
@@ -4404,7 +4746,14 @@ public static class DependencyInjection
         string SchoolOrClubName,
         int Grade,
         decimal WeightClass,
-        CompetitionLevel Level);
+        CompetitionLevel Level,
+        decimal WrestlingExperienceYears = 3m,
+        NoviceCategory NoviceCategory = NoviceCategory.NotApplicable,
+        bool IsChatDiscoverable = true,
+        bool IsChatAvailable = true,
+        bool IsChatRestrictedByGuardian = false,
+        string? ChatRestrictionReason = null,
+        DateTime? ChatRestrictionUpdatedUtc = null);
 }
 
 

@@ -32,6 +32,7 @@ public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatfor
     public DbSet<AthleteChatMessageReport> AthleteChatMessageReports => Set<AthleteChatMessageReport>();
     public DbSet<AthleteChatMessageReaction> AthleteChatMessageReactions => Set<AthleteChatMessageReaction>();
     public DbSet<AthleteChatAthleteLock> AthleteChatAthleteLocks => Set<AthleteChatAthleteLock>();
+    public DbSet<AthleteChatBlock> AthleteChatBlocks => Set<AthleteChatBlock>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,9 +40,12 @@ public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatfor
         modelBuilder.Entity<UserRefreshToken>().HasIndex(x => x.TokenHash).IsUnique();
         modelBuilder.Entity<UserRefreshToken>().HasIndex(x => new { x.UserAccountId, x.ExpiresUtc });
         modelBuilder.Entity<AthleteProfile>().HasIndex(x => x.UserAccountId).IsUnique();
+        modelBuilder.Entity<AthleteProfile>().HasIndex(x => new { x.Level, x.NoviceCategory, x.WrestlingExperienceYears });
+        modelBuilder.Entity<AthleteProfile>().HasIndex(x => new { x.IsChatDiscoverable, x.IsChatAvailable, x.IsChatRestrictedByGuardian });
         modelBuilder.Entity<CoachProfile>().HasIndex(x => x.UserAccountId).IsUnique();
         modelBuilder.Entity<TournamentEvent>().HasIndex(x => new { x.State, x.City, x.StartUtc });
         modelBuilder.Entity<TournamentEvent>().HasIndex(x => x.CreatedByUserAccountId);
+        modelBuilder.Entity<TournamentDivision>().HasIndex(x => new { x.TournamentEventId, x.Level, x.WeightClass, x.NoviceRule });
         modelBuilder.Entity<EventRegistration>().HasIndex(x => new { x.TournamentEventId, x.AthleteProfileId }).IsUnique();
         modelBuilder.Entity<Match>().HasIndex(x => new { x.BracketId, x.BoutNumber });
         modelBuilder.Entity<AthleteRanking>().HasIndex(x => new { x.Level, x.State, x.Rank });
@@ -65,5 +69,7 @@ public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatfor
         modelBuilder.Entity<AthleteChatMessageReaction>().HasIndex(x => new { x.MessageId, x.Emoji });
         modelBuilder.Entity<AthleteChatAthleteLock>().HasIndex(x => x.AthleteProfileId).IsUnique();
         modelBuilder.Entity<AthleteChatAthleteLock>().HasIndex(x => new { x.UserAccountId, x.IsActive, x.LockedUntilUtc });
+        modelBuilder.Entity<AthleteChatBlock>().HasIndex(x => new { x.BlockingAthleteProfileId, x.BlockedAthleteProfileId }).IsUnique();
+        modelBuilder.Entity<AthleteChatBlock>().HasIndex(x => new { x.BlockedAthleteProfileId, x.IsActive });
     }
 }
