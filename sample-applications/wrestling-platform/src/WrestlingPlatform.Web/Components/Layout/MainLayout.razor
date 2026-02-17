@@ -914,17 +914,25 @@
 
     private async Task SignInAsync()
     {
-        AuthMessage = null;
-
-        var result = await ExecuteSignInAttemptAsync();
-        if (result.Success)
+        try
         {
-            ApplySuccessfulSignInState("Signed in.");
-            return;
-        }
+            AuthMessage = null;
 
-        AuthOk = false;
-        AuthMessage = result.Message;
+            var result = await ExecuteSignInAttemptAsync();
+            if (result.Success)
+            {
+                ApplySuccessfulSignInState("Signed in.");
+                return;
+            }
+
+            AuthOk = false;
+            AuthMessage = result.Message;
+        }
+        catch (Exception ex)
+        {
+            AuthOk = false;
+            AuthMessage = $"Sign-in failed unexpectedly. {ex.Message}";
+        }
     }
 
     private async Task SignInAsDemoAthleteAsync()
@@ -954,42 +962,57 @@
 
     private async Task SignInAsDemoUserAsync(string email, UserRole role, string label, string? phoneNumber)
     {
-        Email = email;
-        Password = DemoPassword;
-        MfaCode = string.Empty;
-        AuthMessage = null;
-
-        var loginResult = await ExecuteSignInAttemptAsync();
-        if (loginResult.Success)
+        try
         {
-            ApplySuccessfulSignInState($"Signed in as {label}.");
-            return;
-        }
+            // Always reset local session when switching demo personas to avoid stale token state.
+            if (AuthSession.IsAuthenticated)
+            {
+                await ApiClient.LogoutAsync();
+                RolePreview = null;
+            }
 
-        var accountReady = await EnsureDemoAccountAsync(email, role, phoneNumber);
-        if (accountReady)
-        {
-            loginResult = await ExecuteSignInAttemptAsync();
+            Email = email;
+            Password = DemoPassword;
+            MfaCode = string.Empty;
+            AuthMessage = null;
+
+            var loginResult = await ExecuteSignInAttemptAsync();
             if (loginResult.Success)
             {
                 ApplySuccessfulSignInState($"Signed in as {label}.");
                 return;
             }
-        }
 
-        var reseedCompleted = await TryResetDemoDataAsync();
-        if (reseedCompleted)
-        {
-            loginResult = await ExecuteSignInAttemptAsync();
-            if (loginResult.Success)
+            var accountReady = await EnsureDemoAccountAsync(email, role, phoneNumber);
+            if (accountReady)
             {
-                ApplySuccessfulSignInState($"Signed in as {label} after demo data reset.");
-                return;
+                loginResult = await ExecuteSignInAttemptAsync();
+                if (loginResult.Success)
+                {
+                    ApplySuccessfulSignInState($"Signed in as {label}.");
+                    return;
+                }
             }
-        }
 
-        AuthOk = false;
-        AuthMessage = BuildDemoSignInFailureMessage(label, loginResult.Message, accountReady, reseedCompleted);
+            var reseedCompleted = await TryResetDemoDataAsync();
+            if (reseedCompleted)
+            {
+                loginResult = await ExecuteSignInAttemptAsync();
+                if (loginResult.Success)
+                {
+                    ApplySuccessfulSignInState($"Signed in as {label} after demo data reset.");
+                    return;
+                }
+            }
+
+            AuthOk = false;
+            AuthMessage = BuildDemoSignInFailureMessage(label, loginResult.Message, accountReady, reseedCompleted);
+        }
+        catch (Exception ex)
+        {
+            AuthOk = false;
+            AuthMessage = $"{label} sign-in failed unexpectedly. {ex.Message}";
+        }
     }
 
     private async Task<ApiResult<AuthTokenResponse>> ExecuteSignInAttemptAsync()
