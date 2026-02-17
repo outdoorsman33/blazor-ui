@@ -1,0 +1,362 @@
+@page "/bouts-alerts"
+@inject PlatformApiClient ApiClient
+@inject WorkflowState Workflow
+
+<PageTitle>My Bouts + Alerts - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">My Bouts + Alerts</h1>
+        <p class="page-subtitle">Athlete-focused alert center for followed bouts, in-the-hole/on-deck updates, mat assignments, and results.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Actionable</span>
+        <span class="tag">Tournament-Specific</span>
+        <span class="tag">Bout-First</span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+}
+
+<section class="panel">
+    <h2>Event + Filters</h2>
+    <div class="form-grid spacer-top">
+        <div class="field">
+            <label>State</label>
+            <select class="select" @bind="StateFilter">
+                @foreach (var state in FormOptions.UsStatesWithAny)
+                {
+                    <option value="@state.Code">@state.Name</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Event</label>
+            <select class="select" @bind="SelectedEventIdText">
+                <option value="">Select event...</option>
+                @foreach (var evt in Events)
+                {
+                    <option value="@evt.EventId">@evt.EventName (@evt.State / @evt.City)</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Event Id (manual)</label>
+            <input class="input mono" @bind="SelectedEventIdText" />
+        </div>
+    </div>
+    <div class="actions">
+        <button class="btn ghost" @onclick="LoadEventsAsync" disabled="@IsBusy">Refresh Events</button>
+        <button class="btn primary" @onclick="LoadBoutsAlertsAsync" disabled="@IsBusy">Load My Bouts + Alerts</button>
+        <a class="btn ghost" href="@EventDetailsHref">Event Details</a>
+        <a class="btn ghost" href="@LiveHubHref">Open Live Hub</a>
+    </div>
+</section>
+
+<div class="panel-grid two spacer-top">
+    <section class="panel">
+        <h2>Followed Bouts</h2>
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Bout</th>
+                        <th>Mat</th>
+                        <th>Status</th>
+                        <th>Matchup</th>
+                        <th>Alerts</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Rows.Count == 0)
+                    {
+                        <tr><td colspan="6">No bout alerts are loaded for this event.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in Rows)
+                        {
+                            <tr>
+                                <td><span class="tag">Bout @row.BoutNumber</span></td>
+                                <td>@row.MatNumber</td>
+                                <td>@row.Status</td>
+                                <td>@row.AthleteA vs @row.AthleteB</td>
+                                <td>
+                                    <div class="actions">
+                                        <button class="btn ghost" @onclick="() => ToggleOption(row.MatchId, AlertOption.InTheHole)">@OptionLabel(row.InTheHole, "In hole")</button>
+                                        <button class="btn ghost" @onclick="() => ToggleOption(row.MatchId, AlertOption.OnDeck)">@OptionLabel(row.OnDeck, "On deck")</button>
+                                        <button class="btn ghost" @onclick="() => ToggleOption(row.MatchId, AlertOption.MatAssignment)">@OptionLabel(row.MatAssignment, "Mat")</button>
+                                        <button class="btn ghost" @onclick="() => ToggleOption(row.MatchId, AlertOption.Results)">@OptionLabel(row.Results, "Results")</button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="actions">
+                                        <a class="btn secondary" href="@MatchHref(row.MatchId)">Open</a>
+                                        <button class="btn ghost" @onclick="() => Acknowledge(row.MatchId)">Ack</button>
+                                        <button class="btn ghost" @onclick="() => Snooze(row.MatchId)">Snooze 30m</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Recent Alert Feed</h2>
+        @if (FeedRows.Count == 0)
+        {
+            <p class="helper spacer-top">No active alerts right now.</p>
+        }
+        else
+        {
+            <ul class="list spacer-top">
+                @foreach (var feed in FeedRows)
+                {
+                    <li class="list-item">
+                        <div class="item-head">
+                            <span class="item-title">Bout @feed.BoutNumber | @feed.Status</span>
+                            <span class="item-meta">@feed.MatNumber</span>
+                        </div>
+                        <div class="helper spacer-top">@feed.AthleteA vs @feed.AthleteB</div>
+                        <div class="actions spacer-top">
+                            <a class="btn secondary" href="@MatchHref(feed.MatchId)">Open Bout</a>
+                            <button class="btn ghost" @onclick="() => Acknowledge(feed.MatchId)">Acknowledge</button>
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "eventId")]
+    public Guid? EventId { get; set; }
+
+    private bool IsBusy;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+    private string StateFilter = "OH";
+    private string SelectedEventIdText = string.Empty;
+    private List<TableWorkerEventSummary> Events = [];
+    private List<BoutAlertRow> Rows = [];
+
+    private string EventDetailsHref =>
+        Guid.TryParse(SelectedEventIdText, out var eventId) ? $"/events/{eventId:D}" : "/tournaments";
+    private string LiveHubHref =>
+        Guid.TryParse(SelectedEventIdText, out var eventId) ? $"/live?eventId={eventId:D}" : "/live";
+
+    private List<BoutAlertRow> FeedRows =>
+        Rows.Where(x => x.Status is "OnMat" or "InTheHole" or "Scheduled")
+            .OrderBy(x => x.StatusRank)
+            .ThenBy(x => x.BoutNumber)
+            .Take(12)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Workflow.EventId is not null)
+        {
+            SelectedEventIdText = Workflow.EventId.Value.ToString();
+        }
+
+        if (EventId is not null)
+        {
+            SelectedEventIdText = EventId.Value.ToString();
+            Workflow.EventId = EventId.Value;
+        }
+
+        await LoadEventsAsync();
+        if (!string.IsNullOrWhiteSpace(SelectedEventIdText))
+        {
+            await LoadBoutsAlertsAsync();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (EventId is null)
+        {
+            return;
+        }
+
+        var incoming = EventId.Value.ToString("D");
+        if (string.Equals(SelectedEventIdText, incoming, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        SelectedEventIdText = incoming;
+        Workflow.EventId = EventId.Value;
+        await LoadBoutsAlertsAsync();
+    }
+
+    private async Task LoadEventsAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.GetTableWorkerEventsAsync(StateFilter, 180);
+            if (!result.Success)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Events = [];
+                return;
+            }
+
+            Events = result.Data ?? [];
+            if (string.IsNullOrWhiteSpace(SelectedEventIdText) && Events.Count > 0)
+            {
+                SelectedEventIdText = Events[0].EventId.ToString();
+                Workflow.EventId = Events[0].EventId;
+            }
+
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {Events.Count} events.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task LoadBoutsAlertsAsync()
+    {
+        if (!Guid.TryParse(SelectedEventIdText, out var eventId))
+        {
+            StatusSuccess = false;
+            StatusMessage = "Valid event id is required.";
+            Rows = [];
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await ApiClient.GetEventLiveHubAsync(eventId, sortBy: "status");
+            if (!result.Success || result.Data is null)
+            {
+                StatusSuccess = false;
+                StatusMessage = result.Message;
+                Rows = [];
+                return;
+            }
+
+            Workflow.EventId = eventId;
+            Rows = result.Data.Mats
+                .SelectMany(mat => mat.Bouts.Select(bout => new BoutAlertRow(
+                    bout.MatchId,
+                    bout.BoutNumber,
+                    mat.Mat,
+                    bout.Status.ToString(),
+                    bout.AthleteA,
+                    bout.AthleteB,
+                    InTheHole: true,
+                    OnDeck: true,
+                    MatAssignment: true,
+                    Results: true,
+                    MutedUntilUtc: null,
+                    AcknowledgedUtc: null)))
+                .OrderBy(row => row.StatusRank)
+                .ThenBy(row => row.BoutNumber)
+                .Take(80)
+                .ToList();
+
+            StatusSuccess = true;
+            StatusMessage = $"Loaded {Rows.Count} bout alerts.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ToggleOption(Guid matchId, AlertOption option)
+    {
+        var index = Rows.FindIndex(x => x.MatchId == matchId);
+        if (index < 0)
+        {
+            return;
+        }
+
+        var row = Rows[index];
+        Rows[index] = option switch
+        {
+            AlertOption.InTheHole => row with { InTheHole = !row.InTheHole },
+            AlertOption.OnDeck => row with { OnDeck = !row.OnDeck },
+            AlertOption.MatAssignment => row with { MatAssignment = !row.MatAssignment },
+            AlertOption.Results => row with { Results = !row.Results },
+            _ => row
+        };
+    }
+
+    private void Acknowledge(Guid matchId)
+    {
+        var index = Rows.FindIndex(x => x.MatchId == matchId);
+        if (index < 0)
+        {
+            return;
+        }
+
+        Rows[index] = Rows[index] with { AcknowledgedUtc = DateTime.UtcNow };
+        StatusSuccess = true;
+        StatusMessage = $"Acknowledged bout {Rows[index].BoutNumber}.";
+    }
+
+    private void Snooze(Guid matchId)
+    {
+        var index = Rows.FindIndex(x => x.MatchId == matchId);
+        if (index < 0)
+        {
+            return;
+        }
+
+        Rows[index] = Rows[index] with { MutedUntilUtc = DateTime.UtcNow.AddMinutes(30) };
+        StatusSuccess = true;
+        StatusMessage = $"Snoozed bout {Rows[index].BoutNumber} alerts for 30 minutes.";
+    }
+
+    private static string MatchHref(Guid matchId) => $"/live?matchId={matchId:D}";
+
+    private static string OptionLabel(bool enabled, string text) => enabled ? $"{text}: on" : $"{text}: off";
+
+    private enum AlertOption
+    {
+        InTheHole,
+        OnDeck,
+        MatAssignment,
+        Results
+    }
+
+    private sealed record BoutAlertRow(
+        Guid MatchId,
+        int BoutNumber,
+        string MatNumber,
+        string Status,
+        string AthleteA,
+        string AthleteB,
+        bool InTheHole,
+        bool OnDeck,
+        bool MatAssignment,
+        bool Results,
+        DateTime? MutedUntilUtc,
+        DateTime? AcknowledgedUtc)
+    {
+        public int StatusRank => Status switch
+        {
+            "OnMat" => 0,
+            "InTheHole" => 1,
+            "Scheduled" => 2,
+            "Completed" => 3,
+            _ => 4
+        };
+    }
+}

@@ -1,13 +1,14 @@
 @page "/athlete"
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
+@inject AuthSession AuthSession
 
 <PageTitle>Athlete Portal - PinPoint Arena</PageTitle>
 
 <div class="page-head">
     <div>
         <h1 class="page-title">Athlete Portal</h1>
-        <p class="page-subtitle">Create your account, build your profile, discover events, register as team-affiliated or free-agent, and track rankings/history.</p>
+        <p class="page-subtitle">Manage your athlete profile, account access, event entry, rankings, alerts, and media in role-specific sections.</p>
     </div>
     <div class="tag-row">
         <span class="tag">Profile Builder</span>
@@ -28,36 +29,15 @@
 
 <div class="panel-grid two">
     <section class="panel">
-        <h2>1) Athlete Account</h2>
-        <div class="form-grid spacer-top">
-            <div class="field">
-                <label>Email</label>
-                <input class="input" @bind="AccountEmail" />
-            </div>
-            <div class="field">
-                <label>Password</label>
-                <input class="input" type="password" @bind="AccountPassword" />
-            </div>
-            <div class="field">
-                <label>Phone</label>
-                <input class="input" @bind="AccountPhone" placeholder="+1..." />
-            </div>
-        </div>
+        <h2>1) Athlete Profile</h2>
+        @if (AuthSession.IsAuthenticated && AuthSession.Role == UserRole.Athlete)
+        {
+            <div class="alert success">Signed-in athlete view is active. Account setup is separate from profile editing.</div>
+        }
         <div class="actions">
-            <button class="btn primary" @onclick="RegisterUserAsync" disabled="@IsBusy">Create Athlete User</button>
+            <button class="btn ghost" @onclick="LoadSignedInAthleteProfileAsync" disabled="@IsBusy">Load Signed-In Profile</button>
+            <button class="btn ghost" @onclick="ApplyWorkflowContext">Apply Workflow IDs</button>
         </div>
-        @if (!string.IsNullOrWhiteSpace(AccountMessage))
-        {
-            <div class="alert @(AccountSuccess ? "success" : "error")">@AccountMessage</div>
-        }
-        @if (CreatedUserId is not null)
-        {
-            <p class="helper spacer-top">Created user id: <span class="mono">@CreatedUserId</span></p>
-        }
-
-        <hr class="soft" />
-
-        <h3>2) Athlete Profile</h3>
         <div class="form-grid spacer-top">
             <div class="field">
                 <label>User Id</label>
@@ -145,6 +125,7 @@
         }
 
         <hr class="soft" />
+        <p class="helper">Account setup is managed in the separate Account Setup panel.</p>
 
         <h3>Guardian Chat Controls</h3>
         <p class="helper">Parent/guardian users can restrict or restore athlete chat access for linked athletes.</p>
@@ -172,6 +153,46 @@
     </section>
 
     <section class="panel">
+        <h2>2) Account Setup</h2>
+        @if (!ShowAccountSetup)
+        {
+            <div class="helper">Account creation controls are hidden while signed in as an athlete.</div>
+            <div class="actions spacer-top">
+                <button class="btn ghost" @onclick="ToggleAccountSetup">Open Account Setup</button>
+            </div>
+        }
+        else
+        {
+            <div class="form-grid spacer-top">
+                <div class="field">
+                    <label>Email</label>
+                    <input class="input" @bind="AccountEmail" />
+                </div>
+                <div class="field">
+                    <label>Password</label>
+                    <input class="input" type="password" @bind="AccountPassword" />
+                </div>
+                <div class="field">
+                    <label>Phone</label>
+                    <input class="input" @bind="AccountPhone" placeholder="+1..." />
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn primary" @onclick="RegisterUserAsync" disabled="@IsBusy">Create Athlete User</button>
+                <button class="btn ghost" @onclick="ToggleAccountSetup">Hide Account Setup</button>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(AccountMessage))
+            {
+                <div class="alert @(AccountSuccess ? "success" : "error")">@AccountMessage</div>
+            }
+            @if (CreatedUserId is not null)
+            {
+                <p class="helper spacer-top">Created user id: <span class="mono">@CreatedUserId</span></p>
+            }
+        }
+
+        <hr class="soft" />
+
         <h2>3) Event Discovery & Entry</h2>
         <div class="form-grid spacer-top">
             <div class="field">
@@ -497,6 +518,7 @@
             <button class="btn ghost" @onclick="LoadAiJobsAsync" disabled="@IsBusy">Load AI Jobs</button>
             <button class="btn ghost" @onclick="LoadHighlightsAsync" disabled="@IsBusy">Load AI Highlights</button>
             <button class="btn ghost" @onclick="UseWorkflowAthleteForMedia">Use Workflow Athlete</button>
+            <button class="btn ghost" @onclick="SeedDemoMediaAsync" disabled="@IsBusy">Seed Demo Media</button>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(MediaMessage))
@@ -716,9 +738,20 @@
 </div>
 
 @code {
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         ApplyWorkflowContext();
+        ShowAccountSetup = !(AuthSession.IsAuthenticated && AuthSession.Role == UserRole.Athlete);
+
+        if (AuthSession.IsAuthenticated && AuthSession.UserId is Guid userId)
+        {
+            ProfileUserId = userId.ToString();
+            NotifyUserId = userId.ToString();
+        }
+
+        await LoadSignedInAthleteProfileAsync();
+        await EnsureMediaContextAsync(requireMatchId: false);
+        await TryAutoSeedDemoMediaAsync();
     }
 
     private void UseDemoAthleteCredentials()
@@ -730,6 +763,12 @@
 
     private void ApplyWorkflowContext()
     {
+        if (AuthSession.UserId is Guid currentUserId)
+        {
+            ProfileUserId = currentUserId.ToString();
+            NotifyUserId = currentUserId.ToString();
+        }
+
         if (Workflow.AthleteUserId is not null)
         {
             ProfileUserId = Workflow.AthleteUserId.Value.ToString();
@@ -790,6 +829,8 @@
 
     private static string Short(Guid? id) => id is null ? "-" : id.Value.ToString()[..8];
     private bool IsBusy;
+    private bool ShowAccountSetup;
+    private bool MediaAutoSeedAttempted;
 
     private string AccountEmail = "athlete@example.com";
     private string AccountPassword = "S3curePass!";
@@ -872,6 +913,219 @@
     private bool NilOpenToCampsClinics = true;
     private bool NilOpenToCollectives = true;
     private string NilBio = string.Empty;
+    private static readonly IReadOnlyList<string> DemoMediaUrls =
+    [
+        "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+        "https://test-streams.mux.dev/pts_shift/master.m3u8",
+        "https://test-streams.mux.dev/tos_ismc/main.m3u8"
+    ];
+
+    private void ToggleAccountSetup()
+    {
+        ShowAccountSetup = !ShowAccountSetup;
+    }
+
+    private async Task LoadSignedInAthleteProfileAsync()
+    {
+        var currentUserId = AuthSession.UserId;
+        if (currentUserId is null)
+        {
+            ProfileSuccess = false;
+            ProfileMessage = "Sign in as an athlete to load your profile.";
+            return;
+        }
+
+        var result = await ApiClient.GetAthleteProfileByUserAsync(currentUserId.Value);
+        if (!result.Success)
+        {
+            ProfileSuccess = false;
+            ProfileMessage = string.IsNullOrWhiteSpace(result.Message)
+                ? "Unable to load athlete profile."
+                : result.Message;
+            return;
+        }
+
+        if (result.Data is null)
+        {
+            ProfileSuccess = false;
+            ProfileMessage = "No athlete profile exists for this account yet.";
+            return;
+        }
+
+        ApplyAthleteProfileToForm(result.Data);
+        ProfileSuccess = true;
+        ProfileMessage = "Loaded signed-in athlete profile.";
+    }
+
+    private void ApplyAthleteProfileToForm(AthleteProfile profile)
+    {
+        CreatedAthleteId = profile.Id;
+        ProfileUserId = profile.UserAccountId.ToString();
+        FirstName = profile.FirstName;
+        LastName = profile.LastName;
+        BirthDateText = profile.DateOfBirthUtc.ToString("yyyy-MM-dd");
+        State = profile.State;
+        City = profile.City;
+        SchoolClub = profile.SchoolOrClubName ?? string.Empty;
+        Grade = profile.Grade;
+        WeightClass = profile.WeightClass;
+        Level = profile.Level;
+        WrestlingExperienceYears = profile.WrestlingExperienceYears;
+        NoviceCategory = profile.NoviceCategory;
+        GuardianAthleteId = profile.Id.ToString();
+        RegistrationAthleteId = profile.Id.ToString();
+        StatsAthleteId = profile.Id.ToString();
+        NotifyAthleteId = profile.Id.ToString();
+        MediaAthleteId = profile.Id.ToString();
+        Workflow.AthleteProfileId = profile.Id;
+        Workflow.AthleteUserId = profile.UserAccountId;
+    }
+
+    private async Task<bool> EnsureMediaContextAsync(bool requireMatchId)
+    {
+        if (!Guid.TryParse(MediaAthleteId, out _))
+        {
+            if (Workflow.AthleteProfileId is not null)
+            {
+                MediaAthleteId = Workflow.AthleteProfileId.Value.ToString();
+            }
+            else if (CreatedAthleteId is not null)
+            {
+                MediaAthleteId = CreatedAthleteId.Value.ToString();
+            }
+            else if (AuthSession.UserId is Guid currentUserId)
+            {
+                var profileResult = await ApiClient.GetAthleteProfileByUserAsync(currentUserId);
+                if (profileResult.Success && profileResult.Data is not null)
+                {
+                    ApplyAthleteProfileToForm(profileResult.Data);
+                }
+            }
+        }
+
+        if (!Guid.TryParse(MediaAthleteId, out _))
+        {
+            MediaSuccess = false;
+            MediaMessage = "Valid athlete id is required.";
+            return false;
+        }
+
+        if (!requireMatchId)
+        {
+            return true;
+        }
+
+        if (Guid.TryParse(MediaMatchId, out _))
+        {
+            return true;
+        }
+
+        if (Workflow.MatchId is Guid workflowMatchId)
+        {
+            MediaMatchId = workflowMatchId.ToString();
+            return true;
+        }
+
+        if (!Guid.TryParse(RegistrationEventId, out var eventId) && Workflow.EventId is Guid workflowEventId)
+        {
+            eventId = workflowEventId;
+            RegistrationEventId = workflowEventId.ToString();
+        }
+
+        if (eventId != Guid.Empty)
+        {
+            var insightsResult = await ApiClient.GetEventInsightsAsync(eventId);
+            var firstBout = insightsResult.Success ? insightsResult.Data?.Bouts.FirstOrDefault() : null;
+            if (firstBout is not null)
+            {
+                MediaMatchId = firstBout.MatchId.ToString();
+                Workflow.MatchId = firstBout.MatchId;
+                return true;
+            }
+        }
+
+        MediaSuccess = false;
+        MediaMessage = "Valid match id is required. Select an event and load a bout first.";
+        return false;
+    }
+
+    private async Task SeedDemoMediaAsync()
+    {
+        IsBusy = true;
+        MediaMessage = null;
+        try
+        {
+            if (!await EnsureMediaContextAsync(requireMatchId: true))
+            {
+                return;
+            }
+
+            var athleteId = Guid.Parse(MediaAthleteId);
+            var matchId = Guid.Parse(MediaMatchId);
+            var created = 0;
+
+            foreach (var url in DemoMediaUrls)
+            {
+                var createResult = await ApiClient.CreateVideoAssetAsync(
+                    new CreateVideoAssetRequest(athleteId, matchId, null, url, QueueTranscode: true));
+                if (createResult.Success)
+                {
+                    created++;
+                }
+            }
+
+            _ = await ApiClient.QueueAiHighlightsAsync(new QueueAiHighlightsRequest(athleteId, Workflow.EventId, MaxMatches: 12));
+            await LoadVideosAsync();
+            await LoadAiJobsAsync();
+            await LoadHighlightsAsync();
+            MediaSuccess = created > 0;
+            MediaMessage = created > 0
+                ? $"Seeded {created} demo videos and queued AI highlights."
+                : "No demo videos were created.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task TryAutoSeedDemoMediaAsync()
+    {
+        if (MediaAutoSeedAttempted || !AuthSession.IsAuthenticated || AuthSession.Role != UserRole.Athlete)
+        {
+            return;
+        }
+
+        MediaAutoSeedAttempted = true;
+        if (!await EnsureMediaContextAsync(requireMatchId: true))
+        {
+            return;
+        }
+
+        var athleteId = Guid.Parse(MediaAthleteId);
+        var existingResult = await ApiClient.GetAthleteVideosAsync(athleteId);
+        if (existingResult.Success && (existingResult.Data?.Count ?? 0) > 0)
+        {
+            VideoAssets = existingResult.Data ?? [];
+            return;
+        }
+
+        var matchId = Guid.Parse(MediaMatchId);
+        foreach (var url in DemoMediaUrls.Take(2))
+        {
+            await ApiClient.CreateVideoAssetAsync(new CreateVideoAssetRequest(
+                athleteId,
+                matchId,
+                null,
+                url,
+                QueueTranscode: true));
+        }
+
+        _ = await ApiClient.QueueAiHighlightsAsync(new QueueAiHighlightsRequest(athleteId, Workflow.EventId, MaxMatches: 12));
+        await LoadVideosAsync();
+        await LoadAiJobsAsync();
+        await LoadHighlightsAsync();
+    }
 
     private async Task RegisterUserAsync()
     {
@@ -1193,14 +1447,14 @@
         IsBusy = true;
         MediaMessage = null;
 
-        if (!Guid.TryParse(MediaAthleteId, out var athleteId) || !Guid.TryParse(MediaMatchId, out var matchId))
+        if (!await EnsureMediaContextAsync(requireMatchId: true))
         {
-            MediaSuccess = false;
-            MediaMessage = "Valid athlete id and match id are required.";
             IsBusy = false;
             return;
         }
 
+        var athleteId = Guid.Parse(MediaAthleteId);
+        var matchId = Guid.Parse(MediaMatchId);
         Guid? streamId = Guid.TryParse(MediaStreamId, out var parsedStreamId) ? parsedStreamId : null;
         var result = await ApiClient.CreateVideoAssetAsync(new CreateVideoAssetRequest(
             athleteId,
@@ -1228,14 +1482,13 @@
         IsBusy = true;
         MediaMessage = null;
 
-        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        if (!await EnsureMediaContextAsync(requireMatchId: false))
         {
-            MediaSuccess = false;
-            MediaMessage = "Valid athlete id is required.";
             IsBusy = false;
             return;
         }
 
+        var athleteId = Guid.Parse(MediaAthleteId);
         Guid? eventId = Guid.TryParse(RegistrationEventId, out var parsedEventId) ? parsedEventId : null;
         var result = await ApiClient.QueueAiHighlightsAsync(new QueueAiHighlightsRequest(athleteId, eventId, MaxMatches: 12));
         MediaSuccess = result.Success;
@@ -1251,29 +1504,47 @@
 
     private async Task LoadVideosAsync()
     {
-        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        if (!await EnsureMediaContextAsync(requireMatchId: false))
         {
+            VideoAssets = [];
             return;
         }
 
+        var athleteId = Guid.Parse(MediaAthleteId);
         var result = await ApiClient.GetAthleteVideosAsync(athleteId);
         if (result.Success)
         {
             VideoAssets = result.Data ?? [];
+            MediaSuccess = true;
+            MediaMessage = $"Loaded {VideoAssets.Count} video asset(s).";
+        }
+        else
+        {
+            MediaSuccess = false;
+            MediaMessage = result.Message;
         }
     }
 
     private async Task LoadAiJobsAsync()
     {
-        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        if (!await EnsureMediaContextAsync(requireMatchId: false))
         {
+            AiJobs = [];
             return;
         }
 
+        var athleteId = Guid.Parse(MediaAthleteId);
         var result = await ApiClient.GetAiHighlightJobsAsync(athleteId);
         if (result.Success)
         {
             AiJobs = result.Data ?? [];
+            MediaSuccess = true;
+            MediaMessage = $"Loaded {AiJobs.Count} AI job(s).";
+        }
+        else
+        {
+            MediaSuccess = false;
+            MediaMessage = result.Message;
         }
     }
 
@@ -1282,14 +1553,13 @@
         IsBusy = true;
         MediaMessage = null;
 
-        if (!Guid.TryParse(MediaAthleteId, out var athleteId))
+        if (!await EnsureMediaContextAsync(requireMatchId: false))
         {
-            MediaSuccess = false;
-            MediaMessage = "Valid athlete id is required.";
             IsBusy = false;
             return;
         }
 
+        var athleteId = Guid.Parse(MediaAthleteId);
         var result = await ApiClient.GetAthleteHighlightsAsync(athleteId);
         MediaSuccess = result.Success;
         MediaMessage = result.Success ? $"Loaded {result.Data?.Count ?? 0} highlight clips." : result.Message;

@@ -277,6 +277,23 @@ a {
     color: #1f2a31;
 }
 
+.bout-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    min-height: 1.7rem;
+    padding: 0.12rem 0.66rem;
+    border-radius: 999px;
+    border: 1px solid #2f6fc2;
+    background: #e9f3ff;
+    color: #0f3f73;
+    font-weight: 800;
+    font-size: 0.86rem;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
 .drawer-nav {
     display: grid;
     gap: 0.2rem;
@@ -760,6 +777,29 @@ a {
 .metric-card strong {
     font-size: 1.25rem;
     color: #21303a;
+}
+
+.metric-grid {
+    display: grid;
+    gap: 0.55rem;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.metric-label {
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #5f6d77;
+    font-weight: 700;
+}
+
+.metric-value {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1d2d38;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.25;
 }
 
 .metric-card-actions {

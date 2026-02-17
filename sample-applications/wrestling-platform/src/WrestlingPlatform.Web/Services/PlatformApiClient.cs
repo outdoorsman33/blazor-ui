@@ -90,6 +90,12 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         return await ReadResponseAsync<AthleteProfile>(response, cancellationToken);
     }
 
+    public async Task<ApiResult<AthleteProfile>> GetAthleteProfileByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var response = await GetAsync($"/api/profiles/athletes/by-user/{userId:D}", cancellationToken);
+        return await ReadResponseAsync<AthleteProfile>(response, cancellationToken);
+    }
+
     public async Task<ApiResult<CoachProfile>> CreateCoachProfileAsync(CreateCoachProfileRequest request, CancellationToken cancellationToken = default)
     {
         var response = await PostAsJsonAsync("/api/profiles/coaches", request, cancellationToken);

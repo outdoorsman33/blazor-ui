@@ -910,9 +910,8 @@
         ("sort", NormalizeSortOption(LiveSortFilter)));
 
     private string FollowCenterHref => BuildHref(
-        "/live",
+        "/bouts-alerts",
         ("eventId", ActiveEventIdText),
-        ("panel", "follow"),
         ("notifications", "in-hole,on-deck,mat,results"));
 
     private string OpsCenterHref => BuildHref("/admin", ("eventId", ActiveEventIdText), ("ops", "center"));
@@ -1627,7 +1626,7 @@
             case PlatformRole.Athlete:
                 links.Add(new("Athlete Profile", "/athlete", Icons.Material.Filled.Person, "Profile"));
                 links.Add(new("Athlete Chat", "/athlete-chat", Icons.Material.Filled.Chat, "Chat"));
-                links.Add(new("My Bouts + Alerts", BuildHref("/live", ("panel", "follow"), ("eventId", ActiveEventIdText)), Icons.Material.Filled.NotificationsActive, "Alerts"));
+                links.Add(new("My Bouts + Alerts", BuildHref("/bouts-alerts", ("eventId", ActiveEventIdText)), Icons.Material.Filled.NotificationsActive, "Alerts"));
                 break;
             case PlatformRole.ParentGuardian:
                 links.Add(new("Family Athlete Profiles", "/athlete", Icons.Material.Filled.Groups, "Family"));

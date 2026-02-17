@@ -273,7 +273,7 @@ else
                     <div class="chat-emoji-picker">
                         @foreach (var emoji in QuickReactionEmojis)
                         {
-                            <button type="button" class="chat-emoji-btn" @onclick="() => AppendEmojiToCompose(emoji)" disabled="@SelectedThread.IsPostingLocked || IsBusy">@emoji</button>
+                            <button type="button" class="chat-emoji-btn" @onclick="() => AppendEmojiToCompose(emoji)" disabled="@SelectedThread.IsPostingLocked || IsSubmitting">@emoji</button>
                         }
                     </div>
                     <div class="chat-compose-footer">
@@ -281,7 +281,7 @@ else
                         <button class="btn primary"
                                 type="button"
                                 @onclick="SendMessageAsync"
-                                disabled="@IsBusy || SelectedThread.IsPostingLocked">Send</button>
+                                disabled="@IsSubmitting || SelectedThread.IsPostingLocked">Send</button>
                     </div>
                 </div>
             }
@@ -303,6 +303,7 @@ else
         "\uD83C\uDFC6",
         "\u2B50"
     ];
+    private static readonly TimeSpan ChatRequestTimeout = TimeSpan.FromSeconds(20);
 
     private bool IsLoadingThreads;
     private bool IsLoadingMessages;
@@ -359,7 +360,8 @@ else
         IsLoadingThreads = true;
         try
         {
-            var result = await ApiClient.GetAthleteChatThreadsAsync();
+            using var timeoutCts = new CancellationTokenSource(ChatRequestTimeout);
+            var result = await ApiClient.GetAthleteChatThreadsAsync(timeoutCts.Token);
             if (!result.Success || result.Data is null)
             {
                 SetStatus(false, result.Message);
@@ -385,6 +387,10 @@ else
             }
 
             SetStatus(true, $"Loaded {Threads.Count} thread(s).");
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus(false, "Thread refresh timed out. Please retry.");
         }
         catch (Exception ex)
         {
@@ -518,7 +524,8 @@ else
         IsLoadingMessages = true;
         try
         {
-            var result = await ApiClient.GetAthleteChatMessagesAsync(SelectedThreadId.Value, take: 150);
+            using var timeoutCts = new CancellationTokenSource(ChatRequestTimeout);
+            var result = await ApiClient.GetAthleteChatMessagesAsync(SelectedThreadId.Value, take: 150, cancellationToken: timeoutCts.Token);
             if (!result.Success || result.Data is null)
             {
                 SetStatus(false, result.Message);
@@ -527,6 +534,11 @@ else
             }
 
             Messages = result.Data.OrderBy(x => x.CreatedUtc).ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus(false, "Loading messages timed out. Please retry.");
+            Messages = [];
         }
         catch (Exception ex)
         {
@@ -544,7 +556,8 @@ else
         IsSubmitting = true;
         try
         {
-            var result = await ApiClient.SearchAthleteChatDirectoryAsync(NetworkQuery, 24);
+            using var timeoutCts = new CancellationTokenSource(ChatRequestTimeout);
+            var result = await ApiClient.SearchAthleteChatDirectoryAsync(NetworkQuery, 24, timeoutCts.Token);
             if (!result.Success || result.Data is null)
             {
                 if (setStatus)
@@ -560,6 +573,13 @@ else
             if (setStatus)
             {
                 SetStatus(true, $"Found {NetworkResults.Count} athlete contact(s).");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (setStatus)
+            {
+                SetStatus(false, "Athlete search timed out. Please retry.");
             }
         }
         catch (Exception ex)
@@ -758,7 +778,11 @@ else
         IsSubmitting = true;
         try
         {
-            var result = await ApiClient.SendAthleteChatMessageAsync(SelectedThreadId.Value, new SendAthleteChatMessageRequest(trimmed));
+            using var timeoutCts = new CancellationTokenSource(ChatRequestTimeout);
+            var result = await ApiClient.SendAthleteChatMessageAsync(
+                SelectedThreadId.Value,
+                new SendAthleteChatMessageRequest(trimmed),
+                timeoutCts.Token);
             if (!result.Success || result.Data is null)
             {
                 SetStatus(false, result.Message);
@@ -766,9 +790,30 @@ else
             }
 
             ComposeMessage = string.Empty;
-            await LoadMessagesAsync();
-            await LoadThreadsAsync(loadMessages: false);
+            Messages.Add(result.Data);
+
+            var threadIndex = Threads.FindIndex(x => x.ThreadId == SelectedThreadId.Value);
+            if (threadIndex >= 0)
+            {
+                var current = Threads[threadIndex];
+                Threads[threadIndex] = current with
+                {
+                    LastMessageUtc = result.Data.CreatedUtc,
+                    LastMessagePreview = result.Data.Body,
+                    UnreadCount = 0
+                };
+
+                Threads = Threads
+                    .OrderByDescending(x => x.LastMessageUtc ?? DateTime.MinValue)
+                    .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+
             SetStatus(true, "Message sent.");
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus(false, "Message send timed out. Please retry.");
         }
         catch (Exception ex)
         {

@@ -283,10 +283,10 @@
                                          @onkeydown="@((KeyboardEventArgs args) => OnNodeKeyDown(args, node.Match))"
                                          tabindex="0"
                                          role="button"
-                                         aria-label="@($"Match {node.Match.MatchNumber}")">
+                                         aria-label="@($"Bout {DisplayBoutNumber(node.Match)} match {node.Match.MatchNumber}")">
                                     <header class="bracket-node-head">
-                                        <span class="item-title">Match @node.Match.MatchNumber</span>
-                                        <span class="item-meta">@node.Match.Status</span>
+                                        <span class="bout-pill">Bout @DisplayBoutNumber(node.Match)</span>
+                                        <span class="item-meta">Match @node.Match.MatchNumber | @node.Match.Status</span>
                                     </header>
                                     <div class="bracket-node-label">@node.Match.Label</div>
                                     <div class="bracket-athlete @(IsWinner(node.Match, node.Match.AthleteA) ? "winner" : string.Empty)">
@@ -325,7 +325,7 @@
                                              tabindex="0"
                                              role="button">
                                         <div class="item-head">
-                                            <span class="item-title">Match @match.MatchNumber</span>
+                                            <span class="bout-pill">Bout @DisplayBoutNumber(match)</span>
                                             <span class="item-meta">@match.Status</span>
                                         </div>
                                         <div class="helper">@match.Label</div>
@@ -357,9 +357,13 @@
         <section class="panel spacer-top">
             <div class="item-head">
                 <h2>Match Details</h2>
-                <span class="tag">Match @SelectedMatch.MatchNumber</span>
+                <span class="bout-pill">Bout @DisplayBoutNumber(SelectedMatch)</span>
             </div>
             <div class="form-grid spacer-top">
+                <div class="field">
+                    <label>Bout Number</label>
+                    <div class="item-title">Bout @DisplayBoutNumber(SelectedMatch)</div>
+                </div>
                 <div class="field">
                     <label>Status</label>
                     <div>@SelectedMatch.Status</div>
@@ -392,6 +396,47 @@
                 <button class="btn ghost" @onclick="SelectPreviousMatch" disabled="@(PreviousMatch is null)">Previous Match</button>
                 <button class="btn ghost" @onclick="SelectNextMatch" disabled="@(NextMatch is null)">Next Match</button>
             </div>
+            <div class="table-wrap spacer-top">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th colspan="6">Bout Scoring Breakdown</th>
+                        </tr>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Period</th>
+                            <th>Athlete</th>
+                            <th>Action</th>
+                            <th>Points</th>
+                            <th>Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (IsScoreboardBusy)
+                        {
+                            <tr><td colspan="6">Loading scoring breakdown...</td></tr>
+                        }
+                        else if (ScoreRowsForSelectedMatch.Count == 0)
+                        {
+                            <tr><td colspan="6">No scoring timeline is available for this bout yet.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var scoreRow in ScoreRowsForSelectedMatch)
+                            {
+                                <tr>
+                                    <td>@scoreRow.TimestampUtc.ToLocalTime().ToString("MMM dd h:mm:ss tt")</td>
+                                    <td>@scoreRow.Period</td>
+                                    <td>@scoreRow.Athlete</td>
+                                    <td>@scoreRow.Action</td>
+                                    <td>@scoreRow.Points</td>
+                                    <td>@scoreRow.AthleteAScore - @scoreRow.AthleteBScore</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
         </section>
     }
 }
@@ -413,7 +458,10 @@
     private string SearchText = string.Empty;
     private Guid? SelectedMatchId;
     private int ZoomPercent = 100;
+    private bool IsScoreboardBusy;
     private bool HideSmallPools = true;
+    private MatScoreboardSnapshot? SelectedScoreboard;
+    private IReadOnlyList<ScoreBreakdownRow> ScoreRowsForSelectedMatch => BuildScoreRowsForSelectedMatch();
     private const int MinimumPoolAthletes = 3;
     private ElementReference BracketViewportRef;
     private DotNetObjectReference<Brackets>? _viewportDotNetRef;
@@ -606,6 +654,7 @@
 
             EnsureDivisionSelection();
             EnsureSelectedMatch();
+            await LoadSelectedMatchScoreboardAsync();
 
             StatusSuccess = true;
             StatusMessage = $"Loaded visual bundle for {Bundle.EventName}.";
@@ -673,6 +722,7 @@
         if (candidateSet.Count == 0)
         {
             SelectedMatchId = null;
+            SelectedScoreboard = null;
             return;
         }
 
@@ -692,6 +742,7 @@
 
         SelectedMatchId = match.MatchId;
         Workflow.MatchId = match.MatchId;
+        _ = LoadSelectedMatchScoreboardAsync();
     }
 
     private void SelectPreviousMatch()
@@ -1092,6 +1143,128 @@
         return new EliminationLayout(rounds, nodes, connectors, width, height);
     }
 
+    private async Task LoadSelectedMatchScoreboardAsync()
+    {
+        if (SelectedMatchId is null)
+        {
+            SelectedScoreboard = null;
+            return;
+        }
+
+        IsScoreboardBusy = true;
+        try
+        {
+            var result = await ApiClient.GetMatScoreboardAsync(SelectedMatchId.Value);
+            SelectedScoreboard = result.Success ? result.Data : null;
+        }
+        catch (Exception ex)
+        {
+            SelectedScoreboard = null;
+            StatusSuccess = false;
+            StatusMessage = $"Unable to load scoring breakdown. {ex.Message}";
+        }
+        finally
+        {
+            IsScoreboardBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static int DisplayBoutNumber(BracketVisualMatch match) => match.BoutNumber ?? match.MatchNumber;
+
+    private IReadOnlyList<ScoreBreakdownRow> BuildScoreRowsForSelectedMatch()
+    {
+        if (SelectedMatch is null)
+        {
+            return [];
+        }
+
+        if (SelectedScoreboard is not null && SelectedScoreboard.Events.Count > 0)
+        {
+            return SelectedScoreboard.Events
+                .OrderByDescending(x => x.TimestampUtc)
+                .Select(x => new ScoreBreakdownRow(
+                    x.TimestampUtc,
+                    x.Period,
+                    ResolveCompetitorLabel(SelectedMatch, x.Competitor),
+                    x.ActionType,
+                    x.Points,
+                    x.AthleteAScore,
+                    x.AthleteBScore))
+                .ToList();
+        }
+
+        var finalScore = ParseFinalScore(SelectedMatch.Score);
+        if (finalScore is null)
+        {
+            return [];
+        }
+
+        var athleteAName = AthleteLabel(SelectedMatch.AthleteA);
+        var athleteBName = AthleteLabel(SelectedMatch.AthleteB);
+        var timestampUtc = SelectedScoreboard?.UpdatedUtc ?? DateTime.UtcNow;
+        var resultMethod = string.IsNullOrWhiteSpace(SelectedMatch.ResultMethod) ? "Decision" : SelectedMatch.ResultMethod;
+
+        return
+        [
+            new ScoreBreakdownRow(
+                timestampUtc,
+                0,
+                athleteAName,
+                "Final score summary",
+                finalScore.Value.AthleteAScore,
+                finalScore.Value.AthleteAScore,
+                finalScore.Value.AthleteBScore),
+            new ScoreBreakdownRow(
+                timestampUtc,
+                0,
+                athleteBName,
+                "Final score summary",
+                finalScore.Value.AthleteBScore,
+                finalScore.Value.AthleteAScore,
+                finalScore.Value.AthleteBScore),
+            new ScoreBreakdownRow(
+                timestampUtc,
+                0,
+                SelectedMatch.Winner?.Name ?? "Result",
+                $"Match result ({resultMethod})",
+                0,
+                finalScore.Value.AthleteAScore,
+                finalScore.Value.AthleteBScore)
+        ];
+    }
+
+    private static (int AthleteAScore, int AthleteBScore)? ParseFinalScore(string? score)
+    {
+        if (string.IsNullOrWhiteSpace(score))
+        {
+            return null;
+        }
+
+        var normalized = score.Trim();
+        var separator = normalized.IndexOf('-');
+        if (separator <= 0 || separator >= normalized.Length - 1)
+        {
+            return null;
+        }
+
+        var left = normalized[..separator].Trim();
+        var right = normalized[(separator + 1)..].Trim();
+        if (!int.TryParse(left, out var athleteAScore) || !int.TryParse(right, out var athleteBScore))
+        {
+            return null;
+        }
+
+        return (Math.Max(0, athleteAScore), Math.Max(0, athleteBScore));
+    }
+
+    private static string ResolveCompetitorLabel(BracketVisualMatch match, ScoreCompetitor competitor) => competitor switch
+    {
+        ScoreCompetitor.AthleteA => match.AthleteA?.Name ?? "Athlete A",
+        ScoreCompetitor.AthleteB => match.AthleteB?.Name ?? "Athlete B",
+        _ => "Official"
+    };
+
     private static string BracketsRoute(Guid eventId) => $"/brackets?eventId={eventId:D}";
     private static string EventRoute(Guid eventId) => $"/events/{eventId:D}";
 
@@ -1152,6 +1325,15 @@
         public static EliminationLayout Empty { get; } =
             new([], [], [], 480d, 420d);
     }
+
+    private sealed record ScoreBreakdownRow(
+        DateTime TimestampUtc,
+        int Period,
+        string Athlete,
+        string Action,
+        int Points,
+        int AthleteAScore,
+        int AthleteBScore);
 
     public async ValueTask DisposeAsync()
     {

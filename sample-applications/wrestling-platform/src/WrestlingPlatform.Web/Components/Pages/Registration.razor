@@ -3,6 +3,7 @@
 @inject PlatformApiClient ApiClient
 @inject WorkflowState Workflow
 @using WrestlingPlatform.Domain.Models
+@using System.Text.RegularExpressions
 
 <PageTitle>Tournament Registration - PinPoint Arena</PageTitle>
 
@@ -164,7 +165,7 @@
                 <select class="select" @bind="TournamentFormat">
                     @foreach (var format in Enum.GetValues<TournamentFormat>())
                     {
-                        <option value="@format">@format</option>
+                        <option value="@format">@FriendlyEnumLabel(format)</option>
                     }
                 </select>
             </div>
@@ -173,7 +174,7 @@
                 <select class="select" @bind="BracketReleaseMode">
                     @foreach (var mode in Enum.GetValues<BracketReleaseMode>())
                     {
-                        <option value="@mode">@mode</option>
+                        <option value="@mode">@FriendlyEnumLabel(mode)</option>
                     }
                 </select>
             </div>
@@ -186,7 +187,7 @@
                 <select class="select" @bind="BracketCreationMode">
                     @foreach (var mode in Enum.GetValues<BracketCreationMode>())
                     {
-                        <option value="@mode">@mode</option>
+                        <option value="@mode">@FriendlyEnumLabel(mode)</option>
                     }
                 </select>
             </div>
@@ -195,7 +196,7 @@
                 <select class="select" @bind="ScoringPreset">
                     @foreach (var preset in Enum.GetValues<ScoringPreset>())
                     {
-                        <option value="@preset">@preset</option>
+                        <option value="@preset">@FriendlyEnumLabel(preset)</option>
                     }
                 </select>
             </div>
@@ -212,7 +213,7 @@
                 <select class="select" @bind="OvertimeFormat">
                     @foreach (var format in Enum.GetValues<OvertimeFormat>())
                     {
-                        <option value="@format">@format</option>
+                        <option value="@format">@FriendlyEnumLabel(format)</option>
                     }
                 </select>
             </div>
@@ -252,11 +253,11 @@
                 </div>
                 <div class="metric-card">
                     <div class="metric-label">Format</div>
-                    <div class="metric-value">@Directory.Controls.TournamentFormat</div>
+                    <div class="metric-value">@FriendlyEnumLabel(Directory.Controls.TournamentFormat)</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-label">Scoring</div>
-                    <div class="metric-value">@Directory.Controls.ScoringPreset</div>
+                    <div class="metric-value">@FriendlyEnumLabel(Directory.Controls.ScoringPreset)</div>
                 </div>
             </div>
         }
@@ -327,8 +328,8 @@
                                 <td>@row.AgeGroup</td>
                                 <td>@FormatNoviceRule(row.NoviceRule)</td>
                                 <td>@row.WeightClass</td>
-                                <td>@row.Style</td>
-                                <td>@row.TournamentFormat</td>
+                                <td>@FriendlyEnumLabel(row.Style)</td>
+                                <td>@FriendlyEnumLabel(row.TournamentFormat)</td>
                                 <td>@row.RegistrantCount</td>
                             </tr>
                         }
@@ -796,5 +797,18 @@
             NoviceDivisionRule.NonNoviceOnly => "Non-novice only (> 2 years)",
             _ => "Open"
         };
+    }
+
+    private static string FriendlyEnumLabel<TEnum>(TEnum value) where TEnum : struct, Enum
+    {
+        var raw = value.ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+
+        var withSpaces = Regex.Replace(raw, "(?<=[a-z])(?=[A-Z])", " ");
+        withSpaces = withSpaces.Replace("K6", "K-6", StringComparison.Ordinal);
+        return withSpaces.Trim();
     }
 }

@@ -583,12 +583,6 @@ profiles.MapPost("/athletes", async (
         return Results.BadRequest("User does not exist.");
     }
 
-    var profileExists = await dbContext.AthleteProfiles.AnyAsync(x => x.UserAccountId == request.UserAccountId, cancellationToken);
-    if (profileExists)
-    {
-        return Results.Conflict("Athlete profile already exists for this user.");
-    }
-
     var safeExperienceYears = Math.Max(0m, decimal.Round(request.WrestlingExperienceYears, 2));
     var resolvedNoviceCategory = ResolveNoviceCategory(request.Level, safeExperienceYears, request.NoviceCategory);
     if (request.Level == CompetitionLevel.ElementaryK6
@@ -596,6 +590,27 @@ profiles.MapPost("/athletes", async (
         && request.NoviceCategory != resolvedNoviceCategory)
     {
         return Results.BadRequest("Elementary novice classification must align with wrestling experience (2 years or less = Novice).");
+    }
+
+    var existingProfile = await dbContext.AthleteProfiles
+        .FirstOrDefaultAsync(x => x.UserAccountId == request.UserAccountId, cancellationToken);
+
+    if (existingProfile is not null)
+    {
+        existingProfile.FirstName = request.FirstName.Trim();
+        existingProfile.LastName = request.LastName.Trim();
+        existingProfile.DateOfBirthUtc = request.DateOfBirthUtc;
+        existingProfile.State = request.State.Trim().ToUpperInvariant();
+        existingProfile.City = request.City.Trim();
+        existingProfile.SchoolOrClubName = request.SchoolOrClubName?.Trim();
+        existingProfile.Grade = request.Grade;
+        existingProfile.WeightClass = request.WeightClass;
+        existingProfile.Level = request.Level;
+        existingProfile.WrestlingExperienceYears = safeExperienceYears;
+        existingProfile.NoviceCategory = resolvedNoviceCategory;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.Ok(existingProfile);
     }
 
     var profile = new AthleteProfile
@@ -623,6 +638,23 @@ profiles.MapPost("/athletes", async (
     await dbContext.SaveChangesAsync(cancellationToken);
 
     return Results.Created($"/api/profiles/athletes/{profile.Id}", profile);
+});
+
+profiles.MapGet("/athletes/by-user/{userId:guid}", async (
+    Guid userId,
+    HttpContext httpContext,
+    WrestlingPlatformDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    if (!ApiSecurityHelpers.CanAccessUserResource(httpContext, userId))
+    {
+        return Results.Forbid();
+    }
+
+    var profile = await dbContext.AthleteProfiles.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.UserAccountId == userId, cancellationToken);
+
+    return profile is null ? Results.NotFound("Athlete profile not found.") : Results.Ok(profile);
 });
 
 profiles.MapPost("/coaches", async (
@@ -6528,6 +6560,67 @@ static async Task InitializeDemoRuntimeStateAsync(
                 athleteId,
                 EventId: null,
                 MaxMatches: 12));
+        }
+
+        var demoAthleteProfileIds = await dbContext.AthleteProfiles
+            .AsNoTracking()
+            .Join(
+                dbContext.UserAccounts.AsNoTracking(),
+                profile => profile.UserAccountId,
+                user => user.Id,
+                (profile, user) => new { profile.Id, user.Email })
+            .Where(x => x.Email == "demo.athlete@pinpointarena.local")
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        if (demoAthleteProfileIds.Count > 0)
+        {
+            var fallbackMatches = completedMatches
+                .OrderByDescending(x => x.CompletedUtc)
+                .ThenBy(x => x.Id)
+                .Take(12)
+                .ToList();
+
+            foreach (var athleteId in demoAthleteProfileIds)
+            {
+                var existingVideos = mediaPipelineService.GetAthleteVideos(athleteId);
+                var missingVideos = Math.Max(0, 4 - existingVideos.Count);
+
+                for (var index = 0; index < missingVideos && fallbackMatches.Count > 0; index++)
+                {
+                    var sourceMatch = fallbackMatches[index % fallbackMatches.Count];
+                    var eventId = bracketEventById.GetValueOrDefault(sourceMatch.BracketId, Guid.Empty);
+                    if (eventId == Guid.Empty)
+                    {
+                        continue;
+                    }
+
+                    var sourceUrl = samplePlaybackUrls.Count == 0
+                        ? "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+                        : samplePlaybackUrls[index % samplePlaybackUrls.Count];
+
+                    var normalizedPlayback = NormalizePlaybackUrlForClient(
+                        sourceUrl,
+                        eventId,
+                        sourceMatch.Id,
+                        samplePlaybackUrls);
+
+                    mediaPipelineService.CreateVideoAsset(new CreateVideoAssetRequest(
+                        athleteId,
+                        sourceMatch.Id,
+                        StreamId: null,
+                        normalizedPlayback,
+                        QueueTranscode: false));
+                }
+
+                if (mediaPipelineService.GetAiJobs(athleteId).Count == 0)
+                {
+                    mediaPipelineService.QueueAiHighlights(new QueueAiHighlightsRequest(
+                        athleteId,
+                        EventId: null,
+                        MaxMatches: 12));
+                }
+            }
         }
 
         for (var tick = 0; tick < 40; tick++)
