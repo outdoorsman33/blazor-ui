@@ -30,6 +30,8 @@ public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatfor
     public DbSet<AthleteChatParticipant> AthleteChatParticipants => Set<AthleteChatParticipant>();
     public DbSet<AthleteChatMessage> AthleteChatMessages => Set<AthleteChatMessage>();
     public DbSet<AthleteChatMessageReport> AthleteChatMessageReports => Set<AthleteChatMessageReport>();
+    public DbSet<AthleteChatMessageReaction> AthleteChatMessageReactions => Set<AthleteChatMessageReaction>();
+    public DbSet<AthleteChatAthleteLock> AthleteChatAthleteLocks => Set<AthleteChatAthleteLock>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,5 +61,9 @@ public sealed class WrestlingPlatformDbContext(DbContextOptions<WrestlingPlatfor
         modelBuilder.Entity<AthleteChatMessage>().HasIndex(x => new { x.UserAccountId, x.CreatedUtc });
         modelBuilder.Entity<AthleteChatMessageReport>().HasIndex(x => new { x.MessageId, x.ReportedByUserAccountId }).IsUnique();
         modelBuilder.Entity<AthleteChatMessageReport>().HasIndex(x => new { x.IsResolved, x.CreatedUtc });
+        modelBuilder.Entity<AthleteChatMessageReaction>().HasIndex(x => new { x.MessageId, x.UserAccountId, x.Emoji }).IsUnique();
+        modelBuilder.Entity<AthleteChatMessageReaction>().HasIndex(x => new { x.MessageId, x.Emoji });
+        modelBuilder.Entity<AthleteChatAthleteLock>().HasIndex(x => x.AthleteProfileId).IsUnique();
+        modelBuilder.Entity<AthleteChatAthleteLock>().HasIndex(x => new { x.UserAccountId, x.IsActive, x.LockedUntilUtc });
     }
 }

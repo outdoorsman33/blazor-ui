@@ -1,0 +1,408 @@
+@page "/ops/chat-moderation-portal"
+@using WrestlingPlatform.Application.Contracts
+@using WrestlingPlatform.Domain.Models
+@inject PlatformApiClient ApiClient
+@inject AuthSession AuthSession
+
+<PageTitle>Chat Moderation Portal - PinPoint Arena</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1 class="page-title">Hidden Chat Moderation Portal</h1>
+        <p class="page-subtitle">Admin controls for athlete chat privacy, moderation, lock actions, and thread visibility.</p>
+    </div>
+    <div class="tag-row">
+        <span class="tag">Director/Admin Only</span>
+        <span class="tag">Global Thread Search</span>
+        <span class="tag">Athlete Lock Tools</span>
+    </div>
+</div>
+
+@if (!AuthSession.IsAuthenticated)
+{
+    <section class="panel">
+        <h2>Sign-in Required</h2>
+        <p class="helper spacer-top">This hidden moderation portal is available only to authorized directors and admins.</p>
+    </section>
+}
+else if (!CanAccessPortal)
+{
+    <section class="panel">
+        <h2>Restricted</h2>
+        <p class="helper spacer-top">Only tournament directors and platform admins can access this portal.</p>
+    </section>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(StatusMessage))
+    {
+        <div class="alert @(StatusSuccess ? "success" : "error")">@StatusMessage</div>
+    }
+
+    <section class="panel">
+        <div class="item-head">
+            <h2>Thread Controls</h2>
+            <button class="btn ghost" @onclick="LoadThreadsAsync" disabled="@IsBusy">Refresh Threads</button>
+        </div>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Search</label>
+                <input class="input" @bind="ThreadQuery" placeholder="thread, athlete, city..." />
+            </div>
+            <div class="field">
+                <label>Kind</label>
+                <select class="select" @bind="ThreadKindFilter">
+                    <option value="All">All</option>
+                    <option value="Lounge">Lounge</option>
+                    <option value="Direct">Direct</option>
+                    <option value="Group">Group</option>
+                </select>
+            </div>
+            <div class="field check-row">
+                <input id="reportedOnly" type="checkbox" @bind="ThreadReportedOnly" />
+                <label for="reportedOnly">Reported only</label>
+            </div>
+        </div>
+
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Thread</th>
+                        <th>Kind</th>
+                        <th>Participants</th>
+                        <th>Messages</th>
+                        <th>Reported</th>
+                        <th>Last Activity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (AdminThreads.Count == 0)
+                    {
+                        <tr><td colspan="6">No thread records loaded.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var thread in AdminThreads)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="item-title">@thread.Name</div>
+                                    <div class="helper">@thread.LastMessagePreview</div>
+                                </td>
+                                <td>@thread.Kind</td>
+                                <td>@thread.ParticipantCount</td>
+                                <td>@thread.MessageCount</td>
+                                <td>@thread.ReportedMessageCount</td>
+                                <td>@(thread.LastMessageUtc?.ToLocalTime().ToString("MMM dd h:mm tt") ?? "-")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel spacer-top">
+        <div class="item-head">
+            <h2>Athlete Lock Controls</h2>
+            <button class="btn ghost" @onclick="LoadAthletesAsync" disabled="@IsBusy">Refresh Athletes</button>
+        </div>
+        <div class="form-grid spacer-top">
+            <div class="field">
+                <label>Athlete Search</label>
+                <input class="input" @bind="AthleteQuery" placeholder="athlete, state, city" />
+            </div>
+            <div class="field check-row">
+                <input id="lockedOnly" type="checkbox" @bind="AthleteLockedOnly" />
+                <label for="lockedOnly">Show locked only</label>
+            </div>
+            <div class="field">
+                <label>Lock Minutes</label>
+                <input class="input" type="number" min="5" max="10080" @bind="LockMinutes" />
+            </div>
+            <div class="field">
+                <label>Lock Reason</label>
+                <input class="input" @bind="LockReason" placeholder="Safety or policy reason" />
+            </div>
+        </div>
+
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Athlete</th>
+                        <th>Level</th>
+                        <th>Location</th>
+                        <th>Lock Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (AdminAthletes.Count == 0)
+                    {
+                        <tr><td colspan="5">No athlete records loaded.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var athlete in AdminAthletes)
+                        {
+                            <tr>
+                                <td>@athlete.DisplayName</td>
+                                <td>@athlete.Level</td>
+                                <td>@athlete.State @athlete.City</td>
+                                <td>
+                                    @if (athlete.IsLocked)
+                                    {
+                                        <span class="tag danger">Locked until @(athlete.LockedUntilUtc?.ToLocalTime().ToString("MMM dd h:mm tt") ?? "-")</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="tag">Unlocked</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (athlete.IsLocked)
+                                    {
+                                        <button class="btn ghost" @onclick="() => UnlockAthleteAsync(athlete.AthleteProfileId)" disabled="@IsBusy">Unlock</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn secondary" @onclick="() => LockAthleteAsync(athlete.AthleteProfileId)" disabled="@IsBusy">Lock</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel spacer-top">
+        <div class="item-head">
+            <h2>Lock History</h2>
+            <button class="btn ghost" @onclick="LoadLocksAsync" disabled="@IsBusy">Refresh Locks</button>
+        </div>
+        <div class="table-wrap spacer-top">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Athlete</th>
+                        <th>Status</th>
+                        <th>Reason</th>
+                        <th>Locked By</th>
+                        <th>Until</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (AdminLocks.Count == 0)
+                    {
+                        <tr><td colspan="5">No lock records found.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var lockRow in AdminLocks)
+                        {
+                            <tr>
+                                <td>@lockRow.AthleteName</td>
+                                <td>@(lockRow.IsActive ? "Active" : "Released")</td>
+                                <td>@lockRow.Reason</td>
+                                <td>@lockRow.LockedByEmail</td>
+                                <td>@lockRow.LockedUntilUtc.ToLocalTime().ToString("MMM dd h:mm tt")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@code {
+    private bool IsLoadingThreads;
+    private bool IsLoadingAthletes;
+    private bool IsLoadingLocks;
+    private bool IsMutating;
+    private bool StatusSuccess;
+    private string? StatusMessage;
+
+    private string ThreadQuery = string.Empty;
+    private string ThreadKindFilter = "All";
+    private bool ThreadReportedOnly;
+
+    private string AthleteQuery = string.Empty;
+    private bool AthleteLockedOnly;
+    private int LockMinutes = 60;
+    private string LockReason = "Athlete chat lock issued by moderation portal.";
+
+    private List<AthleteChatAdminThreadRow> AdminThreads = [];
+    private List<AthleteChatAdminAthleteRow> AdminAthletes = [];
+    private List<AthleteChatAthleteLockView> AdminLocks = [];
+
+    private bool IsBusy => IsLoadingThreads || IsLoadingAthletes || IsLoadingLocks || IsMutating;
+    private bool CanAccessPortal => AuthSession.Role is UserRole.TournamentDirector or UserRole.SystemAdmin or UserRole.SchoolAdmin or UserRole.ClubAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthSession.IsAuthenticated && CanAccessPortal)
+        {
+            await LoadThreadsAsync();
+            await LoadAthletesAsync();
+            await LoadLocksAsync();
+        }
+    }
+
+    private async Task LoadThreadsAsync()
+    {
+        IsLoadingThreads = true;
+        try
+        {
+            AthleteChatThreadKind? kind = ThreadKindFilter.Equals("All", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : Enum.TryParse<AthleteChatThreadKind>(ThreadKindFilter, true, out var parsedKind) ? parsedKind : null;
+
+            var result = await ApiClient.GetAthleteChatAdminThreadsAsync(
+                query: ThreadQuery,
+                kind: kind,
+                reportedOnly: ThreadReportedOnly,
+                includeArchived: false,
+                take: 220);
+
+            if (!result.Success || result.Data is null)
+            {
+                SetStatus(false, result.Message);
+                AdminThreads = [];
+                return;
+            }
+
+            AdminThreads = result.Data;
+            SetStatus(true, $"Loaded {AdminThreads.Count} thread record(s).");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to load thread moderation data. {ex.Message}");
+        }
+        finally
+        {
+            IsLoadingThreads = false;
+        }
+    }
+
+    private async Task LoadAthletesAsync()
+    {
+        IsLoadingAthletes = true;
+        try
+        {
+            var result = await ApiClient.GetAthleteChatAdminAthletesAsync(
+                query: AthleteQuery,
+                lockedOnly: AthleteLockedOnly,
+                take: 220);
+
+            if (!result.Success || result.Data is null)
+            {
+                SetStatus(false, result.Message);
+                AdminAthletes = [];
+                return;
+            }
+
+            AdminAthletes = result.Data;
+            SetStatus(true, $"Loaded {AdminAthletes.Count} athlete moderation record(s).");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to load athlete moderation data. {ex.Message}");
+        }
+        finally
+        {
+            IsLoadingAthletes = false;
+        }
+    }
+
+    private async Task LoadLocksAsync()
+    {
+        IsLoadingLocks = true;
+        try
+        {
+            var result = await ApiClient.GetAthleteChatAdminLocksAsync(query: AthleteQuery, activeOnly: null, take: 220);
+            if (!result.Success || result.Data is null)
+            {
+                SetStatus(false, result.Message);
+                AdminLocks = [];
+                return;
+            }
+
+            AdminLocks = result.Data;
+            SetStatus(true, $"Loaded {AdminLocks.Count} lock history record(s).");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to load lock history. {ex.Message}");
+        }
+        finally
+        {
+            IsLoadingLocks = false;
+        }
+    }
+
+    private async Task LockAthleteAsync(Guid athleteProfileId)
+    {
+        IsMutating = true;
+        try
+        {
+            var request = new UpsertAthleteChatAthleteLockRequest(Math.Clamp(LockMinutes, 5, 10080), LockReason);
+            var result = await ApiClient.LockAthleteChatAthleteAsync(athleteProfileId, request);
+            if (!result.Success)
+            {
+                SetStatus(false, result.Message);
+                return;
+            }
+
+            SetStatus(true, "Athlete chat lock applied.");
+            await LoadAthletesAsync();
+            await LoadLocksAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to lock athlete chat access. {ex.Message}");
+        }
+        finally
+        {
+            IsMutating = false;
+        }
+    }
+
+    private async Task UnlockAthleteAsync(Guid athleteProfileId)
+    {
+        IsMutating = true;
+        try
+        {
+            var result = await ApiClient.UnlockAthleteChatAthleteAsync(athleteProfileId);
+            if (!result.Success)
+            {
+                SetStatus(false, result.Message);
+                return;
+            }
+
+            SetStatus(true, "Athlete chat lock released.");
+            await LoadAthletesAsync();
+            await LoadLocksAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to unlock athlete chat access. {ex.Message}");
+        }
+        finally
+        {
+            IsMutating = false;
+        }
+    }
+
+    private void SetStatus(bool ok, string? message)
+    {
+        StatusSuccess = ok;
+        StatusMessage = string.IsNullOrWhiteSpace(message)
+            ? (ok ? "Completed." : "Request failed.")
+            : message;
+    }
+}

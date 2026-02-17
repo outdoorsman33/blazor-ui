@@ -122,7 +122,8 @@ public enum StreamStatus
 public enum AthleteChatThreadKind
 {
     Lounge,
-    Direct
+    Direct,
+    Group
 }
 
 public enum AthleteChatMessageModerationStatus
@@ -420,4 +421,23 @@ public sealed class AthleteChatMessageReport : Entity
     public string Reason { get; set; } = string.Empty;
     public bool IsResolved { get; set; }
     public DateTime? ResolvedUtc { get; set; }
+}
+
+public sealed class AthleteChatMessageReaction : Entity
+{
+    public Guid MessageId { get; set; }
+    public Guid UserAccountId { get; set; }
+    public string Emoji { get; set; } = string.Empty;
+}
+
+public sealed class AthleteChatAthleteLock : Entity
+{
+    public Guid AthleteProfileId { get; set; }
+    public Guid UserAccountId { get; set; }
+    public Guid LockedByUserAccountId { get; set; }
+    public DateTime LockedUntilUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
+    public DateTime? ReleasedUtc { get; set; }
+    public Guid? ReleasedByUserAccountId { get; set; }
 }

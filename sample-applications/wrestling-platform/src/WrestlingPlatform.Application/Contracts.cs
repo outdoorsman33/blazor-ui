@@ -142,11 +142,15 @@ public sealed record UpdateStreamStatusRequest(StreamStatus Status);
 
 public sealed record StartDirectAthleteChatRequest(Guid TargetAthleteProfileId);
 
+public sealed record StartGroupAthleteChatRequest(string Name, List<Guid> AthleteProfileIds);
+
 public sealed record SendAthleteChatMessageRequest(string Body);
 
 public sealed record ReportAthleteChatMessageRequest(string Reason);
 
 public sealed record MuteAthleteChatThreadRequest(int Minutes);
+
+public sealed record ToggleAthleteChatReactionRequest(string Emoji);
 
 public sealed record AthleteChatParticipantSummary(
     Guid UserAccountId,
@@ -156,6 +160,11 @@ public sealed record AthleteChatParticipantSummary(
     string State,
     string City);
 
+public sealed record AthleteChatReactionSummary(
+    string Emoji,
+    int Count,
+    bool IsMine);
+
 public sealed record AthleteChatThreadSummary(
     Guid ThreadId,
     string Name,
@@ -164,7 +173,10 @@ public sealed record AthleteChatThreadSummary(
     int UnreadCount,
     bool IsMuted,
     string? LastMessagePreview,
-    List<AthleteChatParticipantSummary> Participants);
+    List<AthleteChatParticipantSummary> Participants,
+    bool IsPostingLocked,
+    DateTime? PostingLockedUntilUtc,
+    string? PostingLockReason);
 
 public sealed record AthleteChatMessageView(
     Guid MessageId,
@@ -175,7 +187,8 @@ public sealed record AthleteChatMessageView(
     string Body,
     AthleteChatMessageModerationStatus ModerationStatus,
     DateTime CreatedUtc,
-    bool IsMine);
+    bool IsMine,
+    List<AthleteChatReactionSummary> Reactions);
 
 public sealed record AthleteChatDirectoryEntry(
     Guid UserAccountId,
@@ -185,6 +198,46 @@ public sealed record AthleteChatDirectoryEntry(
     string State,
     string City,
     string? SchoolOrClubName);
+
+public sealed record UpsertAthleteChatAthleteLockRequest(int Minutes, string Reason);
+
+public sealed record AthleteChatAthleteLockView(
+    Guid LockId,
+    Guid AthleteProfileId,
+    Guid UserAccountId,
+    string AthleteName,
+    string AthleteState,
+    string AthleteCity,
+    DateTime LockedUntilUtc,
+    bool IsActive,
+    string Reason,
+    Guid LockedByUserAccountId,
+    string LockedByEmail,
+    DateTime CreatedUtc,
+    DateTime? ReleasedUtc);
+
+public sealed record AthleteChatAdminThreadRow(
+    Guid ThreadId,
+    string Name,
+    AthleteChatThreadKind Kind,
+    bool IsArchived,
+    int ParticipantCount,
+    int MessageCount,
+    int ReportedMessageCount,
+    DateTime? LastMessageUtc,
+    string? LastMessagePreview,
+    List<AthleteChatParticipantSummary> Participants);
+
+public sealed record AthleteChatAdminAthleteRow(
+    Guid UserAccountId,
+    Guid AthleteProfileId,
+    string DisplayName,
+    CompetitionLevel Level,
+    string State,
+    string City,
+    bool IsLocked,
+    DateTime? LockedUntilUtc,
+    string? LockReason);
 
 public sealed record UpdateTournamentControlSettingsRequest(
     TournamentFormat TournamentFormat,

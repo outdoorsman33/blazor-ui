@@ -206,6 +206,33 @@ public static class DependencyInjection
                     CONSTRAINT "PK_AthleteChatMessageReports" PRIMARY KEY ("Id")
                 );
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS "AthleteChatMessageReactions"
+                (
+                    "Id" uuid NOT NULL,
+                    "CreatedUtc" timestamp with time zone NOT NULL,
+                    "MessageId" uuid NOT NULL,
+                    "UserAccountId" uuid NOT NULL,
+                    "Emoji" text NOT NULL,
+                    CONSTRAINT "PK_AthleteChatMessageReactions" PRIMARY KEY ("Id")
+                );
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS "AthleteChatAthleteLocks"
+                (
+                    "Id" uuid NOT NULL,
+                    "CreatedUtc" timestamp with time zone NOT NULL,
+                    "AthleteProfileId" uuid NOT NULL,
+                    "UserAccountId" uuid NOT NULL,
+                    "LockedByUserAccountId" uuid NOT NULL,
+                    "LockedUntilUtc" timestamp with time zone NOT NULL,
+                    "Reason" text NOT NULL,
+                    "IsActive" boolean NOT NULL,
+                    "ReleasedUtc" timestamp with time zone NULL,
+                    "ReleasedByUserAccountId" uuid NULL,
+                    CONSTRAINT "PK_AthleteChatAthleteLocks" PRIMARY KEY ("Id")
+                );
+                """,
                 @"CREATE INDEX IF NOT EXISTS ""IX_TournamentEvents_CreatedByUserAccountId"" ON ""TournamentEvents"" (""CreatedByUserAccountId"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_Matches_BracketId_BoutNumber"" ON ""Matches"" (""BracketId"", ""BoutNumber"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""Status"");",
@@ -220,7 +247,11 @@ public static class DependencyInjection
                 @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessages_ThreadId_CreatedUtc"" ON ""AthleteChatMessages"" (""ThreadId"", ""CreatedUtc"");",
                 @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessages_UserAccountId_CreatedUtc"" ON ""AthleteChatMessages"" (""UserAccountId"", ""CreatedUtc"");",
                 @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_MessageId_ReportedByUserAccountId"" ON ""AthleteChatMessageReports"" (""MessageId"", ""ReportedByUserAccountId"");",
-                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_IsResolved_CreatedUtc"" ON ""AthleteChatMessageReports"" (""IsResolved"", ""CreatedUtc"");"
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_IsResolved_CreatedUtc"" ON ""AthleteChatMessageReports"" (""IsResolved"", ""CreatedUtc"");",
+                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReactions_MessageId_UserAccountId_Emoji"" ON ""AthleteChatMessageReactions"" (""MessageId"", ""UserAccountId"", ""Emoji"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReactions_MessageId_Emoji"" ON ""AthleteChatMessageReactions"" (""MessageId"", ""Emoji"");",
+                @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_AthleteProfileId"" ON ""AthleteChatAthleteLocks"" (""AthleteProfileId"");",
+                @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_UserAccountId_IsActive_LockedUntilUtc"" ON ""AthleteChatAthleteLocks"" (""UserAccountId"", ""IsActive"", ""LockedUntilUtc"");"
             };
 
             foreach (var statement in statements)
@@ -375,6 +406,33 @@ public static class DependencyInjection
                 CONSTRAINT "PK_AthleteChatMessageReports" PRIMARY KEY ("Id")
             );
             """,
+            """
+            CREATE TABLE IF NOT EXISTS "AthleteChatMessageReactions"
+            (
+                "Id" TEXT NOT NULL,
+                "CreatedUtc" TEXT NOT NULL,
+                "MessageId" TEXT NOT NULL,
+                "UserAccountId" TEXT NOT NULL,
+                "Emoji" TEXT NOT NULL,
+                CONSTRAINT "PK_AthleteChatMessageReactions" PRIMARY KEY ("Id")
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "AthleteChatAthleteLocks"
+            (
+                "Id" TEXT NOT NULL,
+                "CreatedUtc" TEXT NOT NULL,
+                "AthleteProfileId" TEXT NOT NULL,
+                "UserAccountId" TEXT NOT NULL,
+                "LockedByUserAccountId" TEXT NOT NULL,
+                "LockedUntilUtc" TEXT NOT NULL,
+                "Reason" TEXT NOT NULL,
+                "IsActive" INTEGER NOT NULL,
+                "ReleasedUtc" TEXT NULL,
+                "ReleasedByUserAccountId" TEXT NULL,
+                CONSTRAINT "PK_AthleteChatAthleteLocks" PRIMARY KEY ("Id")
+            );
+            """,
             @"CREATE INDEX IF NOT EXISTS ""IX_TournamentEvents_CreatedByUserAccountId"" ON ""TournamentEvents"" (""CreatedByUserAccountId"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_Matches_BracketId_BoutNumber"" ON ""Matches"" (""BracketId"", ""BoutNumber"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_StreamSessions_TournamentEventId_Status"" ON ""StreamSessions"" (""TournamentEventId"", ""Status"");",
@@ -389,7 +447,11 @@ public static class DependencyInjection
             @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessages_ThreadId_CreatedUtc"" ON ""AthleteChatMessages"" (""ThreadId"", ""CreatedUtc"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessages_UserAccountId_CreatedUtc"" ON ""AthleteChatMessages"" (""UserAccountId"", ""CreatedUtc"");",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_MessageId_ReportedByUserAccountId"" ON ""AthleteChatMessageReports"" (""MessageId"", ""ReportedByUserAccountId"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_IsResolved_CreatedUtc"" ON ""AthleteChatMessageReports"" (""IsResolved"", ""CreatedUtc"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReports_IsResolved_CreatedUtc"" ON ""AthleteChatMessageReports"" (""IsResolved"", ""CreatedUtc"");",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReactions_MessageId_UserAccountId_Emoji"" ON ""AthleteChatMessageReactions"" (""MessageId"", ""UserAccountId"", ""Emoji"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatMessageReactions_MessageId_Emoji"" ON ""AthleteChatMessageReactions"" (""MessageId"", ""Emoji"");",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_AthleteProfileId"" ON ""AthleteChatAthleteLocks"" (""AthleteProfileId"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_AthleteChatAthleteLocks_UserAccountId_IsActive_LockedUntilUtc"" ON ""AthleteChatAthleteLocks"" (""UserAccountId"", ""IsActive"", ""LockedUntilUtc"");"
         };
 
         foreach (var statement in sqliteStatements)
@@ -2765,7 +2827,9 @@ public static class DependencyInjection
 
     private static async Task ClearAllDataAsync(WrestlingPlatformDbContext dbContext, CancellationToken cancellationToken)
     {
+        await dbContext.AthleteChatMessageReactions.ExecuteDeleteAsync(cancellationToken);
         await dbContext.AthleteChatMessageReports.ExecuteDeleteAsync(cancellationToken);
+        await dbContext.AthleteChatAthleteLocks.ExecuteDeleteAsync(cancellationToken);
         await dbContext.AthleteChatMessages.ExecuteDeleteAsync(cancellationToken);
         await dbContext.AthleteChatParticipants.ExecuteDeleteAsync(cancellationToken);
         await dbContext.AthleteChatThreads.ExecuteDeleteAsync(cancellationToken);
@@ -3500,7 +3564,7 @@ public static class DependencyInjection
                 cancellationToken);
         }
 
-        await EnsureAthleteChatMessageAsync(
+        var loungeMessageA = await EnsureAthleteChatMessageAsync(
             dbContext,
             loungeThread.Id,
             athleteUsersByEmail[demoAthleteEmail].Id,
@@ -3511,7 +3575,7 @@ public static class DependencyInjection
             nowUtc.AddMinutes(-35),
             cancellationToken);
 
-        await EnsureAthleteChatMessageAsync(
+        _ = await EnsureAthleteChatMessageAsync(
             dbContext,
             loungeThread.Id,
             athleteUsersByEmail[noahEmail].Id,
@@ -3522,7 +3586,7 @@ public static class DependencyInjection
             nowUtc.AddMinutes(-33),
             cancellationToken);
 
-        await EnsureAthleteChatMessageAsync(
+        _ = await EnsureAthleteChatMessageAsync(
             dbContext,
             loungeThread.Id,
             athleteUsersByEmail[miaEmail].Id,
@@ -3603,7 +3667,7 @@ public static class DependencyInjection
             lastReadMessageUtc: nowUtc.AddMinutes(-5),
             cancellationToken);
 
-        await EnsureAthleteChatMessageAsync(
+        _ = await EnsureAthleteChatMessageAsync(
             dbContext,
             demoNoahThread.Id,
             athleteUsersByEmail[demoAthleteEmail].Id,
@@ -3614,7 +3678,7 @@ public static class DependencyInjection
             nowUtc.AddMinutes(-11),
             cancellationToken);
 
-        await EnsureAthleteChatMessageAsync(
+        var noahDirectMessageB = await EnsureAthleteChatMessageAsync(
             dbContext,
             demoNoahThread.Id,
             athleteUsersByEmail[noahEmail].Id,
@@ -3625,7 +3689,7 @@ public static class DependencyInjection
             nowUtc.AddMinutes(-9),
             cancellationToken);
 
-        await EnsureAthleteChatMessageAsync(
+        _ = await EnsureAthleteChatMessageAsync(
             dbContext,
             demoNoahThread.Id,
             athleteUsersByEmail[demoAthleteEmail].Id,
@@ -3668,7 +3732,7 @@ public static class DependencyInjection
             lastReadMessageUtc: nowUtc.AddMinutes(-7),
             cancellationToken);
 
-        await EnsureAthleteChatMessageAsync(
+        var sophiaDirectMessageA = await EnsureAthleteChatMessageAsync(
             dbContext,
             demoSophiaThread.Id,
             athleteUsersByEmail[sophiaEmail].Id,
@@ -3679,7 +3743,7 @@ public static class DependencyInjection
             nowUtc.AddMinutes(-7),
             cancellationToken);
 
-        await EnsureAthleteChatMessageAsync(
+        _ = await EnsureAthleteChatMessageAsync(
             dbContext,
             demoSophiaThread.Id,
             athleteUsersByEmail[demoAthleteEmail].Id,
@@ -3688,6 +3752,106 @@ public static class DependencyInjection
             AthleteChatMessageModerationStatus.Published,
             containsRestrictedContent: false,
             nowUtc.AddMinutes(-2),
+            cancellationToken);
+
+        var filmStudyThread = await EnsureAthleteChatThreadAsync(
+            dbContext,
+            AthleteChatThreadKind.Group,
+            "Group: Midwest Film Room",
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            directPairKey: null,
+            isArchived: false,
+            lastMessageUtc: nowUtc.AddMinutes(-1),
+            cancellationToken);
+
+        var groupParticipants = new[]
+        {
+            demoAthleteEmail,
+            noahEmail,
+            sophiaEmail,
+            gabeEmail
+        };
+
+        foreach (var email in groupParticipants)
+        {
+            await EnsureAthleteChatParticipantAsync(
+                dbContext,
+                filmStudyThread.Id,
+                athleteUsersByEmail[email].Id,
+                athleteProfilesByEmail[email].Id,
+                canPost: true,
+                mutedUntilUtc: null,
+                lastReadMessageUtc: nowUtc.AddMinutes(-2),
+                cancellationToken);
+        }
+
+        _ = await EnsureAthleteChatMessageAsync(
+            dbContext,
+            filmStudyThread.Id,
+            athleteUsersByEmail[gabeEmail].Id,
+            athleteProfilesByEmail[gabeEmail].Id,
+            "Group thread for film review only. Drop takedown setups and counter notes.",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-6),
+            cancellationToken);
+
+        var groupMessageB = await EnsureAthleteChatMessageAsync(
+            dbContext,
+            filmStudyThread.Id,
+            athleteUsersByEmail[sophiaEmail].Id,
+            athleteProfilesByEmail[sophiaEmail].Id,
+            "I uploaded clips from edge finishes. We can break down hand position before weigh-ins.",
+            AthleteChatMessageModerationStatus.Published,
+            containsRestrictedContent: false,
+            nowUtc.AddMinutes(-3),
+            cancellationToken);
+
+        await EnsureAthleteChatMessageReactionAsync(
+            dbContext,
+            loungeMessageA.Id,
+            athleteUsersByEmail[noahEmail].Id,
+            "\uD83D\uDD25",
+            cancellationToken);
+
+        await EnsureAthleteChatMessageReactionAsync(
+            dbContext,
+            loungeMessageA.Id,
+            athleteUsersByEmail[miaEmail].Id,
+            "\uD83D\uDC4F",
+            cancellationToken);
+
+        await EnsureAthleteChatMessageReactionAsync(
+            dbContext,
+            noahDirectMessageB.Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            "\uD83D\uDCAA",
+            cancellationToken);
+
+        await EnsureAthleteChatMessageReactionAsync(
+            dbContext,
+            sophiaDirectMessageA.Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            "\uD83D\uDE4C",
+            cancellationToken);
+
+        await EnsureAthleteChatMessageReactionAsync(
+            dbContext,
+            groupMessageB.Id,
+            athleteUsersByEmail[noahEmail].Id,
+            "\uD83C\uDFA5",
+            cancellationToken);
+
+        await EnsureAthleteChatAthleteLockAsync(
+            dbContext,
+            athleteProfilesByEmail[nolanEmail].Id,
+            athleteUsersByEmail[nolanEmail].Id,
+            athleteUsersByEmail[demoAthleteEmail].Id,
+            nowUtc.AddMinutes(50),
+            "Temporary athlete-chat lock after repeated unsafe contact requests.",
+            isActive: true,
+            releasedUtc: null,
+            releasedByUserAccountId: null,
             cancellationToken);
     }
 
@@ -3714,7 +3878,7 @@ public static class DependencyInjection
         var thread = dbContext.AthleteChatThreads.Local.FirstOrDefault(
             x => x.Kind == kind
                  && ((kind == AthleteChatThreadKind.Direct && x.DirectPairKey == normalizedPairKey)
-                     || (kind == AthleteChatThreadKind.Lounge && x.Name == normalizedName)));
+                     || ((kind == AthleteChatThreadKind.Lounge || kind == AthleteChatThreadKind.Group) && x.Name == normalizedName)));
 
         if (thread is null)
         {
@@ -3723,7 +3887,7 @@ public static class DependencyInjection
                     x => x.Kind == AthleteChatThreadKind.Direct && x.DirectPairKey == normalizedPairKey,
                     cancellationToken)
                 : await dbContext.AthleteChatThreads.FirstOrDefaultAsync(
-                    x => x.Kind == AthleteChatThreadKind.Lounge && x.Name == normalizedName,
+                    x => x.Kind == kind && x.Name == normalizedName,
                     cancellationToken);
         }
 
@@ -3865,6 +4029,86 @@ public static class DependencyInjection
         report.IsResolved = isResolved;
         report.ResolvedUtc = resolvedUtc;
         return report;
+    }
+
+    private static async Task<AthleteChatMessageReaction> EnsureAthleteChatMessageReactionAsync(
+        WrestlingPlatformDbContext dbContext,
+        Guid messageId,
+        Guid userAccountId,
+        string emoji,
+        CancellationToken cancellationToken)
+    {
+        var normalizedEmoji = emoji.Trim();
+        var reaction = dbContext.AthleteChatMessageReactions.Local.FirstOrDefault(
+            x => x.MessageId == messageId
+                 && x.UserAccountId == userAccountId
+                 && x.Emoji == normalizedEmoji);
+
+        if (reaction is null)
+        {
+            reaction = await dbContext.AthleteChatMessageReactions.FirstOrDefaultAsync(
+                x => x.MessageId == messageId
+                     && x.UserAccountId == userAccountId
+                     && x.Emoji == normalizedEmoji,
+                cancellationToken);
+        }
+
+        if (reaction is null)
+        {
+            reaction = new AthleteChatMessageReaction
+            {
+                MessageId = messageId,
+                UserAccountId = userAccountId,
+                Emoji = normalizedEmoji
+            };
+
+            dbContext.AthleteChatMessageReactions.Add(reaction);
+        }
+
+        reaction.Emoji = normalizedEmoji;
+        return reaction;
+    }
+
+    private static async Task<AthleteChatAthleteLock> EnsureAthleteChatAthleteLockAsync(
+        WrestlingPlatformDbContext dbContext,
+        Guid athleteProfileId,
+        Guid userAccountId,
+        Guid lockedByUserAccountId,
+        DateTime lockedUntilUtc,
+        string reason,
+        bool isActive,
+        DateTime? releasedUtc,
+        Guid? releasedByUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        var lockRow = dbContext.AthleteChatAthleteLocks.Local.FirstOrDefault(
+            x => x.AthleteProfileId == athleteProfileId);
+
+        if (lockRow is null)
+        {
+            lockRow = await dbContext.AthleteChatAthleteLocks.FirstOrDefaultAsync(
+                x => x.AthleteProfileId == athleteProfileId,
+                cancellationToken);
+        }
+
+        if (lockRow is null)
+        {
+            lockRow = new AthleteChatAthleteLock
+            {
+                AthleteProfileId = athleteProfileId
+            };
+
+            dbContext.AthleteChatAthleteLocks.Add(lockRow);
+        }
+
+        lockRow.UserAccountId = userAccountId;
+        lockRow.LockedByUserAccountId = lockedByUserAccountId;
+        lockRow.LockedUntilUtc = DateTime.SpecifyKind(lockedUntilUtc, DateTimeKind.Utc);
+        lockRow.Reason = reason.Trim();
+        lockRow.IsActive = isActive;
+        lockRow.ReleasedUtc = releasedUtc;
+        lockRow.ReleasedByUserAccountId = releasedByUserAccountId;
+        return lockRow;
     }
 
     private static async Task EnsureDemoBracketAndStreamCoverageAsync(

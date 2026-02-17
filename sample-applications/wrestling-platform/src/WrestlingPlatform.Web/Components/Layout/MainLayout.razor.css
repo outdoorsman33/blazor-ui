@@ -594,6 +594,34 @@ a {
     padding: 0.55rem;
 }
 
+.drawer-native-field {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.drawer-native-field label {
+    font-size: 0.74rem;
+    color: #52606a;
+    font-weight: 700;
+}
+
+.drawer-native-select {
+    width: 100%;
+    border: 1px solid #c8c0ad;
+    border-radius: 8px;
+    padding: 0.42rem 0.5rem;
+    background: #fff;
+    color: #1f2529;
+    font: inherit;
+    min-height: 38px;
+}
+
+.drawer-native-select:focus {
+    outline: none;
+    border-color: #4f9ed8;
+    box-shadow: 0 0 0 3px rgba(79, 158, 216, 0.16);
+}
+
 .drawer-select,
 .smart-date-picker {
     width: 100%;

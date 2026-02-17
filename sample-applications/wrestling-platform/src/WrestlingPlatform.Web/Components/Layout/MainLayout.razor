@@ -179,26 +179,35 @@
                                            DateFormat="ddd, MMM d yyyy"
                                            Class="smart-date-picker" />
 
-                            <MudSelect T="string" Label="Age Group" Dense="true" @bind-Value="LiveAgeFilter" Variant="Variant.Outlined" Class="drawer-select">
-                                @foreach (var age in AgeFilters)
-                                {
-                                    <MudSelectItem T="string" Value="@age">@age</MudSelectItem>
-                                }
-                            </MudSelect>
+                            <div class="drawer-native-field">
+                                <label for="live-age-filter">Age Group</label>
+                                <select id="live-age-filter" class="drawer-native-select" @bind="LiveAgeFilter">
+                                    @foreach (var age in AgeFilters)
+                                    {
+                                        <option value="@age">@age</option>
+                                    }
+                                </select>
+                            </div>
 
-                            <MudSelect T="string" Label="Weight" Dense="true" @bind-Value="LiveWeightFilter" Variant="Variant.Outlined" Class="drawer-select">
-                                @foreach (var weight in WeightFilters)
-                                {
-                                    <MudSelectItem T="string" Value="@weight">@weight</MudSelectItem>
-                                }
-                            </MudSelect>
+                            <div class="drawer-native-field">
+                                <label for="live-weight-filter">Weight</label>
+                                <select id="live-weight-filter" class="drawer-native-select" @bind="LiveWeightFilter">
+                                    @foreach (var weight in WeightFilters)
+                                    {
+                                        <option value="@weight">@weight</option>
+                                    }
+                                </select>
+                            </div>
 
-                            <MudSelect T="string" Label="Sort Bouts" Dense="true" @bind-Value="LiveSortFilter" Variant="Variant.Outlined" Class="drawer-select">
-                                @foreach (var sort in LiveSortOptions)
-                                {
-                                    <MudSelectItem T="string" Value="@sort">@sort</MudSelectItem>
-                                }
-                            </MudSelect>
+                            <div class="drawer-native-field">
+                                <label for="live-sort-filter">Sort Bouts</label>
+                                <select id="live-sort-filter" class="drawer-native-select" @bind="LiveSortFilter">
+                                    @foreach (var sort in LiveSortOptions)
+                                    {
+                                        <option value="@sort">@sort</option>
+                                    }
+                                </select>
+                            </div>
 
                             <a class="mini-btn secondary drawer-action-link" href="@LiveTournamentHref" @onclick="CloseDrawer">Open Live Matches Page</a>
                             <a class="mini-btn secondary drawer-action-link" href="@FollowCenterHref" @onclick="CloseDrawer">Follow Wrestlers</a>

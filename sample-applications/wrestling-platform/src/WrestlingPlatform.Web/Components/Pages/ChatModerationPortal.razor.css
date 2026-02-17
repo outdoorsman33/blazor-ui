@@ -1,0 +1,32 @@
+:root {
+    --danger-bg: #ffecec;
+    --danger-border: #efb3b3;
+    --danger-ink: #8d2e2e;
+}
+
+.tag.danger {
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    color: var(--danger-ink);
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+.table .item-title {
+    font-size: 0.95rem;
+}
+
+.table .helper {
+    max-width: 380px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (max-width: 860px) {
+    .table .helper {
+        max-width: 220px;
+    }
+}

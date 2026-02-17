@@ -405,6 +405,14 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
         return await ReadResponseAsync<AthleteChatThreadSummary>(response, cancellationToken);
     }
 
+    public async Task<ApiResult<AthleteChatThreadSummary>> StartGroupAthleteChatAsync(
+        StartGroupAthleteChatRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync("/api/athlete-chat/threads/group", request, cancellationToken);
+        return await ReadResponseAsync<AthleteChatThreadSummary>(response, cancellationToken);
+    }
+
     public async Task<ApiResult<List<AthleteChatMessageView>>> GetAthleteChatMessagesAsync(
         Guid threadId,
         int take = 80,
@@ -446,6 +454,87 @@ public sealed class PlatformApiClient(HttpClient httpClient, AuthSession authSes
     {
         var response = await PostAsJsonAsync($"/api/athlete-chat/threads/{threadId:D}/mute", request, cancellationToken);
         return await ReadResponseAsync<object>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<AthleteChatReactionSummary>>> ToggleAthleteChatReactionAsync(
+        Guid messageId,
+        ToggleAthleteChatReactionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync($"/api/athlete-chat/messages/{messageId:D}/reactions/toggle", request, cancellationToken);
+        return await ReadResponseAsync<List<AthleteChatReactionSummary>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<AthleteChatAdminThreadRow>>> GetAthleteChatAdminThreadsAsync(
+        string? query = null,
+        AthleteChatThreadKind? kind = null,
+        bool? reportedOnly = null,
+        bool? includeArchived = null,
+        int take = 120,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery("/api/athlete-chat/admin/threads", new Dictionary<string, string?>
+        {
+            ["q"] = query,
+            ["kind"] = kind?.ToString(),
+            ["reportedOnly"] = reportedOnly?.ToString(),
+            ["includeArchived"] = includeArchived?.ToString(),
+            ["take"] = take.ToString()
+        });
+
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<List<AthleteChatAdminThreadRow>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<AthleteChatAdminAthleteRow>>> GetAthleteChatAdminAthletesAsync(
+        string? query = null,
+        bool? lockedOnly = null,
+        int take = 120,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery("/api/athlete-chat/admin/athletes", new Dictionary<string, string?>
+        {
+            ["q"] = query,
+            ["lockedOnly"] = lockedOnly?.ToString(),
+            ["take"] = take.ToString()
+        });
+
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<List<AthleteChatAdminAthleteRow>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<List<AthleteChatAthleteLockView>>> GetAthleteChatAdminLocksAsync(
+        string? query = null,
+        bool? activeOnly = null,
+        int take = 120,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildUrlWithQuery("/api/athlete-chat/admin/locks", new Dictionary<string, string?>
+        {
+            ["q"] = query,
+            ["activeOnly"] = activeOnly?.ToString(),
+            ["take"] = take.ToString()
+        });
+
+        var response = await GetAsync(url, cancellationToken);
+        return await ReadResponseAsync<List<AthleteChatAthleteLockView>>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteChatAthleteLockView>> LockAthleteChatAthleteAsync(
+        Guid athleteProfileId,
+        UpsertAthleteChatAthleteLockRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync($"/api/athlete-chat/admin/athletes/{athleteProfileId:D}/lock", request, cancellationToken);
+        return await ReadResponseAsync<AthleteChatAthleteLockView>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<AthleteChatAthleteLockView>> UnlockAthleteChatAthleteAsync(
+        Guid athleteProfileId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await PostAsJsonAsync<object>($"/api/athlete-chat/admin/athletes/{athleteProfileId:D}/unlock", new { }, cancellationToken);
+        return await ReadResponseAsync<AthleteChatAthleteLockView>(response, cancellationToken);
     }
 
     public async Task<ApiResult<StreamSession>> CreateStreamSessionAsync(

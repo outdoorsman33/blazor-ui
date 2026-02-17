@@ -9,12 +9,12 @@
 <div class="page-head">
     <div>
         <h1 class="page-title">Athlete Network Chat</h1>
-        <p class="page-subtitle">Athlete-only messaging for networking and match prep. Safety rules are enforced in real time.</p>
+        <p class="page-subtitle">Athlete-only messaging for networking and match prep with direct, group, and lounge threads.</p>
     </div>
     <div class="tag-row">
         <span class="tag">Athletes Only</span>
-        <span class="tag">Live Moderation</span>
-        <span class="tag">Rate Limited</span>
+        <span class="tag">Private Threads</span>
+        <span class="tag">Safety Guardrails</span>
     </div>
 </div>
 
@@ -46,14 +46,36 @@ else
                 <span class="tag">@(Threads.Count)</span>
             </div>
             <div class="actions spacer-top">
-                <button class="btn secondary" type="button" @onclick="LoadThreadsAsync" disabled="@IsBusy">Refresh</button>
+                <button class="btn secondary" type="button" @onclick="RefreshThreadsAsync" disabled="@IsBusy">Refresh</button>
                 <button class="btn ghost" type="button" @onclick="JoinLoungeAsync" disabled="@IsBusy">Join Athlete Lounge</button>
+                <button class="btn ghost" type="button" @onclick="ToggleGroupComposer" disabled="@IsBusy">@(ShowGroupComposer ? "Close Group" : "New Group")</button>
             </div>
 
             <div class="chat-network-search spacer-top">
-                <input class="input" @bind="NetworkQuery" placeholder="Find athlete to start 1:1 chat" />
+                <input class="input" @bind="NetworkQuery" @bind:event="oninput" placeholder="Find athlete to start 1:1 chat" />
                 <button class="btn ghost" type="button" @onclick="SearchNetworkAsync" disabled="@IsBusy">Search</button>
             </div>
+
+            @if (ShowGroupComposer)
+            {
+                <div class="chat-group-shell spacer-top">
+                    <div class="field">
+                        <label>Group Name</label>
+                        <input class="input" @bind="GroupName" placeholder="Film Room, Warmup Crew, etc." />
+                    </div>
+                    <div class="helper">Select athletes from search results, then create the group.</div>
+                    @if (SelectedGroupMembers.Count > 0)
+                    {
+                        <div class="chat-group-selected">
+                            @foreach (var member in SelectedGroupMembers)
+                            {
+                                <button type="button" class="chat-member-chip" @onclick="() => RemoveGroupMember(member.AthleteProfileId)">@member.DisplayName</button>
+                            }
+                        </div>
+                    }
+                    <button class="btn primary" type="button" @onclick="StartGroupThreadAsync" disabled="@IsBusy">Create Group Chat</button>
+                </div>
+            }
 
             @if (NetworkResults.Count > 0)
             {
@@ -65,7 +87,13 @@ else
                                 <div class="item-title">@athlete.DisplayName</div>
                                 <div class="helper">@athlete.Level | @athlete.State @athlete.City</div>
                             </div>
-                            <button class="btn secondary" type="button" @onclick="() => StartDirectThreadAsync(athlete)" disabled="@IsBusy">Message</button>
+                            <div class="chat-network-actions">
+                                <button class="btn secondary" type="button" @onclick="() => StartDirectThreadAsync(athlete)" disabled="@IsBusy">Message</button>
+                                @if (ShowGroupComposer)
+                                {
+                                    <button class="btn ghost" type="button" @onclick="() => ToggleGroupMember(athlete)">@GroupMemberButtonLabel(athlete)</button>
+                                }
+                            </div>
                         </div>
                     }
                 </div>
@@ -82,7 +110,7 @@ else
                     {
                         <button type="button"
                                 class="chat-thread-btn @(thread.ThreadId == SelectedThreadId ? "active" : "")"
-                                @onclick="@(() => SelectThread(thread.ThreadId))">
+                                @onclick="() => SelectThreadAsync(thread.ThreadId)">
                             <div class="chat-thread-row">
                                 <span class="item-title">@thread.Name</span>
                                 @if (thread.UnreadCount > 0)
@@ -121,6 +149,17 @@ else
                     <span>Rate limit enforced</span>
                 </div>
 
+                @if (SelectedThread.IsPostingLocked)
+                {
+                    <div class="alert error spacer-top">
+                        Posting is locked until @(SelectedThread.PostingLockedUntilUtc?.ToLocalTime().ToString("MMM dd h:mm tt") ?? "unlocked").
+                        @if (!string.IsNullOrWhiteSpace(SelectedThread.PostingLockReason))
+                        {
+                            <span> Reason: @SelectedThread.PostingLockReason</span>
+                        }
+                    </div>
+                }
+
                 <div class="chat-message-list spacer-top">
                     @if (Messages.Count == 0)
                     {
@@ -136,10 +175,38 @@ else
                                     <span>@message.CreatedUtc.ToLocalTime().ToString("MMM dd h:mm tt")</span>
                                 </div>
                                 <p>@message.Body</p>
-                                @if (!message.IsMine)
+
+                                @if (message.Reactions.Count > 0)
                                 {
-                                    <button class="chat-report-btn" type="button" @onclick="() => ReportMessageAsync(message.MessageId)">Report</button>
+                                    <div class="chat-reaction-row">
+                                        @foreach (var reaction in message.Reactions)
+                                        {
+                                            <button type="button"
+                                                    class="chat-reaction-chip @(reaction.IsMine ? "mine" : "")"
+                                                    @onclick="() => ToggleMessageReactionAsync(message.MessageId, reaction.Emoji)"
+                                                    disabled="@IsBusy">
+                                                @reaction.Emoji @reaction.Count
+                                            </button>
+                                        }
+                                    </div>
                                 }
+
+                                <div class="chat-message-actions">
+                                    @foreach (var emoji in QuickReactionEmojis)
+                                    {
+                                        <button type="button"
+                                                class="chat-emoji-btn"
+                                                title="React with @emoji"
+                                                @onclick="() => ToggleMessageReactionAsync(message.MessageId, emoji)"
+                                                disabled="@IsBusy">
+                                            @emoji
+                                        </button>
+                                    }
+                                    @if (!message.IsMine)
+                                    {
+                                        <button class="chat-report-btn" type="button" @onclick="() => ReportMessageAsync(message.MessageId)" disabled="@IsBusy">Report</button>
+                                    }
+                                </div>
                             </div>
                         }
                     }
@@ -150,10 +217,20 @@ else
                               rows="3"
                               maxlength="600"
                               @bind="ComposeMessage"
-                              placeholder="Type a message (max 600 chars)..."></textarea>
+                              placeholder="Type a message (max 600 chars)..."
+                              disabled="@SelectedThread.IsPostingLocked"></textarea>
+                    <div class="chat-emoji-picker">
+                        @foreach (var emoji in QuickReactionEmojis)
+                        {
+                            <button type="button" class="chat-emoji-btn" @onclick="() => AppendEmojiToCompose(emoji)" disabled="@SelectedThread.IsPostingLocked || IsBusy">@emoji</button>
+                        }
+                    </div>
                     <div class="chat-compose-footer">
                         <span class="helper">@(ComposeMessage.Length)/600</span>
-                        <button class="btn primary" type="button" @onclick="SendMessageAsync" disabled="@IsBusy">Send</button>
+                        <button class="btn primary"
+                                type="button"
+                                @onclick="SendMessageAsync"
+                                disabled="@IsBusy || SelectedThread.IsPostingLocked">Send</button>
                     </div>
                 </div>
             }
@@ -162,24 +239,54 @@ else
 }
 
 @code {
-    private bool IsBusy;
+    private static readonly IReadOnlyList<string> QuickReactionEmojis =
+    [
+        "\uD83D\uDD25",
+        "\uD83D\uDC4F",
+        "\uD83D\uDCAA",
+        "\uD83D\uDE4C",
+        "\u2705",
+        "\uD83D\uDC40",
+        "\uD83E\uDD1D",
+        "\uD83C\uDFA5",
+        "\uD83C\uDFC6",
+        "\u2B50"
+    ];
+
+    private bool IsLoadingThreads;
+    private bool IsLoadingMessages;
+    private bool IsSubmitting;
     private bool StatusSuccess;
     private string? StatusMessage;
     private string NetworkQuery = string.Empty;
     private string ComposeMessage = string.Empty;
+    private string GroupName = string.Empty;
+    private bool ShowGroupComposer;
+
     private List<AthleteChatThreadSummary> Threads = [];
     private List<AthleteChatMessageView> Messages = [];
     private List<AthleteChatDirectoryEntry> NetworkResults = [];
+    private readonly HashSet<Guid> SelectedGroupMemberIds = [];
+    private readonly Dictionary<Guid, AthleteChatDirectoryEntry> SelectedGroupMembersById = [];
     private Guid? SelectedThreadId;
+
+    private bool IsBusy => IsLoadingThreads || IsLoadingMessages || IsSubmitting;
 
     private AthleteChatThreadSummary? SelectedThread =>
         SelectedThreadId is Guid threadId ? Threads.FirstOrDefault(x => x.ThreadId == threadId) : null;
+
+    private List<AthleteChatDirectoryEntry> SelectedGroupMembers =>
+        SelectedGroupMemberIds
+            .Select(id => SelectedGroupMembersById.TryGetValue(id, out var athlete) ? athlete : null)
+            .Where(x => x is not null)
+            .Cast<AthleteChatDirectoryEntry>()
+            .ToList();
 
     protected override async Task OnInitializedAsync()
     {
         if (AuthSession.IsAuthenticated && AuthSession.Role == UserRole.Athlete)
         {
-            await LoadThreadsAsync();
+            await LoadThreadsAsync(loadMessages: true);
             if (Threads.Count == 0)
             {
                 await JoinLoungeAsync();
@@ -187,15 +294,23 @@ else
         }
     }
 
-    private async Task LoadThreadsAsync()
+    private async Task RefreshThreadsAsync()
     {
-        IsBusy = true;
+        await LoadThreadsAsync(loadMessages: true);
+    }
+
+    private async Task LoadThreadsAsync(bool loadMessages)
+    {
+        IsLoadingThreads = true;
         try
         {
             var result = await ApiClient.GetAthleteChatThreadsAsync();
             if (!result.Success || result.Data is null)
             {
                 SetStatus(false, result.Message);
+                Threads = [];
+                Messages = [];
+                SelectedThreadId = null;
                 return;
             }
 
@@ -209,22 +324,26 @@ else
                 SelectedThreadId = Threads.FirstOrDefault()?.ThreadId;
             }
 
-            if (SelectedThreadId is not null)
+            if (loadMessages && SelectedThreadId is not null)
             {
                 await LoadMessagesAsync();
             }
 
             SetStatus(true, $"Loaded {Threads.Count} thread(s).");
         }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to load threads. {ex.Message}");
+        }
         finally
         {
-            IsBusy = false;
+            IsLoadingThreads = false;
         }
     }
 
     private async Task JoinLoungeAsync()
     {
-        IsBusy = true;
+        IsSubmitting = true;
         try
         {
             var result = await ApiClient.JoinAthleteLoungeAsync();
@@ -235,69 +354,85 @@ else
             }
 
             SelectedThreadId = result.Data.ThreadId;
-            await LoadThreadsAsync();
+            await LoadThreadsAsync(loadMessages: true);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to join lounge. {ex.Message}");
         }
         finally
         {
-            IsBusy = false;
+            IsSubmitting = false;
         }
     }
 
-    private void SelectThread(Guid threadId)
+    private async Task SelectThreadAsync(Guid threadId)
     {
         SelectedThreadId = threadId;
-        _ = LoadMessagesAsync();
+        await LoadMessagesAsync();
     }
 
     private async Task LoadMessagesAsync()
     {
         if (SelectedThreadId is null)
         {
+            Messages = [];
             return;
         }
 
-        IsBusy = true;
+        IsLoadingMessages = true;
         try
         {
-            var result = await ApiClient.GetAthleteChatMessagesAsync(SelectedThreadId.Value, take: 120);
+            var result = await ApiClient.GetAthleteChatMessagesAsync(SelectedThreadId.Value, take: 150);
             if (!result.Success || result.Data is null)
             {
                 SetStatus(false, result.Message);
+                Messages = [];
                 return;
             }
 
             Messages = result.Data.OrderBy(x => x.CreatedUtc).ToList();
         }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to load messages. {ex.Message}");
+            Messages = [];
+        }
         finally
         {
-            IsBusy = false;
+            IsLoadingMessages = false;
         }
     }
 
     private async Task SearchNetworkAsync()
     {
-        IsBusy = true;
+        IsSubmitting = true;
         try
         {
-            var result = await ApiClient.SearchAthleteChatDirectoryAsync(NetworkQuery, 16);
+            var result = await ApiClient.SearchAthleteChatDirectoryAsync(NetworkQuery, 24);
             if (!result.Success || result.Data is null)
             {
                 SetStatus(false, result.Message);
+                NetworkResults = [];
                 return;
             }
 
             NetworkResults = result.Data;
             SetStatus(true, $"Found {NetworkResults.Count} athlete contact(s).");
         }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to search athlete network. {ex.Message}");
+        }
         finally
         {
-            IsBusy = false;
+            IsSubmitting = false;
         }
     }
 
     private async Task StartDirectThreadAsync(AthleteChatDirectoryEntry athlete)
     {
-        IsBusy = true;
+        IsSubmitting = true;
         try
         {
             var result = await ApiClient.StartDirectAthleteChatAsync(new StartDirectAthleteChatRequest(athlete.AthleteProfileId));
@@ -308,12 +443,86 @@ else
             }
 
             SelectedThreadId = result.Data.ThreadId;
-            await LoadThreadsAsync();
+            await LoadThreadsAsync(loadMessages: true);
             SetStatus(true, $"Direct thread ready with {athlete.DisplayName}.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to start direct chat. {ex.Message}");
         }
         finally
         {
-            IsBusy = false;
+            IsSubmitting = false;
+        }
+    }
+
+    private void ToggleGroupComposer()
+    {
+        ShowGroupComposer = !ShowGroupComposer;
+        if (!ShowGroupComposer)
+        {
+            GroupName = string.Empty;
+            SelectedGroupMemberIds.Clear();
+            SelectedGroupMembersById.Clear();
+        }
+    }
+
+    private void ToggleGroupMember(AthleteChatDirectoryEntry athlete)
+    {
+        if (SelectedGroupMemberIds.Contains(athlete.AthleteProfileId))
+        {
+            SelectedGroupMemberIds.Remove(athlete.AthleteProfileId);
+            SelectedGroupMembersById.Remove(athlete.AthleteProfileId);
+            return;
+        }
+
+        SelectedGroupMemberIds.Add(athlete.AthleteProfileId);
+        SelectedGroupMembersById[athlete.AthleteProfileId] = athlete;
+    }
+
+    private void RemoveGroupMember(Guid athleteProfileId)
+    {
+        SelectedGroupMemberIds.Remove(athleteProfileId);
+        SelectedGroupMembersById.Remove(athleteProfileId);
+    }
+
+    private string GroupMemberButtonLabel(AthleteChatDirectoryEntry athlete) =>
+        SelectedGroupMemberIds.Contains(athlete.AthleteProfileId) ? "Selected" : "Add";
+
+    private async Task StartGroupThreadAsync()
+    {
+        if (SelectedGroupMemberIds.Count < 2)
+        {
+            SetStatus(false, "Add at least two athletes for a group chat.");
+            return;
+        }
+
+        IsSubmitting = true;
+        try
+        {
+            var request = new StartGroupAthleteChatRequest(GroupName, SelectedGroupMemberIds.ToList());
+            var result = await ApiClient.StartGroupAthleteChatAsync(request);
+            if (!result.Success || result.Data is null)
+            {
+                SetStatus(false, result.Message);
+                return;
+            }
+
+            SelectedThreadId = result.Data.ThreadId;
+            GroupName = string.Empty;
+            SelectedGroupMemberIds.Clear();
+            SelectedGroupMembersById.Clear();
+            ShowGroupComposer = false;
+            await LoadThreadsAsync(loadMessages: true);
+            SetStatus(true, "Group chat created.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to create group chat. {ex.Message}");
+        }
+        finally
+        {
+            IsSubmitting = false;
         }
     }
 
@@ -332,7 +541,7 @@ else
             return;
         }
 
-        IsBusy = true;
+        IsSubmitting = true;
         try
         {
             var result = await ApiClient.SendAthleteChatMessageAsync(SelectedThreadId.Value, new SendAthleteChatMessageRequest(trimmed));
@@ -344,18 +553,22 @@ else
 
             ComposeMessage = string.Empty;
             await LoadMessagesAsync();
-            await LoadThreadsAsync();
+            await LoadThreadsAsync(loadMessages: false);
             SetStatus(true, "Message sent.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to send message. {ex.Message}");
         }
         finally
         {
-            IsBusy = false;
+            IsSubmitting = false;
         }
     }
 
     private async Task ReportMessageAsync(Guid messageId)
     {
-        IsBusy = true;
+        IsSubmitting = true;
         try
         {
             var result = await ApiClient.ReportAthleteChatMessageAsync(
@@ -369,10 +582,15 @@ else
             }
 
             SetStatus(true, "Message report submitted.");
+            await LoadMessagesAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to report message. {ex.Message}");
         }
         finally
         {
-            IsBusy = false;
+            IsSubmitting = false;
         }
     }
 
@@ -383,7 +601,7 @@ else
             return;
         }
 
-        IsBusy = true;
+        IsSubmitting = true;
         try
         {
             var result = await ApiClient.MuteAthleteChatThreadAsync(SelectedThreadId.Value, new MuteAthleteChatThreadRequest(60));
@@ -394,12 +612,53 @@ else
             }
 
             SetStatus(true, "Thread muted for 60 minutes.");
-            await LoadThreadsAsync();
+            await LoadThreadsAsync(loadMessages: false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to mute thread. {ex.Message}");
         }
         finally
         {
-            IsBusy = false;
+            IsSubmitting = false;
         }
+    }
+
+    private async Task ToggleMessageReactionAsync(Guid messageId, string emoji)
+    {
+        IsSubmitting = true;
+        try
+        {
+            var result = await ApiClient.ToggleAthleteChatReactionAsync(messageId, new ToggleAthleteChatReactionRequest(emoji));
+            if (!result.Success || result.Data is null)
+            {
+                SetStatus(false, result.Message);
+                return;
+            }
+
+            var index = Messages.FindIndex(x => x.MessageId == messageId);
+            if (index >= 0)
+            {
+                Messages[index] = Messages[index] with { Reactions = result.Data };
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus(false, $"Unable to update reaction. {ex.Message}");
+        }
+        finally
+        {
+            IsSubmitting = false;
+        }
+    }
+
+    private void AppendEmojiToCompose(string emoji)
+    {
+        var next = string.IsNullOrWhiteSpace(ComposeMessage)
+            ? emoji
+            : $"{ComposeMessage} {emoji}";
+
+        ComposeMessage = next.Length <= 600 ? next : next[..600];
     }
 
     private void SetStatus(bool ok, string? message)
